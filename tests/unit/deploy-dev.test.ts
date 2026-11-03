@@ -69,23 +69,25 @@ describe('deploy-dev', () => {
     expect(keys).toEqual(['if', 'runs-on', 'environment', 'steps']);
   });
 
-  // Only the template's rehearsal passes the placeholder: the template has
-  // nothing to deploy (shyden-labs/repo-template#121). Anywhere else, or on a real deploy, it fails
-  // until the project fills it in.
-  it('still fails in a repository made from the template until it fills in its deploy', () => {
+  // ShyDesk has no deployable app yet (shyden-labs/shydesk#7): the step runs
+  // scripts/deploy-dev.ts, which fails naming any file that would need a
+  // deploy, and pipefail keeps tee from hiding that failure.
+  it('runs the deploy verdict script on the changed files, failing when it fails', () => {
     const jobs = topLevel(workflow(), 'jobs').split('\n');
     const step = jobs.indexOf('      - name: Deploy the changed areas to dev');
-    expect(jobs.slice(step, step + 10)).toEqual([
+    expect(jobs.slice(step).filter((line) => line.trim() !== '')).toEqual([
       '      - name: Deploy the changed areas to dev',
       '        env:',
       '          DEPLOY_REHEARSAL: ${{ github.event_name == pull_request }}',
       '        run: |',
-      '          if [ $GITHUB_REPOSITORY = shyden-labs/repo-template ] && [ $DEPLOY_REHEARSAL = true ]; then',
-      '            echo The template hosts nothing, so its rehearsal deploys nothing.',
-      '            exit 0',
-      '          fi',
-      '          echo ::error title=deploy-dev is not filled in::Replace this step with the projects own dev deploy, acting only on the areas in changed-files.txt, and deploying nothing when DEPLOY_REHEARSAL is true (README, Using it, step 7).',
-      '          exit 1',
+      '          set -o pipefail',
+      '          node scripts/deploy-dev.ts changed-files.txt | tee -a $GITHUB_STEP_SUMMARY',
     ]);
+  });
+
+  it('sets up the exact Node before running the script', () => {
+    const jobs = topLevel(workflow(), 'jobs');
+    expect(jobs).toContain('      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1');
+    expect(jobs.indexOf('actions/setup-node')).toBeLessThan(jobs.indexOf('node scripts/deploy-dev.ts'));
   });
 });

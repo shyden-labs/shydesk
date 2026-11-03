@@ -1,8 +1,9 @@
 # Every merge into `develop` deploys to dev (shyden-labs/repo-template#12; operator 2026-10-14), so dev
 # always shows develop's head and nobody has to remember a deploy. A project
 # replaces the last step with its own deploy, acting only on the areas the
-# merge changed (`changed-files.txt`); until it does, the run fails and names
-# that step. Every pull request runs the same job as a rehearsal (shyden-labs/repo-template#35 AC3), so
+# merge changed (`changed-files.txt`). ShyDesk has no deployable app yet, so
+# `scripts/deploy-dev.ts` deploys nothing and fails naming any file that would
+# need a deploy (shyden-labs/shydesk#7). Every pull request runs the same job as a rehearsal (shyden-labs/repo-template#35 AC3), so
 # its lines run on the pull request's own commit: it uses `dev-rehearsal`, an
 # environment that holds no credential, with DEPLOY_REHEARSAL=true, so it
 # deploys nothing. A pull request runs its own copy of this file, so what
@@ -48,6 +49,15 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+      # The exact Node, from the one file Dependabot bumps (shyden-labs/repo-template#143).
+      - id: node
+        run: |
+          version=$(sed -nE 's/^FROM node:([0-9]+\.[0-9]+\.[0-9]+)$/\1/p' .github/node/Dockerfile)
+          test -n "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ steps.node.outputs.version }}
       # What this deploy covers: the files the push changed, or every file on
       # a hand-started run or a branch's first push (no earlier commit to diff).
       # A pull request has no `before`, so its rehearsal diffs against its base.
@@ -69,10 +79,9 @@ jobs:
       - name: Deploy the changed areas to dev
         env:
           DEPLOY_REHEARSAL: ${{ github.event_name == 'pull_request' }}
+        # ShyDesk has no deployable app yet (shyden-labs/shydesk#7): the script
+        # passes when only never-deployed files changed, and fails naming any
+        # other path, so app code cannot land without a dev deploy for it.
         run: |
-          if [ "$GITHUB_REPOSITORY" = shyden-labs/repo-template ] && [ "$DEPLOY_REHEARSAL" = true ]; then
-            echo "The template hosts nothing, so its rehearsal deploys nothing."
-            exit 0
-          fi
-          echo "::error title=deploy-dev is not filled in::Replace this step with the project's own dev deploy, acting only on the areas in changed-files.txt, and deploying nothing when DEPLOY_REHEARSAL is true (README, Using it, step 7)."
-          exit 1
+          set -o pipefail
+          node scripts/deploy-dev.ts changed-files.txt | tee -a "$GITHUB_STEP_SUMMARY"
