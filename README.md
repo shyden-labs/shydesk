@@ -1,7 +1,20 @@
-# Shyden Labs repo template
+# ShyDesk
 
-A starter kit: a new Shyden Labs repository starts with CI and repository
-settings already in place, and nothing it doesn't need on day one (shyden-labs/repo-template#149).
+A free, self-hostable support desk, released under the Apache-2.0 licence.
+Customers ask for help through a hosted web form, with photo and short video
+attachments, and follow their request through a private link. Staff work each
+product's tickets in one desk, with canned replies and a read-only media viewer.
+Reports, punishments and appeals sent from inside products follow in Release 2.
+
+It runs on Cloudflare's free tier (Workers, D1, R2, Durable Objects, Turnstile,
+Access) and sends no-reply notification emails through Oracle Cloud's free email
+service. Anything specific to one deployment, such as domains and products, is
+configuration, so anyone can run their own copy for free.
+
+The approved design is
+[`docs/superpowers/specs/2026-11-03-shydesk-v1-design.md`](docs/superpowers/specs/2026-11-03-shydesk-v1-design.md).
+The app itself is being built; this repository currently holds its design, CI
+and project tooling.
 
 ## What is here
 
@@ -13,7 +26,7 @@ settings already in place, and nothing it doesn't need on day one (shyden-labs/r
 | `scripts/npm-ci.ts` | Every workflow installs through it: `npm ci` that fails on any warning npm prints, naming each line (shyden-labs/repo-template#140). |
 | `.github/workflows/sonarcloud.yml`, `scripts/sonar-verdict.ts`, `docs/sonarcloud.md` | A reusable SonarCloud scan whose quality gate blocks the pull request. |
 | `.github/workflows/check-release-cut.yml`, `scripts/release-cut.ts`, `docs/release-cut.md` | Proves each pull request into `main` lands exactly a release cut CI tested. |
-| `.github/workflows/deploy-dev.yml` | The dev deploy stub: every merge into `develop` deploys to dev; every pull request rehearses it. |
+| `.github/workflows/deploy-dev.yml`, `scripts/deploy-dev.ts` | Every merge into `develop` deploys to dev and every pull request rehearses it. Until the app exists it deploys nothing, and fails naming any changed file that would need a deploy (shyden-labs/shydesk#7). |
 | `scripts/branch-rules-setup.ts` | Sets the `develop` (squash only) and `main` (merge commit only) rulesets, head-branch deletion, rebase merging off and the `dev` environment's branch policy, and reads each back. |
 | `scripts/board-*.ts`, `scripts/file-story.ts`, `.github/ISSUE_TEMPLATE/story.yml`, `docs/project-board.md` | The project board: filing stories, Estimate and Priority fields, the next ticket, progress, and orphaned In Progress tickets. |
 | `tests/unit/supply-chain.test.ts` | Actions pinned to SHAs, Dependabot covering every ecosystem and targeting `develop`, Node read from the Dockerfile. |
@@ -31,13 +44,8 @@ settings already in place, and nothing it doesn't need on day one (shyden-labs/r
 5. **A unit test runs in under 1 s and starts no process and opens no connection** (`tests/setup/unit-refusal.ts`).
 6. **Comments and docs cite issues in full**, as `owner/repo#N`, never a bare `#N` (`tests/unit/issue-refs.test.ts`; shyden-labs/repo-template#146). A repository made from this template copies every file, so a template reference such as `shyden-labs/repo-template#115` keeps pointing at the template's issue, and the new repository cites its own issues the same way. Test titles and messages are strings and are left as they are.
 
-## Using it
+## Development
 
-1. `gh repo create <name> --public --template shyden-labs/repo-template`. A repo carrying game, art or learning content adds its own content licence.
-2. Create `develop` and make it the default branch before Dependabot first runs. CI fails until this is done.
-3. Set up SonarCloud as `docs/sonarcloud.md` describes (CI fails until `SONAR_TOKEN` is set). Then, as the operator, set the branch rules: `node scripts/branch-rules-setup.ts <owner/repo> build-and-test coverage "sonarcloud / sonarcloud"`, and add any check the project adds later.
-4. Add the ecosystems your repo uses to `.github/dependabot.yml`, and enable Dependabot alerts and security updates.
-5. `npm ci && npm run test:unit`.
-6. Set up the project board as `docs/project-board.md` describes.
-7. Fill in `.github/workflows/deploy-dev.yml` with your own dev deploy, or delete it and `tests/unit/deploy-dev.test.ts` if the repo hosts nothing.
-8. Turn on SonarCloud as `docs/sonarcloud.md` describes.
+1. `npm ci && npm run test:unit`.
+2. Before each push: `npm run test:unit`. The pre-push hook runs format, lint and typecheck.
+3. Stories live on the ShyDesk Stories board; `docs/project-board.md` describes filing and progress.

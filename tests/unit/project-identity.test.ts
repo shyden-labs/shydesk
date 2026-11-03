@@ -13,6 +13,11 @@ describe('project identity', () => {
     expect(ci.match(/project-key: (\S+)/g)).toEqual(['project-key: shyden-labs_shydesk']);
   });
 
+  // The README was the template's until shyden-labs/shydesk#10.
+  it('titles the README ShyDesk', () => {
+    expect(readFileSync('README.md', 'utf8').split('\n')[0]).toBe('# ShyDesk');
+  });
+
   it('names the package shydesk', () => {
     expect((JSON.parse(readFileSync('package.json', 'utf8')) as { name: string }).name).toBe('shydesk');
   });
