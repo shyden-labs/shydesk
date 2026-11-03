@@ -74,5 +74,5 @@ jobs:
     uses: ./.github/workflows/sonarcloud.yml
     with:
       organization: shyden-labs
-      project-key: shyden-labs_repo-template
+      project-key: shyden-labs_shydesk
     secrets: inherit
