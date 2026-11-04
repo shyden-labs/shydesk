@@ -1,6 +1,6 @@
 # ShyDesk v1 design
 
-Date: 2026-11-03. Status: approved by Shyden on 2026-11-03.
+Date: 2026-11-03. Status: approved by Shyden on 2026-11-03; revised 2026-11-04 for the headless rulings (shyden-labs/shydesk#30).
 Decisions marked **(Shyden)** were made by Shyden; **(builder call)** are mine to check; everything else is left to the builder.
 
 ## Why
@@ -11,7 +11,7 @@ It is also public, open-source (Apache-2.0) software anyone can self-host for fr
 
 ## Goals
 
-1. Customers of any configured product can ask for help through a web form, attach photos and videos, and follow the conversation through a private link.
+1. Customers of any configured product can ask for help through a form on **that product's own support page**, attach photos and videos, and follow the conversation through a private link, without ever seeing a ShyDesk address.
 2. Products can send reports (of a player, room, content...) into ShyDesk from inside their apps, and receive the punishments reps decide.
 3. Reps work each product's tickets in isolation; the admin sees everything and alone handles appeals, ban lifts and legal holds.
 4. A self-hoster adds products and decides each product's ticket types, reasons and punishments on a settings screen, without code.
@@ -34,15 +34,16 @@ It is also public, open-source (Apache-2.0) software anyone can self-host for fr
 
 ## Releases **(Shyden)**
 
-- **Release 1:** products and settings, support web form with attachments, private customer ticket page, staff desk with media viewer, canned replies, reps and per-product access, no-reply emails, retention and deletion. Unblocks shyden.co.uk and the support side of both games.
+- **Release 1:** products and settings, the shared support piece (form with attachments and private ticket thread, embedded in each product's page) and its forwarding contract, staff desk with media viewer, canned replies, reps and per-product access, no-reply emails, retention and deletion. Unblocks shyden.co.uk and the support side of both games.
 - **Release 2, straight after:** reports API, punishments, appeals, legal holds, repeat-offender history.
 
 The data model is designed for both from the start, so Release 2 adds rather than migrates.
 
 ## Platform **(Shyden unless marked)**
 
-- **Hosting:** Cloudflare Workers (free plan), D1 database, R2 for attachments, Turnstile on public forms. Live at `shydesk.shyden.co.uk`, dev at `dev.shydesk.shyden.co.uk`; live and test+dev on separate Cloudflare accounts.
-- **Staff sign-in:** Cloudflare Access with an email allow-list (free to 50 users). The Worker verifies the Access JWT on every desk and admin request **(builder call)**; it never trusts a header without verifying it.
+- **Hosting:** Cloudflare Workers (free plan), D1 database, R2 for attachments, Turnstile on the customer form. ShyDesk has **its own new Cloudflare accounts, "ShyDesk" (live) and "ShyDesk Non-Prod" (test+dev), and no domain**: it runs on each account's `*.workers.dev` address **(Shyden 2026-11-04)**. Only staff and product servers ever use that address; customers never do (see Customer side).
+- **Why customers never touch workers.dev (Shyden 2026-11-04):** ShyDesk is internal, and Indonesian ISPs block by DNS at their own discretion. Measured 2026-11-04 on Biznet: `*.workers.dev` resolves normally, but `*.r2.dev` is hijacked to Biznet's block page even for queries sent to 1.1.1.1. A shared `workers.dev` name can be blocked because of someone else's Worker, so every customer request goes through the product's own domain instead.
+- **Staff sign-in:** Cloudflare Access with an email allow-list (free to 50 users). An Access application covers the desk, admin and API-docs paths on the `workers.dev` host. The Worker verifies the Access JWT on every desk and admin request **(builder call)**; it never trusts a header without verifying it.
 - **Outgoing mail:** Oracle OCI Email Delivery (Always Free, 3,000 a month), no-reply only. What Oracle keeps of message content, and for how long, must be found out and written into the privacy policy before launch.
 - **Data region:** Shyden Labs is in Indonesia; never assume UK or EU hosting. D1 location hint Asia-Pacific **(builder call)**.
 - **Language and tooling:** TypeScript, on the repo-template toolchain already in the repo (Vitest, ESLint, Prettier, tsc). Framework choices are the builder's, under the licence rule: shipped packages permissive only (MIT, BSD, Apache, ISC); MPL/LGPL only for build or test tools; GPL, AGPL, SSPL refused.
@@ -51,7 +52,8 @@ The data model is designed for both from the start, so Release 2 adds rather tha
 
 A **product** (e.g. `yawelo-idle`, `shytalk`, `shyden-co-uk`) is added on the admin settings screen. Each product has:
 
-- display name, support page link key (`?product=<key>`), the address no-reply emails link to;
+- display name, its id (e.g. `shytalk`), and its **ticket page address**: the page on the product's own site where the shared piece shows a customer's ticket; no-reply emails link there;
+- its **forward key**: a long random secret its forwarder sends with every customer request (stored as a SHA-256 hash, shown once, rotatable). The key, not anything the page says, decides which product a request belongs to;
 - its **sender address on its own domain** (e.g. `no-reply@shytalk.app`) **(Shyden)**, set in settings because product domains change (Yawelo Idle's will move to a new domain soon); the product's domain carries the sending records (SPF, DKIM) Oracle gives;
 - **ticket types** it offers, each one of:
   - **support**: two-way conversation via the private link;
@@ -68,10 +70,15 @@ Changes on the settings screen apply at once, with no deploy.
 
 ### Customer side (English)
 
-- **Contact form** at `/contact?product=<key>` (product preset from the link; a picker if absent). Fields: email, subject, category, message, product-specific extra fields, attachments. Turnstile on submit. Rate limit per email and IP **(builder call)**.
-- **Attachments: photos and videos (Shyden).** Videos up to **30 seconds** (a length limit, not a size limit) **(Shyden)**. Compression happens **in the customer's browser** before upload, without visible quality loss, using the browser's built-in media encoders **(Shyden)**. A browser that cannot compress uploads the original. The server enforces, whatever the browser does: video length ≤ 30 s (read from the file's container header), allowed file types by content not name, and a per-message attachment count (the builder picks it, stated in the plan). **No per-file size limit** (Shyden, 2026-11-03: limit by length, not size); only total free storage can refuse an upload. Uploads go straight to R2 with short-lived signed URLs; a ticket only references a file after the server has checked it.
-- After submit: a confirmation page, and a no-reply email with the **private ticket link** (a long random token; the link is the only key) **(Shyden)**.
-- **Private ticket page:** the thread and attachments; the customer can reply (with attachments) here. Replying reopens a closed ticket. No account.
+**Headless (Shyden 2026-11-04):** ShyDesk hosts no customer pages. Each product's own support page embeds **one shared piece**, built once in this repo, that every product drops in rather than rebuilding **(Shyden: "yes shared piece")**. The piece contains the contact form, Turnstile, photo and video compression and upload, the private ticket thread with replies, and (Release 2) the appeal form.
+
+- **The shared piece** **(builder call)**: a script served by ShyDesk at `/support-api/embed.js`, loaded by the product page through its own forward, defining a custom element `<shydesk-support view="contact|ticket" lang="...">` that renders in a shadow root and takes its colours and fonts from CSS custom properties the product sets. Because the script comes through the forward, every product always runs the version that matches the API, and nothing is published to npm. A product's link can still preset fields (e.g. category) through attributes.
+- **The forward (each product builds this once; Shyden 2026-11-04):** the product's own domain forwards `https://<product>/support-api/*` to `https://<shydesk host>/support-api/*`, keeping the method, path, query and body, streaming the body, and adding two headers: `X-ShyDesk-Forward-Key` (its forward key) and `X-ShyDesk-Client-IP` (the customer's IP as the product's edge saw it). It drops any copy of those headers sent by the browser and passes the response back unchanged. ShyDesk answers 404 to any `/support-api/*` call without a valid key, so calling workers.dev directly does nothing. The repo ships a reference forwarder as a Cloudflare Worker and a Node handler, each a few lines, and the API docs describe the contract.
+- **Same origin, so no CORS** **(builder call)**: the browser only ever talks to the product's own domain.
+- **Contact form** (the piece's `contact` view). Fields: email, subject, category, message, product-specific extra fields, attachments. Turnstile on submit, with one widget whose allowed hostnames are the product domains; ShyDesk verifies the token with the forwarded client IP. Rate limit per email and per forwarded client IP **(builder call)**. The `lang` attribute is accepted and ignored in v1, kept for the translation story.
+- **Attachments: photos and videos (Shyden).** Videos up to **30 seconds** (a length limit, not a size limit) **(Shyden)**. Compression happens **in the customer's browser** before upload, without visible quality loss, using the browser's built-in media encoders **(Shyden)**. A browser that cannot compress uploads the original. The server enforces, whatever the browser does: video length ≤ 30 s (read from the file's container header), allowed file types by content not name, and a per-message attachment count (the builder picks it, stated in the plan). **No per-file size limit** (Shyden, 2026-11-03: limit by length, not size); only total free storage can refuse an upload. Uploads go **through the forward in parts of at most 8 MB**, which ShyDesk writes into an R2 multipart upload through its bucket binding **(builder call, 2026-11-04)**. The free plan caps one request body at 100 MB and an uncompressed original has no size cap, so a single request could fail; parts keep every request small. Nothing goes to an R2 or `r2.dev` address, so there are no signed URLs, no R2 API token and no bucket CORS. A ticket only references a file after the server has checked it.
+- After submit: the piece shows a confirmation with the **private ticket link**, and a no-reply email sends the same link **(Shyden)**. The link is the product's ticket page address with a long random token in the fragment (`#t=<token>`), so the token never appears in the product's or ShyDesk's request logs. The piece sends it to the API in an `Authorization: Ticket <token>` header, never in a path or query **(builder call)**.
+- **Private ticket view** (the piece's `ticket` view, on the product's ticket page): the thread and attachments; the customer can reply (with attachments) there. Replying reopens a closed ticket. No account.
 - Every customer email is no-reply and only says there is something new, with the private link; never the reply text itself **(builder call: keeps content out of the mail provider)**.
 
 ### Staff desk
@@ -102,7 +109,7 @@ Isolation is enforced on the server for every query and file, not by hiding thin
 
 ### Reports API **(Shyden)**
 
-- **The product's server, never its app,** sends a report through the API with its product API key **(agreed with the ShyTalk session)**. The key lives only as a server secret: anything shipped in a phone app or web page can be extracted. The app sends the report to its own server, which checks the reporter's session and rate-limits, then calls ShyDesk. ShyDesk treats `reporter_id` as asserted by the product's server. Evidence uploads: the product's server requests the signed R2 URL and hands it to the app for a direct upload. The report carries the reporter's ID, the reported item (player, room, message...) and its ID, the chosen reason, optional note, evidence (same upload rules as the form), and context the app fills in itself.
+- **The product's server, never its app,** sends a report through the API with its product API key **(agreed with the ShyTalk session)**. The key lives only as a server secret: anything shipped in a phone app or web page can be extracted. The app sends the report to its own server, which checks the reporter's session and rate-limits, then calls ShyDesk. ShyDesk treats `reporter_id` as asserted by the product's server. Evidence uploads: the product's server requests a short-lived upload grant and hands it to the app, which uploads the parts through the product's own forward like the shared piece does (never to an R2 address; 2026-11-04). The report carries the reporter's ID, the reported item (player, room, message...) and its ID, the chosen reason, optional note, evidence (same upload rules as the form), and context the app fills in itself.
 - The reporter gets "received" from the app and nothing more.
 - The report shows in the desk and through the API to the product's dashboard, with the reported user's earlier reports and punishments **in that product only** **(builder call)**.
 
@@ -113,7 +120,7 @@ Isolation is enforced on the server for every query and file, not by hiding thin
 
 ### Appeals **(Shyden)**
 
-- Two ways in: an **appeal page** on ShyDesk linked from the product's ban notice (works for banned users, prefilled with the punishment reference), and **from inside the product**, sent by the product's server through the API (never with a key in the app).
+- Two ways in: the shared piece's **appeal view** on the product's own site, linked from the product's ban notice (works for banned users, prefilled with the punishment reference), and **from inside the product**, sent by the product's server through the API (never with a key in the app).
 - **One appeal per punishment.** Once rejected, no further appeal is accepted.
 - Appeals are visible to the admin only. An upheld appeal lifts the punishment through the same signed callback.
 
@@ -132,11 +139,14 @@ Isolation is enforced on the server for every query and file, not by hiding thin
 
 ## API
 
-Shipped API, so per Shyden Labs rules: a hand-written OpenAPI spec checked by contract tests, served with self-hosted `swagger-ui-dist`; docs for the private product API behind a sign-in; write calls tried on dev only. Authentication by per-product API key, scoped to that product's tickets only.
+Shipped API, so per Shyden Labs rules: a hand-written OpenAPI spec checked by contract tests, served with self-hosted `swagger-ui-dist` behind Access; write calls tried on dev only. Two surfaces:
+
+- **Customer API** under `/support-api/*`, used by the shared piece through each product's forward, authenticated by the forward key (product) plus Turnstile (new tickets) or the ticket token (reading and replying).
+- **Product API** under `/api/v1/*`, called by product servers directly on the workers.dev host (server to server, never through a customer's ISP), authenticated by a per-product API key scoped to that product's tickets only.
 
 ## Testing and checks
 
-Repo-template rules apply: strict TDD; unit tests with mocks only (no network, no processes), each under 1 s; integration and end-to-end suites run in CI against real services (D1/R2 on the dev account) and drive the UI with real input; one overall coverage percentage enforced in CI; SonarCloud gate. Mobile: the customer form and ticket page are tested on real Android and iOS phones before release (attachments from the phone camera roll especially), and Shyden signs off.
+Repo-template rules apply: strict TDD; unit tests with mocks only (no network, no processes), each under 1 s; integration and end-to-end suites run in CI against real services (D1/R2 on the dev account) and drive the UI with real input; one overall coverage percentage enforced in CI; SonarCloud gate. End-to-end tests drive the shared piece on a small demo product page deployed on the Non-Prod account behind the reference forwarder, so the forward contract is tested too. Mobile: the shared piece is tested on real Android and iOS phones on each product's real support page before release (attachments from the phone camera roll especially), and Shyden signs off.
 
 ## Further builder calls (from the builder read-through)
 
@@ -148,4 +158,4 @@ Repo-template rules apply: strict TDD; unit tests with mocks only (no network, n
 
 ## Left to the builder
 
-Web framework and rendering approach, the browser media libraries (licence rule above), the attachment count per message (stated in the plan), table design, token format, rate-limit numbers, how the desk's live badge updates, and the order of work within each release, starting with foundations (domain, Cloudflare accounts, Oracle account, keys).
+Web framework and rendering approach, the browser media libraries (licence rule above), the attachment count per message (stated in the plan), table design, token format, rate-limit numbers, how the desk's live badge updates, and the order of work within each release, starting with foundations (Cloudflare accounts, Oracle account, keys).
