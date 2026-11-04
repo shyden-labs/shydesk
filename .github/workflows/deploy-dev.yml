@@ -76,12 +76,34 @@ jobs:
             cat changed-files.txt
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
-      - name: Deploy the changed areas to dev
-        env:
-          DEPLOY_REHEARSAL: ${{ github.event_name == 'pull_request' }}
-        # ShyDesk has no deployable app yet (shyden-labs/shydesk#7): the script
-        # passes when only never-deployed files changed, and fails naming any
-        # other path, so app code cannot land without a dev deploy for it.
+      - name: Decide which areas deploy
+        id: areas
+        # Fails naming any changed path no deploy area covers, so new
+        # deployable code cannot land without a dev deploy for it
+        # (shyden-labs/shydesk#14); pipefail keeps tee from hiding that.
         run: |
           set -o pipefail
-          node scripts/deploy-dev.ts changed-files.txt | tee -a "$GITHUB_STEP_SUMMARY"
+          node scripts/deploy-dev.ts changed-files.txt "$GITHUB_OUTPUT" | tee -a "$GITHUB_STEP_SUMMARY"
+      # A pull request builds the Worker without credentials (`--dry-run`);
+      # develop deploys it with the dev environment's token, and fails naming
+      # the missing secret rather than skipping when it is not there.
+      - name: Deploy the Worker to dev
+        if: ${{ steps.areas.outputs.worker == 'true' }}
+        env:
+          DEPLOY_REHEARSAL: ${{ github.event_name == 'pull_request' }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          WRANGLER_SEND_METRICS: false
+        run: |
+          node scripts/npm-ci.ts
+          if [ "$DEPLOY_REHEARSAL" = "true" ]; then
+            npx wrangler deploy --env dev --dry-run --outdir dist
+            exit 0
+          fi
+          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID; do
+            if [ -z "${!name}" ]; then
+              echo "::error title=No $name in the dev environment::Add it to the dev environment before the Worker can deploy."
+              exit 1
+            fi
+          done
+          npx wrangler deploy --env dev
