@@ -136,6 +136,15 @@ describe('sendSmtp', () => {
     expect(lines.slice(-4)).toEqual(['..', '..hidden', 'ok.', '.']);
   });
 
+  // SMTP smuggling: a bare CR or LF must not leave `\r.\r` or `\n.\n` for a lax server to read as the end.
+  it('turns every bare CR and LF in the body into CRLF before dot-stuffing', async () => {
+    const server = new StandIn(HAPPY);
+    await sendSmtp(server, login, { ...mail, text: 'a\r.\rb\n.\nc\r\n.end' }, now);
+    const lines = (server.sent.find((line) => line.includes('\r\n')) ?? '').split('\r\n');
+    expect(lines.slice(-7)).toEqual(['a', '..', 'b', '..', 'c', '..end', '.']);
+    expect(lines.every((line) => !/[\r\n]/.test(line))).toBe(true);
+  });
+
   it('encodes a subject with non-ASCII characters as RFC 2047 UTF-8 base64', async () => {
     const server = new StandIn(HAPPY);
     await sendSmtp(server, login, { ...mail, subject: 'Yawelo Idle: ¡novedad!' }, now);
@@ -159,14 +168,21 @@ describe('sendSmtp', () => {
     expect(server.closed).toBe(true);
   });
 
-  it.each(['no-at-sign', 'a b@example.com', 'a@example.com>', '<a@example.com', '@example.com', 'a@'])(
-    'refuses the address %j before opening the dialogue',
-    async (to) => {
-      const server = new StandIn(HAPPY);
-      await expect(sendSmtp(server, login, { ...mail, to }, now)).rejects.toThrow(new SmtpError('input', 'to is not a plain address'));
-      expect(server.sent).toEqual([]);
-    },
-  );
+  it.each([
+    'no-at-sign',
+    'a\0b@example.com',
+    'a@exam\x7fple.com',
+    'a\tb@example.com',
+    'a b@example.com',
+    'a@example.com>',
+    '<a@example.com',
+    '@example.com',
+    'a@',
+  ])('refuses the address %j before opening the dialogue', async (to) => {
+    const server = new StandIn(HAPPY);
+    await expect(sendSmtp(server, login, { ...mail, to }, now)).rejects.toThrow(new SmtpError('input', 'to is not a plain address'));
+    expect(server.sent).toEqual([]);
+  });
 
   // Credentials never cross an unencrypted connection.
   it('refuses a server that does not offer STARTTLS, before sending AUTH', async () => {

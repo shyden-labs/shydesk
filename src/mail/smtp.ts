@@ -42,7 +42,8 @@ export class SmtpError extends Error {
   }
 }
 
-const PLAIN_ADDRESS = /^[^\s<>@]+@[^\s<>@]+$/;
+// No space, angle bracket, second @ or control character (NUL, DEL and the rest).
+const PLAIN_ADDRESS = /^[^\s<>@\p{Cc}]+@[^\s<>@\p{Cc}]+$/u;
 const ASCII = /^[\x20-\x7e]*$/;
 
 function checkInput(mail: SmtpMail): void {
@@ -71,7 +72,8 @@ function message(mail: SmtpMail, now: Date): string {
     'Content-Transfer-Encoding: 8bit',
   ];
   // RFC 5321 4.5.2: a line starting with a dot gets a second one.
-  const body = mail.text.split(/\r?\n/).map((line) => (line.startsWith('.') ? `.${line}` : line));
+  // Every bare CR or LF becomes a line end first, so none can smuggle a `.` line past a lax server.
+  const body = mail.text.split(/\r\n|\r|\n/).map((line) => (line.startsWith('.') ? `.${line}` : line));
   return [...headers, '', ...body, '.'].join('\r\n');
 }
 
