@@ -524,8 +524,10 @@ describe('the template runs one Node and one runner, pinned exactly', () => {
   // npm 11 skips every dependency install script that allowScripts does not name, and warns about it. The only
   // install script fsevents has is the `node-gyp rebuild` npm adds for a package published with a binding.gyp,
   // but its tarball ships no binding.gyp, only a prebuilt universal fsevents.node that loads without it (shyden-labs/repo-template#70).
-  it('allowScripts denies fsevents and approves nothing', () => {
-    expect(manifest().allowScripts).toEqual({ fsevents: false });
+  // esbuild's and workerd's postinstall only check for, or fetch, the platform binary npm already installs from
+  // their optional platform packages; `wrangler deploy --dry-run` builds the Worker without them (shyden-labs/shydesk#14).
+  it('allowScripts denies fsevents, esbuild and workerd, and approves nothing', () => {
+    expect(manifest().allowScripts).toEqual({ fsevents: false, esbuild: false, workerd: false });
   });
 
   // An allow-scripts line in .npmrc approves packages past allowScripts, so the file is pinned whole.
@@ -541,7 +543,10 @@ describe('the template runs one Node and one runner, pinned exactly', () => {
     const withScripts = Object.entries(packages)
       .filter(([, entry]) => entry.hasInstallScript === true)
       .map(([path]) => path.slice(path.lastIndexOf('node_modules/') + 'node_modules/'.length));
-    expect([withScripts.sort(), Object.keys({ ...manifest().allowScripts }).sort()]).toEqual([['fsevents'], ['fsevents']]);
+    expect([withScripts.sort(), Object.keys({ ...manifest().allowScripts }).sort()]).toEqual([
+      ['esbuild', 'fsevents', 'workerd'],
+      ['esbuild', 'fsevents', 'workerd'],
+    ]);
   });
 });
 

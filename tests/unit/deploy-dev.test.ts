@@ -69,19 +69,47 @@ describe('deploy-dev', () => {
     expect(keys).toEqual(['if', 'runs-on', 'environment', 'steps']);
   });
 
-  // ShyDesk has no deployable app yet (shyden-labs/shydesk#7): the step runs
-  // scripts/deploy-dev.ts, which fails naming any file that would need a
-  // deploy, and pipefail keeps tee from hiding that failure.
+  // The verdict step fails naming any path no deploy area covers, and
+  // pipefail keeps tee from hiding that failure (shyden-labs/shydesk#14).
   it('runs the deploy verdict script on the changed files, failing when it fails', () => {
     const jobs = topLevel(workflow(), 'jobs').split('\n');
-    const step = jobs.indexOf('      - name: Deploy the changed areas to dev');
-    expect(jobs.slice(step).filter((line) => line.trim() !== '')).toEqual([
-      '      - name: Deploy the changed areas to dev',
-      '        env:',
-      '          DEPLOY_REHEARSAL: ${{ github.event_name == pull_request }}',
+    const step = jobs.indexOf('      - name: Decide which areas deploy');
+    const next = jobs.indexOf('      - name: Deploy the Worker to dev');
+    expect(jobs.slice(step, next).filter((line) => line.trim() !== '')).toEqual([
+      '      - name: Decide which areas deploy',
+      '        id: areas',
       '        run: |',
       '          set -o pipefail',
-      '          node scripts/deploy-dev.ts changed-files.txt | tee -a $GITHUB_STEP_SUMMARY',
+      '          node scripts/deploy-dev.ts changed-files.txt $GITHUB_OUTPUT | tee -a $GITHUB_STEP_SUMMARY',
+    ]);
+  });
+
+  // A pull request builds the Worker with no credential; develop deploys with
+  // the dev environment's token and fails, naming it, when a secret is missing.
+  it('builds the Worker on a pull request and deploys it from develop, refusing a missing secret', () => {
+    const jobs = topLevel(workflow(), 'jobs').split('\n');
+    const step = jobs.indexOf('      - name: Deploy the Worker to dev');
+    expect(jobs.slice(step).filter((line) => line.trim() !== '')).toEqual([
+      '      - name: Deploy the Worker to dev',
+      '        if: ${{ steps.areas.outputs.worker == true }}',
+      '        env:',
+      '          DEPLOY_REHEARSAL: ${{ github.event_name == pull_request }}',
+      '          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}',
+      '          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}',
+      '          WRANGLER_SEND_METRICS: false',
+      '        run: |',
+      '          node scripts/npm-ci.ts',
+      '          if [ $DEPLOY_REHEARSAL = true ]; then',
+      '            npx wrangler deploy --env dev --dry-run --outdir dist',
+      '            exit 0',
+      '          fi',
+      '          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID; do',
+      '            if [ -z ${!name} ]; then',
+      '              echo ::error title=No $name in the dev environment::Add it to the dev environment before the Worker can deploy.',
+      '              exit 1',
+      '            fi',
+      '          done',
+      '          npx wrangler deploy --env dev',
     ]);
   });
 

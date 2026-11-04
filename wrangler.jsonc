@@ -1,0 +1,19 @@
+// ShyDesk's one Worker (shyden-labs/shydesk#14). The top level is the live
+// "ShyDesk" account; `--env dev` is "ShyDesk Non-Prod". The account comes from
+// CLOUDFLARE_ACCOUNT_ID in each GitHub environment, never from this file.
+// Each later task adds the binding it uses (R2 waits on shyden-labs/shydesk#35).
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "shydesk",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-20",
+  "workers_dev": false,
+  "d1_databases": [{ "binding": "DB", "database_name": "shydesk", "database_id": "ac3be099-947d-4afc-9859-46fd3e4f52a8" }],
+  "env": {
+    "dev": {
+      "name": "shydesk",
+      "workers_dev": true,
+      "d1_databases": [{ "binding": "DB", "database_name": "shydesk", "database_id": "482eef16-a848-488a-a1fa-e859031aabd1" }],
+    },
+  },
+}
