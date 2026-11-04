@@ -44,7 +44,7 @@ The data model is designed for both from the start, so Release 2 adds rather tha
 - **Hosting:** Cloudflare Workers (free plan), D1 database, R2 for attachments, Turnstile on the customer form. ShyDesk has **its own new Cloudflare accounts, "ShyDesk" (live) and "ShyDesk Non-Prod" (test+dev)** **(Shyden 2026-11-04)**. Live runs on the **free domain `shydesk.dpdns.org`** (DigitalPlat FreeDomain, delegated to the live account's Cloudflare nameservers) **(Shyden 2026-11-04: "use a free domain")**; Non-Prod runs on its `workers.dev` address, used only by tests and the products' dev sites.
 - **Reachability from Indonesia (measured 2026-11-04 on Biznet):** Indonesian ISPs block by DNS at their own discretion. `*.r2.dev` is hijacked to Biznet's block page even for queries sent to 1.1.1.1; a random name under `workers.dev`, `dpdns.org`, `eu.org` and the other free suffixes returns no-such-name (not blocked as a whole). Shyden chose a free domain knowing a shared free suffix carries the same or higher block risk than `workers.dev`, and that a paid domain would carry the least. Nothing customer-facing uses an `r2.dev` address.
 - **Staff sign-in:** Cloudflare Access with an email allow-list (free to 50 users). An Access application covers the `/desk`, `/admin` and `/api/docs` paths on ShyDesk's host. The Worker verifies the Access JWT on every desk and admin request **(builder call)**; it never trusts a header without verifying it.
-- **Outgoing mail:** Oracle OCI Email Delivery (Always Free, 3,000 a month), no-reply only. What Oracle keeps of message content, and for how long, must be found out and written into the privacy policy before launch.
+- **Outgoing mail:** the Sparked Host mailbox already paid for (`mail.shyden.co.uk`, relayed by MailBaby), over SMTP submission on port 587 with STARTTLS (Workers block port 25), from each product's own domain; no-reply only; no Oracle **(Shyden 2026-11-04)**. Its sending cap is unknown and accepted by Shyden; each product's monthly email share in settings is ShyDesk's own cap. What Sparked Host and MailBaby keep of message content, and for how long, must be found out and written into the privacy policy before launch.
 - **Data region:** Shyden Labs is in Indonesia; never assume UK or EU hosting. D1 location hint Asia-Pacific **(builder call)**.
 - **Language and tooling:** TypeScript, on the repo-template toolchain already in the repo (Vitest, ESLint, Prettier, tsc). Framework choices are the builder's, under the licence rule: shipped packages permissive only (MIT, BSD, Apache, ISC); MPL/LGPL only for build or test tools; GPL, AGPL, SSPL refused.
 
@@ -54,7 +54,7 @@ A **product** (e.g. `yawelo-idle`, `shytalk`, `shyden-co-uk`) is added on the ad
 
 - display name, its id (e.g. `shytalk`), and its **ticket page address**: the page on the product's own site where the shared piece shows a customer's ticket; no-reply emails link there;
 - its **allowed origins**: the product's own site origins (e.g. `https://shytalk.app`) that may embed the shared piece; they drive CORS and the Turnstile hostname check;
-- its **sender address on its own domain** (e.g. `no-reply@shytalk.app`) **(Shyden)**, set in settings because product domains change (Yawelo Idle's will move to a new domain soon); the product's domain carries the sending records (SPF, DKIM) Oracle gives;
+- its **sender address on its own domain** (e.g. `no-reply@shytalk.app`) **(Shyden)**, set in settings because product domains change (Yawelo Idle's will move to a new domain soon); the product's domain carries the sending records (SPF covering Sparked Host and MailBaby, and its own DKIM key from the Sparked Host server);
 - **ticket types** it offers, each one of:
   - **support**: two-way conversation via the private link;
   - **report**: fire-and-forget; a list of **reasons** (required pick), optional note, evidence;
@@ -153,8 +153,8 @@ Repo-template rules apply: strict TDD; unit tests with mocks only (no network, n
 - **First admin:** set by an environment variable at install (an email address); further admins and reps are managed on the settings screen.
 - **Private links** stay valid until the ticket's text is deleted. Anyone typing someone else's email only sends that person a link to a ticket they did not write; no data leaks.
 - **Free-plan limits:** the plan measures CPU time per request against the Workers free limit early (JWT check, upload checks), as the support-system summary's open question 10 asked; if a route cannot fit, it is raised with Shyden before any paid plan.
-- **Sending mail from a Worker:** the plan confirms OCI Email Delivery's HTTPS submission route works from Workers before building on it.
+- **Sending mail from a Worker:** the plan confirms a Worker can send through Sparked Host on port 587 (`connect()` with STARTTLS) before building on it.
 
 ## Left to the builder
 
-Web framework and rendering approach, the browser media libraries (licence rule above), the attachment count per message (stated in the plan), table design, token format, rate-limit numbers, how the desk's live badge updates, and the order of work within each release, starting with foundations (Cloudflare accounts, Oracle account, keys).
+Web framework and rendering approach, the browser media libraries (licence rule above), the attachment count per message (stated in the plan), table design, token format, rate-limit numbers, how the desk's live badge updates, and the order of work within each release, starting with foundations (Cloudflare accounts, the Sparked Host mailboxes, keys).

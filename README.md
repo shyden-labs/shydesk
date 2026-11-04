@@ -7,8 +7,8 @@ product's tickets in one desk, with canned replies and a read-only media viewer.
 Reports, punishments and appeals sent from inside products follow in Release 2.
 
 It runs on Cloudflare's free tier (Workers, D1, R2, Durable Objects, Turnstile,
-Access) and sends no-reply notification emails through Oracle Cloud's free email
-service. Anything specific to one deployment, such as domains and products, is
+Access) and sends no-reply notification emails over SMTP (port 587, STARTTLS)
+through a mailbox the operator already has. Anything specific to one deployment, such as domains and products, is
 configuration, so anyone can run their own copy for free.
 
 The approved design is
