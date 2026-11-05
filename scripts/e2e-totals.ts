@@ -1,10 +1,10 @@
 /**
  * One suite, every target, the same total (shyden-labs/shydesk#42 AC2).
  *
- * Each target's end-to-end run writes `<target>.json` with its counts into one
- * folder; this compares them, prints every target's total on one line, and
- * fails naming any target that ran fewer tests than another, skipped one, ran
- * none or reported twice.
+ * Each spec file's worker writes a run file with its target and counts into one
+ * folder; this adds each target's files together, prints every target's total
+ * on one line, and fails naming any target that ran fewer tests than another,
+ * skipped one or ran none.
  *
  *   node scripts/e2e-totals.ts <folder of run files>
  */
@@ -25,19 +25,30 @@ const tests = (count: number): string => `${String(count)} test${count === 1 ? '
 export function totalsProblems(runs: readonly TargetRun[]): string[] {
   if (runs.length === 0) return ['no target reported a run'];
   const most = Math.max(...runs.map(total));
-  const seen = new Set<string>();
   return [...runs]
     .sort((a, b) => a.target.localeCompare(b.target))
     .flatMap((run) => {
       const problems: string[] = [];
-      if (seen.has(run.target)) problems.push(`${run.target} reported more than one run`);
-      seen.add(run.target);
       if (total(run) === 0) problems.push(`${run.target} ran no tests`);
       else if (total(run) < most) problems.push(`${run.target} ran ${tests(total(run))}; another target ran ${String(most)}`);
       if (run.skipped > 0) problems.push(`${run.target} skipped ${tests(run.skipped)}`);
       return problems;
-    })
-    .filter((problem, index, all) => all.indexOf(problem) === index);
+    });
+}
+
+/** One run per target, its spec-file runs added together, in target order. */
+export function byTarget(runs: readonly TargetRun[]): TargetRun[] {
+  const sums = new Map<string, TargetRun>();
+  for (const run of runs) {
+    const sum = sums.get(run.target) ?? { target: run.target, passed: 0, failed: 0, skipped: 0 };
+    sums.set(run.target, {
+      target: run.target,
+      passed: sum.passed + run.passed,
+      failed: sum.failed + run.failed,
+      skipped: sum.skipped + run.skipped,
+    });
+  }
+  return [...sums.values()].sort((a, b) => a.target.localeCompare(b.target));
 }
 
 /** Each target and its total, in target order: `android 10 · chromium 10`. */
@@ -70,7 +81,7 @@ export function readRuns(folder: string): TargetRun[] {
 export function main(args: string[]): number {
   const [folder, ...rest] = args;
   if (folder === undefined || rest.length > 0) throw new Error('usage: node scripts/e2e-totals.ts <folder of run files>');
-  const runs = readRuns(folder);
+  const runs = byTarget(readRuns(folder));
   process.stdout.write(`e2e-totals: ${formatTotals(runs)}\n`);
   const problems = totalsProblems(runs);
   for (const problem of problems) process.stderr.write(`e2e-totals: ${problem}\n`);

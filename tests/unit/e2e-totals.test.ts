@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
-import { formatTotals, main, readRuns, totalsProblems, type TargetRun } from '../../scripts/e2e-totals.ts';
+import { byTarget, formatTotals, main, readRuns, totalsProblems, type TargetRun } from '../../scripts/e2e-totals.ts';
 
 // The run files are stood in: a unit test reads nothing from disk here.
 vi.mock('node:fs', () => ({ readdirSync: vi.fn(), readFileSync: vi.fn() }));
@@ -43,12 +43,14 @@ describe('totalsProblems', () => {
     expect(totalsProblems([run('chromium', 0)])).toEqual(['chromium ran no tests']);
   });
 
-  it('names a target that reported twice', () => {
-    expect(totalsProblems([run('chromium', 10), run('chromium', 10)])).toEqual(['chromium reported more than one run']);
-  });
-
   it('fails when no target reported at all', () => {
     expect(totalsProblems([])).toEqual(['no target reported a run']);
+  });
+});
+
+describe('byTarget', () => {
+  it('adds up the runs of each target, one per spec file', () => {
+    expect(byTarget([run('ios', 3, 1), run('android', 4), run('ios', 5, 0, 1)])).toEqual([run('android', 4), run('ios', 8, 1, 1)]);
   });
 });
 
@@ -100,6 +102,13 @@ describe('main', () => {
   });
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it("adds each target's spec-file runs together before comparing", () => {
+    dir.mockReturnValue(['ios-0-0.json', 'ios-0-1.json', 'android-1-0.json']);
+    read.mockImplementation((path: string) => JSON.stringify(path.includes('android') ? run('android', 10) : run('ios', 5)));
+    expect(main(['runs'])).toBe(0);
+    expect(out).toHaveBeenCalledWith('e2e-totals: android 10 · ios 10\n');
   });
 
   it('prints the totals and exits 0 when they agree', () => {

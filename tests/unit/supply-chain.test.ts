@@ -121,7 +121,7 @@ const splitPins = (uses: Use[]) => {
 describe('the CI supply chain is pinned', () => {
   it('pins each action at one SHA in every workflow, judged over every pinned use', () => {
     const uses = externalUses();
-    expect({ pinned: uses.length, split: splitPins(uses) }).toEqual({ pinned: 13, split: [] });
+    expect({ pinned: uses.length, split: splitPins(uses) }).toEqual({ pinned: 15, split: [] });
   });
 
   it('names an action whose bump reached one workflow and missed another', () => {
@@ -249,6 +249,8 @@ describe('Dependabot keeps the pins from rotting', () => {
  * (a list, an expression, a block of labels, another case) fails, naming it.
  */
 const RUNNER = 'ubuntu-26.04';
+// The end-to-end suite's desktop job needs Chrome, Firefox and Safari on one runner (shyden-labs/shydesk#42).
+const RUNNERS = new Set([RUNNER, 'macos-26']);
 
 interface Runner {
   where: string;
@@ -273,7 +275,7 @@ const runnersIn = (file: string, source: string): Runner[] => {
 };
 
 const floating = (runners: Runner[]) =>
-  runners.filter(({ value }) => value !== RUNNER).map(({ where, value }) => `${where} runs-on: ${value}`);
+  runners.filter(({ value }) => !RUNNERS.has(value)).map(({ where, value }) => `${where} runs-on: ${value}`);
 
 const workflowFiles = () => readdirSync(WORKFLOWS).filter((f) => /\.ya?ml$/.test(f));
 const workflow = (file: string) => readFileSync(join(WORKFLOWS, file), 'utf8');
@@ -340,9 +342,9 @@ const nodePin = (text: string): { version: string } | { wrong: string } => {
 };
 
 describe('the template runs one Node and one runner, pinned exactly', () => {
-  it(`every job runs on ${RUNNER}, judged over every runs-on read`, () => {
+  it(`every job runs on ${[...RUNNERS].join(' or ')}, judged over every runs-on read`, () => {
     const runners = workflowFiles().flatMap((f) => runnersIn(f, workflow(f)));
-    expect({ read: runners.length, floating: floating(runners) }).toEqual({ read: 6, floating: [] });
+    expect({ read: runners.length, floating: floating(runners) }).toEqual({ read: 7, floating: [] });
   });
 
   const job = (runsOn: string) => ['jobs:', '  build:', `    runs-on:${runsOn}`, '    steps:', '      - run: true', ''].join('\n');
@@ -355,12 +357,13 @@ describe('the template runs one Node and one runner, pinned exactly', () => {
     [' ${{ matrix.os }}', '${{ matrix.os }}'],
     [' Ubuntu-26.04', 'Ubuntu-26.04'],
     [' ubuntu-latest # was 26.04', 'ubuntu-latest'],
+    [' macos-latest', 'macos-latest'],
     ['\n      labels: ubuntu-26.04', ''],
   ])('names the runner written as runs-on:%j', (runsOn, value) => {
     expect(floating(runnersIn('ci.yml', job(runsOn)))).toEqual([`ci.yml build runs-on: ${value}`]);
   });
 
-  it.each([[' ubuntu-26.04'], [" 'ubuntu-26.04'"], [' ubuntu-26.04 # pinned']])('accepts runs-on:%j', (runsOn) => {
+  it.each([[' ubuntu-26.04'], [" 'ubuntu-26.04'"], [' ubuntu-26.04 # pinned'], [' macos-26']])('accepts runs-on:%j', (runsOn) => {
     const runners = runnersIn('ci.yml', job(runsOn));
     expect({ read: runners.length, floating: floating(runners) }).toEqual({ read: 1, floating: [] });
   });
@@ -373,7 +376,7 @@ describe('the template runs one Node and one runner, pinned exactly', () => {
 
   it("every setup-node step takes the read step's version and follows it, judged over every step read", () => {
     const steps = workflowFiles().flatMap((f) => setupNodeSteps(f, workflow(f)));
-    expect({ read: steps.length, wrong: steps.filter(({ wrong }) => wrong.length > 0) }).toEqual({ read: 6, wrong: [] });
+    expect({ read: steps.length, wrong: steps.filter(({ wrong }) => wrong.length > 0) }).toEqual({ read: 7, wrong: [] });
   });
 
   const steps = (...lines: string[]) => ['    steps:', ...lines, ''].join('\n');
