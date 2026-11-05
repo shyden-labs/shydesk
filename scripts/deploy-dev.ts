@@ -24,6 +24,7 @@ const NEVER_DEPLOYED_FILES = [
   'tsconfig.json',
   'eslint.config.js',
   'vitest.unit.config.ts',
+  'vitest.integration.config.ts',
   '.gitignore',
   '.npmrc',
   '.prettierignore',
