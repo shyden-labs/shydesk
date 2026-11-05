@@ -106,4 +106,5 @@ jobs:
               exit 1
             fi
           done
+          npx wrangler d1 migrations apply shydesk --env dev --remote
           npx wrangler deploy --env dev
