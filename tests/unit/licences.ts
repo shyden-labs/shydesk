@@ -27,15 +27,27 @@ const PERMISSIVE = new Set([
   'BlueOak-1.0.0',
   'BSD-2-Clause',
   'BSD-3-Clause',
+  'CC-BY-3.0',
   'CC-BY-4.0',
   'CC0-1.0',
   'ISC',
   'MIT',
   'MIT-0',
+  'PSF-2.0',
   'Python-2.0',
   'Unlicense',
   'Zlib',
 ]);
+
+/**
+ * Licences read from a package's own files where its package.json names none,
+ * keyed by lockfile path and exact version so a new version is judged again.
+ * css-value 0.0.1 (webdriverio's dependency): its Readme.md carries the full
+ * MIT licence text, Copyright (c) 2012 TJ Holowaychuk (shyden-labs/shydesk#42).
+ */
+const RECORDED: Readonly<Record<string, string>> = {
+  'node_modules/css-value@0.0.1': 'MIT',
+};
 
 /** Allowed for build and test tools only. */
 const WEAK_COPYLEFT = new Set(['LGPL-2.1-only', 'LGPL-2.1-or-later', 'LGPL-3.0-only', 'LGPL-3.0-or-later', 'MPL-2.0']);
@@ -95,7 +107,8 @@ export function licenceProblems(lock: LockFile): string[] {
     .filter(([path, entry]) => path !== '' && entry.link !== true)
     .flatMap(([path, entry]) => {
       const use: Use = entry.dev === true ? 'build' : 'shipped';
-      if (licenceVerdict(entry.license, use)) return [];
+      const licence = entry.license ?? RECORDED[`${path}@${entry.version ?? '?'}`];
+      if (licenceVerdict(licence, use)) return [];
       const label = use === 'build' ? 'build only' : 'shipped';
       return [`${path}@${entry.version ?? '?'} (${label}): ${entry.license ?? 'no licence'}`];
     });

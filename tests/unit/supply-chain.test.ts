@@ -526,8 +526,10 @@ describe('the template runs one Node and one runner, pinned exactly', () => {
   // but its tarball ships no binding.gyp, only a prebuilt universal fsevents.node that loads without it (shyden-labs/repo-template#70).
   // esbuild's and workerd's postinstall only check for, or fetch, the platform binary npm already installs from
   // their optional platform packages; `wrangler deploy --dry-run` builds the Worker without them (shyden-labs/shydesk#14).
-  it('allowScripts denies fsevents, esbuild and workerd, and approves nothing', () => {
-    expect(manifest().allowScripts).toEqual({ fsevents: false, esbuild: false, workerd: false });
+  // edgedriver's and geckodriver's postinstall downloads a browser driver; WebdriverIO fetches the driver it
+  // needs when a session starts, so the install-time copy is never used (shyden-labs/shydesk#42).
+  it('allowScripts denies edgedriver, esbuild, fsevents, geckodriver and workerd, and approves nothing', () => {
+    expect(manifest().allowScripts).toEqual({ edgedriver: false, esbuild: false, fsevents: false, geckodriver: false, workerd: false });
   });
 
   // An allow-scripts line in .npmrc approves packages past allowScripts, so the file is pinned whole.
@@ -544,8 +546,8 @@ describe('the template runs one Node and one runner, pinned exactly', () => {
       .filter(([, entry]) => entry.hasInstallScript === true)
       .map(([path]) => path.slice(path.lastIndexOf('node_modules/') + 'node_modules/'.length));
     expect([withScripts.sort(), Object.keys({ ...manifest().allowScripts }).sort()]).toEqual([
-      ['esbuild', 'fsevents', 'workerd'],
-      ['esbuild', 'fsevents', 'workerd'],
+      ['edgedriver', 'esbuild', 'fsevents', 'geckodriver', 'workerd'],
+      ['edgedriver', 'esbuild', 'fsevents', 'geckodriver', 'workerd'],
     ]);
   });
 });
