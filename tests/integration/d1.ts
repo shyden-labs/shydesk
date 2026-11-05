@@ -40,6 +40,32 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
   return envelope.result;
 }
 
+/** Every CI database's name starts with this; the dev database is plain `shydesk`. */
+export const CI_PREFIX = 'shydesk-ci-';
+
+/** A run longer than this has long since failed its hook timeout, so its database is a leftover. */
+const STALE_AFTER_MS = 60 * 60 * 1000;
+
+export interface DatabaseSummary {
+  uuid: string;
+  name: string;
+  created_at: string;
+}
+
+/**
+ * The CI databases a cancelled or crashed run left behind: named with the CI
+ * prefix and created over an hour ago. A younger one may belong to a run still
+ * going, and one with an unreadable time is kept rather than guessed at.
+ */
+export function staleCiDatabases(databases: DatabaseSummary[], now: number): string[] {
+  return databases.filter((d) => d.name.startsWith(CI_PREFIX) && now - Date.parse(d.created_at) > STALE_AFTER_MS).map((d) => d.uuid);
+}
+
+/** Lists the account's databases whose name contains the CI prefix (the free plan holds few, so one page of 100). */
+export function listCiDatabases(): Promise<DatabaseSummary[]> {
+  return call<DatabaseSummary[]>('GET', `/d1/database?name=${CI_PREFIX}&per_page=100`);
+}
+
 /** Creates an empty database in the APAC region and returns its id. */
 export async function createDatabase(name: string): Promise<string> {
   const result = await call<{ uuid: string }>('POST', '/d1/database', { name, primary_location_hint: 'apac' });
