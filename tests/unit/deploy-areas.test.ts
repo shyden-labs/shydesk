@@ -28,6 +28,7 @@ describe('undeployedPaths', () => {
         'eslint.config.js',
         'vitest.unit.config.ts',
         'vitest.integration.config.ts',
+        'wdio.conf.ts',
         '.gitignore',
         '.npmrc',
         '.prettierignore',
