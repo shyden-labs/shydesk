@@ -1,0 +1,1 @@
+-- Release 1 schema (shyden-labs/shydesk#15). Written after its integration test ran red.

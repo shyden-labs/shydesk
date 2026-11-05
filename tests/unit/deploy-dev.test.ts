@@ -86,7 +86,8 @@ describe('deploy-dev', () => {
 
   // A pull request builds the Worker with no credential; develop deploys with
   // the dev environment's token and fails, naming it, when a secret is missing.
-  it('builds the Worker on a pull request and deploys it from develop, refusing a missing secret', () => {
+  // The schema goes first, so the new Worker never reads a table not there yet (shyden-labs/shydesk#15).
+  it('builds the Worker on a pull request and migrates and deploys it from develop, refusing a missing secret', () => {
     const jobs = topLevel(workflow(), 'jobs').split('\n');
     const step = jobs.indexOf('      - name: Deploy the Worker to dev');
     expect(jobs.slice(step).filter((line) => line.trim() !== '')).toEqual([
@@ -109,6 +110,7 @@ describe('deploy-dev', () => {
       '              exit 1',
       '            fi',
       '          done',
+      '          npx wrangler d1 migrations apply shydesk --env dev --remote',
       '          npx wrangler deploy --env dev',
     ]);
   });
