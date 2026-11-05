@@ -30,8 +30,24 @@ export function targetsFrom(list: string): Target[] {
   return names as Target[];
 }
 
-/** The WebDriver capabilities that start a session on `target`. */
-export function capabilitiesFor(target: Target, env: { chromedriver?: string }): Capabilities {
+export interface TargetEnv {
+  chromedriver?: string;
+  iosUdid?: string;
+  androidSerial?: string;
+}
+
+/** The value, or an error naming the variable that should have held it. */
+function need(value: string | undefined, message: string): string {
+  if (value === undefined || value === '') throw new Error(message);
+  return value;
+}
+
+/**
+ * The WebDriver capabilities that start a session on `target`. Each phone is
+ * named by its UDID or serial, so Appium never quietly picks a simulator or
+ * emulator instead of the real device.
+ */
+export function capabilitiesFor(target: Target, env: TargetEnv): Capabilities {
   switch (target) {
     case 'chromium':
       return { browserName: 'chrome', 'goog:chromeOptions': { args: ['--headless=new'] } };
@@ -43,19 +59,22 @@ export function capabilitiesFor(target: Target, env: { chromedriver?: string }):
       return {
         platformName: 'iOS',
         browserName: 'Safari',
+        'appium:udid': need(env.iosUdid, "ios needs E2E_IOS_UDID: the real iPhone's UDID (xcrun xctrace list devices)"),
         'appium:automationName': 'XCUITest',
         // A tap on a page element is a real touch at its place on screen, not a script event.
         'appium:nativeWebTap': true,
         'appium:newCommandTimeout': 300,
       };
     case 'android':
-      if (env.chromedriver === undefined || env.chromedriver === '')
-        throw new Error('android needs E2E_CHROMEDRIVER: the path to a chromedriver matching Chrome on the phone');
       return {
         platformName: 'Android',
         browserName: 'Chrome',
+        'appium:udid': need(env.androidSerial, "android needs E2E_ANDROID_SERIAL: the real phone's serial (adb devices)"),
         'appium:automationName': 'UiAutomator2',
-        'appium:chromedriverExecutable': env.chromedriver,
+        'appium:chromedriverExecutable': need(
+          env.chromedriver,
+          'android needs E2E_CHROMEDRIVER: the path to a chromedriver matching Chrome on the phone',
+        ),
         'appium:newCommandTimeout': 300,
       };
   }

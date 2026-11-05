@@ -14,7 +14,8 @@
     "format:check": "prettier --check .",
     "prepare": "git config core.hooksPath .githooks",
     "test:integration": "vitest run --config vitest.integration.config.ts",
-    "test:e2e": "wdio run wdio.conf.ts; status=$?; node scripts/e2e-totals.ts .e2e-runs && exit $status"
+    "test:e2e": "wdio run wdio.conf.ts; status=$?; node scripts/e2e-totals.ts .e2e-runs && exit $status",
+    "test:e2e:device": "wdio run wdio.conf.ts; status=$?; node scripts/e2e-totals.ts .e2e-runs && exit $status"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "5.20261021.1",

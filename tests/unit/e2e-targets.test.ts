@@ -25,9 +25,11 @@ describe('targetsFrom', () => {
   });
 });
 
+const PHONES = { chromedriver: '/cd', iosUdid: '0000-IPHONE', androidSerial: 'SERIAL1' };
+
 describe('capabilitiesFor and targetOf agree', () => {
   it.each(TARGETS.map((target) => [target]))('%s', (target) => {
-    expect(targetOf(capabilitiesFor(target, { chromedriver: '/cd' }))).toBe(target);
+    expect(targetOf(capabilitiesFor(target, PHONES))).toBe(target);
   });
 });
 
@@ -41,7 +43,8 @@ describe('capabilitiesFor', () => {
   });
 
   it('drives the real iPhone through Appium with real touches in the page', () => {
-    expect(capabilitiesFor('ios', {})).toMatchObject({
+    expect(capabilitiesFor('ios', PHONES)).toMatchObject({
+      'appium:udid': '0000-IPHONE',
       platformName: 'iOS',
       browserName: 'Safari',
       'appium:automationName': 'XCUITest',
@@ -50,7 +53,8 @@ describe('capabilitiesFor', () => {
   });
 
   it('drives Chrome on the real Android phone through Appium with the given chromedriver', () => {
-    expect(capabilitiesFor('android', { chromedriver: '/cd' })).toMatchObject({
+    expect(capabilitiesFor('android', PHONES)).toMatchObject({
+      'appium:udid': 'SERIAL1',
       platformName: 'Android',
       browserName: 'Chrome',
       'appium:automationName': 'UiAutomator2',
@@ -59,8 +63,20 @@ describe('capabilitiesFor', () => {
   });
 
   it('refuses Android without a chromedriver, naming the variable', () => {
-    expect(() => capabilitiesFor('android', {})).toThrow(
+    expect(() => capabilitiesFor('android', { androidSerial: 'SERIAL1' })).toThrow(
       'android needs E2E_CHROMEDRIVER: the path to a chromedriver matching Chrome on the phone',
+    );
+  });
+});
+
+describe('capabilitiesFor refuses a phone it cannot name, so Appium never picks a simulator', () => {
+  it('refuses the iPhone without its UDID', () => {
+    expect(() => capabilitiesFor('ios', {})).toThrow("ios needs E2E_IOS_UDID: the real iPhone's UDID (xcrun xctrace list devices)");
+  });
+
+  it('refuses Android without its serial', () => {
+    expect(() => capabilitiesFor('android', { chromedriver: '/cd' })).toThrow(
+      "android needs E2E_ANDROID_SERIAL: the real phone's serial (adb devices)",
     );
   });
 });

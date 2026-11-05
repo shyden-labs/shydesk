@@ -37,8 +37,12 @@ Each run, with the phones unlocked and auto-lock off:
 ```sh
 adb reverse tcp:8765 tcp:8765
 E2E_TARGETS=android,ios E2E_ORIGIN=http://<this Mac's LAN address>:8765 \
-  E2E_CHROMEDRIVER=<path> npm run test:e2e
+  E2E_IOS_UDID=<xcrun xctrace list devices> E2E_ANDROID_SERIAL=<adb devices> \
+  E2E_CHROMEDRIVER=<path> npm run test:e2e:device
 ```
+
+`test:e2e:device` is the same command as `test:e2e`; only real-device runs use
+it on a laptop, where every other suite is CI's.
 
 The suite serves its pages on port 8765; the iPhone reaches them over the LAN,
 Android through `adb reverse`.

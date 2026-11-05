@@ -3,7 +3,8 @@
  *
  *   E2E_TARGETS=chromium,firefox,safari npm run test:e2e    (CI, macOS runner)
  *   E2E_TARGETS=android,ios E2E_ORIGIN=http://<this Mac's LAN address>:8765 \
- *     E2E_CHROMEDRIVER=<chromedriver for the phone's Chrome> npm run test:e2e   (real phones over USB, Appium on 4723)
+ *     E2E_IOS_UDID=<udid> E2E_ANDROID_SERIAL=<serial> \
+ *     E2E_CHROMEDRIVER=<chromedriver for the phone's Chrome> npm run test:e2e:device   (real phones over USB, Appium on 4723)
  *
  * Every target runs every spec file. Each worker writes its counts to
  * `.e2e-runs/`, and `scripts/e2e-totals.ts` prints the total per target and
@@ -14,7 +15,7 @@ import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
-import { capabilitiesFor, targetOf, targetsFrom, type Target } from './tests/e2e/harness/targets.ts';
+import { capabilitiesFor, targetOf, targetsFrom, type Target, type TargetEnv } from './tests/e2e/harness/targets.ts';
 
 const RUNS = '.e2e-runs';
 const PAGES = 'tests/e2e/pages';
@@ -22,7 +23,14 @@ const PORT = 8765;
 const TYPES: Record<string, string> = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript' };
 
 const targets = targetsFrom(process.env.E2E_TARGETS ?? '');
-const chromedriver = process.env.E2E_CHROMEDRIVER;
+// Only variables that are set are passed on, so a missing one is refused by name.
+const targetEnv = Object.fromEntries(
+  Object.entries({
+    chromedriver: process.env.E2E_CHROMEDRIVER,
+    iosUdid: process.env.E2E_IOS_UDID,
+    androidSerial: process.env.E2E_ANDROID_SERIAL,
+  }).filter((entry): entry is [string, string] => entry[1] !== undefined),
+) as TargetEnv;
 const appium = { hostname: '127.0.0.1', port: 4723, path: '/' };
 const onPhone = (target: Target): boolean => target === 'android' || target === 'ios';
 
@@ -34,7 +42,7 @@ export const config: Options.Testrunner & Capabilities.WithRequestedTestrunnerCa
   specs: ['./tests/e2e/**/*.e2e.ts'],
   maxInstances: 1,
   capabilities: targets.map((target) => ({
-    ...capabilitiesFor(target, chromedriver === undefined ? {} : { chromedriver }),
+    ...capabilitiesFor(target, targetEnv),
     ...(onPhone(target) ? appium : {}),
   })),
   baseUrl: process.env.E2E_ORIGIN ?? `http://localhost:${String(PORT)}`,
