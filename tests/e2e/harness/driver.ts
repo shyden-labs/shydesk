@@ -10,6 +10,17 @@ export interface Element {
   addValue(value: string): Promise<void>;
   getText(): Promise<string>;
   waitForExist(options: { timeout: number; timeoutMsg: string }): Promise<true>;
+  /** In the native layer: the element's top-left corner, in device pixels. */
+  getLocation(): Promise<{ x: number; y: number }>;
+}
+
+/** A W3C pointer action sequence, sent as one real input. */
+export interface PointerAction {
+  move(to: { x: number; y: number }): PointerAction;
+  down(): PointerAction;
+  pause(ms: number): PointerAction;
+  up(): PointerAction;
+  perform(): Promise<void>;
 }
 
 export interface Driver {
@@ -18,7 +29,11 @@ export interface Driver {
   getContext(): Promise<string | { id: string }>;
   switchContext(name: string): Promise<void>;
   keys(keys: string[]): Promise<void>;
-  $(selector: string): Element;
+  /** Runs `script` in the page with `args` (elements arrive as DOM elements); reads only, never input. */
+  execute<T>(script: string, ...args: unknown[]): Promise<T>;
+  action(type: 'pointer', options: { parameters: { pointerType: 'touch' } }): PointerAction;
+  /** A lazy handle; awaiting it resolves the element, as a page script needs. */
+  $(selector: string): Element & PromiseLike<Element>;
   waitUntil(condition: () => Promise<boolean>, options: { timeout: number; timeoutMsg: string }): Promise<true>;
 }
 

@@ -75,6 +75,12 @@ export function capabilitiesFor(target: Target, env: TargetEnv): Capabilities {
           env.chromedriver,
           'android needs E2E_CHROMEDRIVER: the path to a chromedriver matching Chrome on the phone',
         ),
+        // OxygenOS forbids adb from clearing Chrome's data, which Appium and
+        // chromedriver each do by default.
+        'appium:noReset': true,
+        'goog:chromeOptions': { androidKeepAppDataDir: true },
+        // BiDi cannot carry Android's native selectors into NATIVE_APP.
+        'wdio:enforceWebDriverClassic': true,
         'appium:newCommandTimeout': 300,
       };
   }
@@ -104,10 +110,38 @@ function plain(label: string): string {
 export function nativeFinder(phone: Phone, label: string): string {
   return phone === 'android'
     ? `android=new UiSelector().descriptionStartsWith("${plain(label)}")`
-    : `-ios predicate string:label == '${plain(label)}'`;
+    : // The photo picker shows an album as a button holding a text of the same name.
+      `-ios predicate string:label == '${plain(label)}' AND type != 'XCUIElementTypeStaticText'`;
 }
 
+export interface Box {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * The screen point, in device pixels, at the middle of a page element: its CSS
+ * box scaled by the page's pixel ratio, from where the page area starts on
+ * screen. Chrome on Android gives text fields no native name, so they are
+ * touched where they are drawn.
+ */
+export function screenPoint(box: Box, ratio: number, page: { x: number; y: number }): { x: number; y: number } {
+  return {
+    x: Math.round(page.x + (box.x + box.width / 2) * ratio),
+    y: Math.round(page.y + (box.y + box.height / 2) * ratio),
+  };
+}
+
+/** Chrome's page area in the Android native tree. */
+export const ANDROID_PAGE = '//android.webkit.WebView';
+
 const SECONDS: Record<Exclude<Fixture, 'photo.jpg'>, string> = { 'ok-10s.mp4': '10', 'long-45s.mp4': '45' };
+/** How the iPhone picker speaks each length. */
+const SPOKEN: Record<Exclude<Fixture, 'photo.jpg'>, string> = { 'ok-10s.mp4': 'ten', 'long-45s.mp4': 'forty-five' };
+/** Only the items themselves: the grid around them is labelled with every item. */
+const IOS_ITEM = "-ios predicate string:type == 'XCUIElementTypeImage' AND";
 
 /** A selector for one test file in the phone's own photo picker, by its kind and length. */
 export function pickerItem(phone: Phone, fixture: Fixture): string {
@@ -116,6 +150,6 @@ export function pickerItem(phone: Phone, fixture: Fixture): string {
       ? 'android=new UiSelector().descriptionStartsWith("Photo taken")'
       : `android=new UiSelector().descriptionContains("with duration 00:${SECONDS[fixture]}")`;
   return fixture === 'photo.jpg'
-    ? "-ios predicate string:label BEGINSWITH 'Photo'"
-    : `-ios predicate string:label BEGINSWITH 'Video' AND label CONTAINS '${SECONDS[fixture]} seconds'`;
+    ? `${IOS_ITEM} label BEGINSWITH 'Photo,'`
+    : `${IOS_ITEM} label BEGINSWITH 'Video, ${SPOKEN[fixture]} seconds,'`;
 }
