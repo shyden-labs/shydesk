@@ -15,7 +15,7 @@
  */
 import { driver } from './driver.ts';
 import { resolve } from 'node:path';
-import { nativeFinder, pickerItem, targetOf, type Fixture, type Phone } from './targets.ts';
+import { ANDROID_PAGE, nativeFinder, pickerItem, screenPoint, targetOf, type Box, type Fixture, type Phone } from './targets.ts';
 
 const WAIT = 15_000;
 
@@ -51,6 +51,33 @@ export async function tap(label: string): Promise<void> {
   await native(() => nativeTap(on, nativeFinder(on, label), `the control named "${label}"`));
 }
 
+/**
+ * A real touch where the page draws the element named `label`. Chrome on
+ * Android gives text fields no native name, so the field's box is read from
+ * the page and touched on screen, inside Chrome's page area.
+ */
+async function touchDrawn(label: string): Promise<void> {
+  const element = driver().$(`aria/${label}`);
+  await element.waitForExist({ timeout: WAIT, timeoutMsg: `android: the field named "${label}" never appeared on the page` });
+  // Reads where the field is drawn; the input itself is the real touch below.
+  const { box, ratio } = await driver().execute<{ box: Box; ratio: number }>(
+    'const r = arguments[0].getBoundingClientRect(); return { box: { x: r.x, y: r.y, width: r.width, height: r.height }, ratio: window.devicePixelRatio };',
+    element,
+  );
+  await native(async () => {
+    const page = driver().$(ANDROID_PAGE);
+    await page.waitForExist({ timeout: WAIT, timeoutMsg: `android: Chrome's page area never appeared (${ANDROID_PAGE})` });
+    const at = screenPoint(box, ratio, await page.getLocation());
+    await driver()
+      .action('pointer', { parameters: { pointerType: 'touch' } })
+      .move(at)
+      .down()
+      .pause(50)
+      .up()
+      .perform();
+  });
+}
+
 /** Real key presses into the field named `label`, after a real tap on it. */
 export async function type(label: string, text: string): Promise<void> {
   const on = phone();
@@ -62,7 +89,8 @@ export async function type(label: string, text: string): Promise<void> {
     });
     return;
   }
-  await tap(label);
+  if (on === 'android') await touchDrawn(label);
+  else await tap(label);
   // W3C key actions: trusted keydown and input per key, on desktop and Android alike.
   await driver().keys(Array.from(text));
 }

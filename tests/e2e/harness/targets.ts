@@ -110,8 +110,32 @@ function plain(label: string): string {
 export function nativeFinder(phone: Phone, label: string): string {
   return phone === 'android'
     ? `android=new UiSelector().descriptionStartsWith("${plain(label)}")`
-    : `-ios predicate string:label == '${plain(label)}'`;
+    : // The photo picker shows an album as a button holding a text of the same name.
+      `-ios predicate string:label == '${plain(label)}' AND type != 'XCUIElementTypeStaticText'`;
 }
+
+export interface Box {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * The screen point, in device pixels, at the middle of a page element: its CSS
+ * box scaled by the page's pixel ratio, from where the page area starts on
+ * screen. Chrome on Android gives text fields no native name, so they are
+ * touched where they are drawn.
+ */
+export function screenPoint(box: Box, ratio: number, page: { x: number; y: number }): { x: number; y: number } {
+  return {
+    x: Math.round(page.x + (box.x + box.width / 2) * ratio),
+    y: Math.round(page.y + (box.y + box.height / 2) * ratio),
+  };
+}
+
+/** Chrome's page area in the Android native tree. */
+export const ANDROID_PAGE = '//android.webkit.WebView';
 
 const SECONDS: Record<Exclude<Fixture, 'photo.jpg'>, string> = { 'ok-10s.mp4': '10', 'long-45s.mp4': '45' };
 

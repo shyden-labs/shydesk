@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { capabilitiesFor, nativeFinder, pickerItem, targetOf, TARGETS, targetsFrom } from '../e2e/harness/targets.ts';
+import { capabilitiesFor, nativeFinder, pickerItem, targetOf, TARGETS, targetsFrom, screenPoint } from '../e2e/harness/targets.ts';
 
 /**
  * The every-target suite's targets (shyden-labs/shydesk#42 AC1): set-up is the
@@ -111,8 +111,12 @@ describe('nativeFinder', () => {
     expect(nativeFinder('android', 'Your message')).toBe('android=new UiSelector().descriptionStartsWith("Your message")');
   });
 
-  it('finds an iPhone control by its accessible name', () => {
-    expect(nativeFinder('ios', 'Your message')).toBe("-ios predicate string:label == 'Your message'");
+  // The iPhone photo picker shows an album as a button holding a text of the
+  // same name, so a match on the name alone finds two (measured 2026-11-06).
+  it('finds an iPhone control by its accessible name, never the text inside it', () => {
+    expect(nativeFinder('ios', 'Your message')).toBe(
+      "-ios predicate string:label == 'Your message' AND type != 'XCUIElementTypeStaticText'",
+    );
   });
 
   it.each([
@@ -139,5 +143,22 @@ describe('pickerItem', () => {
     ['long-45s.mp4', "-ios predicate string:label BEGINSWITH 'Video' AND label CONTAINS '45 seconds'"],
   ] as const)('finds %s in the iPhone picker by its kind and length', (fixture, selector) => {
     expect(pickerItem('ios', fixture)).toBe(selector);
+  });
+});
+
+// Chrome on Android gives text fields no name in the native tree, however the
+// page labels them (aria-label, label, label for, placeholder: all measured
+// empty on the OnePlus, 2026-11-06), so a field is touched where it is drawn.
+describe('screenPoint', () => {
+  it('is the middle of the element, scaled by the pixel ratio, from where the page starts on screen', () => {
+    expect(screenPoint({ x: 10, y: 20, width: 100, height: 40 }, 3, { x: 0, y: 356 })).toEqual({ x: 180, y: 476 });
+  });
+
+  it('adds a page area that does not start at the left edge', () => {
+    expect(screenPoint({ x: 0, y: 0, width: 10, height: 10 }, 2, { x: 50, y: 100 })).toEqual({ x: 60, y: 110 });
+  });
+
+  it('rounds to whole device pixels', () => {
+    expect(screenPoint({ x: 0, y: 0, width: 3, height: 3 }, 2.625, { x: 0, y: 0 })).toEqual({ x: 4, y: 4 });
   });
 });
