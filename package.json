@@ -29,7 +29,7 @@
     "@wdio/spec-reporter": "10.1.0",
     "@wdio/types": "10.1.0",
     "ajv": "8.20.0",
-    "eslint": "10.13.0",
+    "eslint": "10.14.0",
     "prettier": "3.9.10",
     "swagger-ui-dist": "5.34.1",
     "typescript": "6.0.3",
