@@ -1,3 +1,4 @@
+import type { D1Database } from '@cloudflare/workers-types';
 // A thin client for the Cloudflare D1 REST API, used by the integration suite
 // to create a disposable database on ShyDesk Non-Prod, run SQL in it and
 // delete it again (shyden-labs/shydesk#15). CI supplies the account and a
@@ -79,4 +80,29 @@ export async function deleteDatabase(id: string): Promise<void> {
 /** Runs SQL (one or more statements) and returns each statement's rows. */
 export function query(id: string, sql: string, params: unknown[] = []): Promise<Statement[]> {
   return call<Statement[]>('POST', `/d1/database/${id}/query`, { sql, params });
+}
+
+/**
+ * The D1 binding's shape over the REST API, so code written for the Worker's
+ * `DB` binding runs unchanged against a real database here. `batch` runs its
+ * statements one after another; the REST API has no transaction across calls,
+ * so a test never relies on a batch rolling back.
+ */
+export function restD1(id: string): D1Database {
+  const rowsOf = async (sql: string, values: unknown[]): Promise<Record<string, unknown>[]> =>
+    (await query(id, sql, values))[0]?.results ?? [];
+  const prepared = (sql: string, values: unknown[] = []) => ({
+    sql,
+    values,
+    bind: (...bound: unknown[]) => prepared(sql, bound),
+    first: async () => (await rowsOf(sql, values))[0] ?? null,
+    all: async () => ({ results: await rowsOf(sql, values), success: true, meta: {} }),
+    run: async () => ({ results: await rowsOf(sql, values), success: true, meta: {} }),
+  });
+  const batch = async (list: { sql: string; values: unknown[] }[]) => {
+    const out = [];
+    for (const s of list) out.push({ results: await rowsOf(s.sql, s.values), success: true, meta: {} });
+    return out;
+  };
+  return { prepare: (sql: string) => prepared(sql), batch } as unknown as D1Database;
 }
