@@ -69,6 +69,10 @@ describe('eslint.config.js', () => {
   });
 
   it('leaves out only generated folders', () => {
-    expect(config.flatMap((c) => (Object.keys(c).length === 1 ? (c.ignores ?? []) : []))).toEqual(['coverage/', 'node_modules/']);
+    expect(config.flatMap((c) => (Object.keys(c).length === 1 ? (c.ignores ?? []) : []))).toEqual([
+      'coverage/',
+      'node_modules/',
+      '.assets/',
+    ]);
   });
 });

@@ -8,6 +8,10 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-10-20",
   "workers_dev": false,
+  // The API docs (shyden-labs/shydesk#26): built by scripts/build-api-docs.ts
+  // before every deploy, and served only through the Worker's staff check.
+  "build": { "command": "node scripts/build-api-docs.ts" },
+  "assets": { "directory": "./.assets", "binding": "ASSETS", "run_worker_first": true },
   "d1_databases": [{ "binding": "DB", "database_name": "shydesk", "database_id": "ac3be099-947d-4afc-9859-46fd3e4f52a8" }],
   "env": {
     "dev": {

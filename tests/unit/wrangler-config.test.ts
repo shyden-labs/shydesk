@@ -1,0 +1,29 @@
+import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+
+// The Worker's static assets hold the API docs (shyden-labs/shydesk#26). They
+// are built before every deploy and dry run, and every request reaches the
+// Worker first, so no asset is served before the staff check in src/api/docs.ts.
+const text = readFileSync(new URL('../../wrangler.jsonc', import.meta.url), 'utf8');
+const config = JSON.parse(
+  text
+    .split('\n')
+    .filter((line) => !line.trim().startsWith('//'))
+    .join('\n')
+    .replace(/,(\s*[}\]])/g, '$1'),
+) as { assets?: unknown; build?: unknown; env: { dev: { assets?: unknown; build?: unknown } } };
+
+describe('wrangler.jsonc', () => {
+  it('serves the built docs as assets, through the Worker first, as ASSETS', () => {
+    expect(config.assets).toEqual({ directory: './.assets', binding: 'ASSETS', run_worker_first: true });
+  });
+
+  it('builds the docs before every deploy', () => {
+    expect(config.build).toEqual({ command: 'node scripts/build-api-docs.ts' });
+  });
+
+  it('lets dev inherit both, so dev and live serve the same docs the same way', () => {
+    expect(config.env.dev.assets).toBeUndefined();
+    expect(config.env.dev.build).toBeUndefined();
+  });
+});

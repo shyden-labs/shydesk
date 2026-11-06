@@ -26,5 +26,5 @@
     "skipLibCheck": false
   },
   "include": ["**/*.ts", "**/*.js"],
-  "exclude": ["node_modules", "coverage"]
+  "exclude": ["node_modules", "coverage", ".assets"]
 }

@@ -6,7 +6,7 @@ import { undeployedPaths, workerChanged, verdict, main } from '../../scripts/dep
 
 /**
  * The dev deploy's areas (shyden-labs/shydesk#14): the Worker (src/,
- * public/, migrations/, wrangler.jsonc) deploys; docs, tests, scripts,
+ * public/, migrations/, openapi/, wrangler.jsonc) deploys; docs, tests, scripts,
  * workflows, hooks and root config never do. A change outside both fails,
  * naming the path, so new deployable code can never land without a dev deploy
  * defined for it.
@@ -67,6 +67,12 @@ describe('workerChanged', () => {
     }
   });
 
+  // The API docs page serves the spec (shyden-labs/shydesk#26), so a spec change redeploys dev.
+  it('is true for a change to the OpenAPI spec under openapi/', () => {
+    expect(workerChanged(['openapi/shydesk.v1.yaml'])).toBe(true);
+    expect(undeployedPaths(['openapi/shydesk.v1.yaml'])).toEqual([]);
+  });
+
   // A prefix match would let `srcmap/` or `wrangler.jsonc.bak` deploy the Worker.
   it('is false for docs alone, and for names that only start like a Worker path', () => {
     expect(workerChanged(['docs/a.md', 'srcmap/a.ts', 'public-old/a.js', 'wrangler.jsonc.bak'])).toBe(false);
@@ -86,7 +92,7 @@ describe('verdict', () => {
     expect(verdict(['docs/a.md', 'src/index.ts'])).toEqual({
       code: 0,
       worker: true,
-      lines: ['Deploying the Worker: a file under src/, public/, migrations/ or wrangler.jsonc changed.'],
+      lines: ['Deploying the Worker: a file under src/, public/, migrations/, openapi/ or wrangler.jsonc changed.'],
     });
   });
 
