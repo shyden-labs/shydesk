@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Input harness</title>
+    <style>
+      body {
+        font:
+          20px system-ui,
+          sans-serif;
+        margin: 16px;
+      }
+      button,
+      input {
+        font: inherit;
+        margin: 8px 0;
+        display: block;
+        min-height: 48px;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- The suite's own check that tap, type and pick-file reach a page as real input on every target (shyden-labs/shydesk#42 AC4). -->
+    <button type="button" aria-label="Harness button">Press</button>
+    <input type="text" aria-label="Harness field" autocomplete="off" />
+    <input type="file" aria-label="Harness file" accept="image/*,video/*" />
+    <output aria-label="Harness events" aria-live="polite"></output>
+    <script>
+      const events = [];
+      const output = document.querySelector('output');
+      const record = (entry) => {
+        events.push(entry);
+        output.textContent = events.join(' ');
+      };
+      const button = document.querySelector('button');
+      const field = document.querySelector('input[type=text]');
+      const file = document.querySelector('input[type=file]');
+      button.addEventListener('click', (event) => record(`button-click:${event.isTrusted}`));
+      field.addEventListener('keydown', (event) => record(`field-keydown:${event.isTrusted}`));
+      field.addEventListener('input', (event) => record(`field-input:${event.isTrusted}:${field.value}`));
+      file.addEventListener('change', (event) =>
+        record(`file-change:${event.isTrusted}:${[...file.files].map((picked) => picked.size).join(',')}`),
+      );
+    </script>
+  </body>
+</html>

@@ -168,6 +168,10 @@ describe('withoutTsComments', () => {
     expect(withoutTsComments('a /* note */b')).toBe('a b');
   });
 
+  it('keeps the newlines of a block comment, so line numbers hold', () => {
+    expect(withoutTsComments('a /* one\ntwo\n*/b\nc')).toBe('a \n\nb\nc');
+  });
+
   it('removes an unterminated block comment to the end of the file', () => {
     expect(withoutTsComments('a /* note')).toBe('a ');
   });

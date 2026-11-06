@@ -9,9 +9,12 @@ import { licenceProblems, licenceVerdict, type LockFile } from './licences.ts';
  */
 
 describe('licenceVerdict for a shipped package', () => {
-  it.each(['MIT', 'ISC', 'Apache-2.0', 'BSD-2-Clause', 'BSD-3-Clause', 'BlueOak-1.0.0', '0BSD', 'CC0-1.0'])('passes %s', (licence) => {
-    expect(licenceVerdict(licence, 'shipped')).toBe(true);
-  });
+  it.each(['MIT', 'ISC', 'Apache-2.0', 'BSD-2-Clause', 'BSD-3-Clause', 'BlueOak-1.0.0', '0BSD', 'CC0-1.0', 'PSF-2.0', 'CC-BY-3.0'])(
+    'passes %s',
+    (licence) => {
+      expect(licenceVerdict(licence, 'shipped')).toBe(true);
+    },
+  );
 
   it.each(['MPL-2.0', 'LGPL-3.0-only', 'LGPL-2.1-or-later'])('refuses the weak copyleft %s', (licence) => {
     expect(licenceVerdict(licence, 'shipped')).toBe(false);
@@ -66,6 +69,16 @@ describe('licenceVerdict reads SPDX expressions', () => {
 });
 
 describe('licenceProblems', () => {
+  it("takes the licence recorded from the package's own files when its package.json names none", () => {
+    const lock: LockFile = { packages: { '': {}, 'node_modules/css-value': { version: '0.0.1', dev: true } } };
+    expect(licenceProblems(lock)).toEqual([]);
+  });
+
+  it('checks a new version of that package again, since the record is for one version', () => {
+    const lock: LockFile = { packages: { '': {}, 'node_modules/css-value': { version: '0.0.2', dev: true } } };
+    expect(licenceProblems(lock)).toEqual(['node_modules/css-value@0.0.2 (build only): no licence']);
+  });
+
   const lock = (packages: LockFile['packages']): LockFile => ({ packages });
 
   it('names each refused package with its version, licence and use', () => {
