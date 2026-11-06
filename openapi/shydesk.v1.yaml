@@ -1,0 +1,142 @@
+# ShyDesk's public API (shyden-labs/shydesk#26), written by hand and checked
+# against the Worker by tests/unit/openapi-contract.test.ts: every route under
+# /api/v1 and /support-api is here, and every response validates.
+openapi: 3.1.0
+info:
+  title: ShyDesk API
+  version: 1.0.0
+  description: >-
+    Product servers read their tickets through /api/v1 with the API key made
+    for them on the ShyDesk admin screen. The key is sent as a Bearer token and
+    only ever belongs to one product. The shared support piece's /support-api
+    routes are described in docs/embedding.md as they are added.
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+servers:
+  - url: https://shydesk.dpdns.org
+    description: Live
+security:
+  - productKey: []
+paths:
+  /api/v1/products/{product}/feed:
+    get:
+      operationId: getProductFeed
+      summary: New and changed tickets of one product, oldest change first.
+      description: >-
+        Every change to a ticket gives it the next sequence number (`seq`), so
+        a caller that keeps `next_cursor` and sends it back as `since_cursor`
+        sees each change once. A ticket changed again comes back again with its
+        new `seq`. An empty page keeps the cursor it was sent.
+      parameters:
+        - name: product
+          in: path
+          required: true
+          description: The product id the key was made for.
+          schema:
+            type: string
+        - name: since_cursor
+          in: query
+          required: false
+          description: The `next_cursor` of the last page read; 0 or left out starts from the beginning.
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 9007199254740991
+            default: 0
+        - name: limit
+          in: query
+          required: false
+          description: Most tickets in one page.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+      responses:
+        '200':
+          description: One page of changes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FeedPage'
+        '400':
+          description: '`since_cursor` or `limit` is not a whole number in range.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: No key, or the key is unknown or revoked.
+          headers:
+            WWW-Authenticate:
+              schema:
+                type: string
+                const: Bearer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: The key belongs to another product.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+components:
+  securitySchemes:
+    productKey:
+      type: http
+      scheme: bearer
+      description: The product's API key, made on the ShyDesk admin screen. Only its hash is stored.
+  schemas:
+    FeedPage:
+      type: object
+      additionalProperties: false
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/TicketSummary'
+        next_cursor:
+          type: integer
+          minimum: 0
+          description: Send back as `since_cursor` to read the changes after this page.
+    TicketSummary:
+      type: object
+      additionalProperties: false
+      required: [id, status, subject, category, created_at, updated_at, closed_at, seq]
+      description: A ticket without the customer's details or any message text.
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+          enum: [open, waiting, closed]
+        subject:
+          type: string
+          maxLength: 150
+        category:
+          type: string
+          enum: [question, bug, account, payment, other]
+        created_at:
+          type: integer
+          description: Milliseconds since 1970-01-01 UTC.
+        updated_at:
+          type: integer
+          description: Milliseconds since 1970-01-01 UTC.
+        closed_at:
+          type: [integer, 'null']
+          description: Milliseconds since 1970-01-01 UTC, or null while the ticket is open or waiting.
+        seq:
+          type: integer
+          minimum: 1
+    Error:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: string
