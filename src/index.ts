@@ -3,6 +3,9 @@ import { adminRoutes } from './admin/routes.ts';
 import { docsRoutes, type DocsEnv } from './api/docs.ts';
 import { apiRoutes } from './api/routes.ts';
 
+// The Durable Object classes wrangler.jsonc binds must be exported from the entry point.
+export { TicketTimer } from './timers/ticket-timer.ts';
+
 /**
  * ShyDesk's single Worker (shyden-labs/shydesk#14). Staff routes need the
  * Access settings and FIRST_ADMIN_EMAIL; on a deploy without them (until

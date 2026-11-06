@@ -13,11 +13,15 @@
   "build": { "command": "node scripts/build-api-docs.ts" },
   "assets": { "directory": "./.assets", "binding": "ASSETS", "run_worker_first": true },
   "d1_databases": [{ "binding": "DB", "database_name": "shydesk", "database_id": "ac3be099-947d-4afc-9859-46fd3e4f52a8" }],
+  // Each ticket's own timer (shyden-labs/shydesk#22): SQLite-backed, the kind the Free plan allows.
+  "durable_objects": { "bindings": [{ "name": "TICKET_TIMER", "class_name": "TicketTimer" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["TicketTimer"] }],
   "env": {
     "dev": {
       "name": "shydesk",
       "workers_dev": true,
       "d1_databases": [{ "binding": "DB", "database_name": "shydesk", "database_id": "482eef16-a848-488a-a1fa-e859031aabd1" }],
+      "durable_objects": { "bindings": [{ "name": "TICKET_TIMER", "class_name": "TicketTimer" }] },
     },
   },
 }
