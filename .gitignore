@@ -4,3 +4,4 @@ coverage/
 dist/
 .wrangler/
 .e2e-runs/
+.assets/

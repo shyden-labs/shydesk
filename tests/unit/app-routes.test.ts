@@ -28,3 +28,11 @@ describe('/api/v1 on the Worker', () => {
     expect(await response.json()).toEqual({ error: 'A valid API key is required.' });
   });
 });
+
+// The API docs (shyden-labs/shydesk#26) are mounted on the Worker behind the
+// staff check: with Access not configured, everyone gets 401.
+describe('/api/docs on the Worker', () => {
+  it('is served, and refuses a request with no Access token with 401', async () => {
+    expect((await app.request('/api/docs/', {}, unconfigured)).status).toBe(401);
+  });
+});
