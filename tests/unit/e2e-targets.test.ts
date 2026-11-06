@@ -62,6 +62,25 @@ describe('capabilitiesFor', () => {
     });
   });
 
+  // OxygenOS refuses `pm clear com.android.chrome` from adb (no
+  // CLEAR_APP_USER_DATA permission). Appium (noReset) and then chromedriver
+  // (androidKeepAppDataDir) each clear it by default, stopping the session before
+  // any test runs (OnePlus, 2026-11-06, both measured). Chrome keeps its data
+  // between runs, as Safari does on the iPhone.
+  // With BiDi, WebdriverIO cannot send Android's native selectors
+  // (`android=new UiSelector()...`) once in NATIVE_APP: "Can't transform
+  // classic selector -android uiautomator to Bidi selector" (OnePlus, 2026-11-06).
+  it('drives Android over classic WebDriver, so the native picker and keyboard can be found', () => {
+    expect(capabilitiesFor('android', PHONES)).toMatchObject({ 'wdio:enforceWebDriverClassic': true });
+  });
+
+  it("leaves Chrome's data alone on Android, so a phone that forbids clearing it can still run the suite", () => {
+    expect(capabilitiesFor('android', PHONES)).toMatchObject({
+      'appium:noReset': true,
+      'goog:chromeOptions': { androidKeepAppDataDir: true },
+    });
+  });
+
   it('refuses Android without a chromedriver, naming the variable', () => {
     expect(() => capabilitiesFor('android', { androidSerial: 'SERIAL1' })).toThrow(
       'android needs E2E_CHROMEDRIVER: the path to a chromedriver matching Chrome on the phone',

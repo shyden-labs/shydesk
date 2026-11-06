@@ -75,6 +75,12 @@ export function capabilitiesFor(target: Target, env: TargetEnv): Capabilities {
           env.chromedriver,
           'android needs E2E_CHROMEDRIVER: the path to a chromedriver matching Chrome on the phone',
         ),
+        // OxygenOS forbids adb from clearing Chrome's data, which Appium and
+        // chromedriver each do by default.
+        'appium:noReset': true,
+        'goog:chromeOptions': { androidKeepAppDataDir: true },
+        // BiDi cannot carry Android's native selectors into NATIVE_APP.
+        'wdio:enforceWebDriverClassic': true,
         'appium:newCommandTimeout': 300,
       };
   }
