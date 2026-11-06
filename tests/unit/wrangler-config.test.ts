@@ -11,7 +11,13 @@ const config = JSON.parse(
     .filter((line) => !line.trim().startsWith('//'))
     .join('\n')
     .replace(/,(\s*[}\]])/g, '$1'),
-) as { assets?: unknown; build?: unknown; env: { dev: { assets?: unknown; build?: unknown } } };
+) as {
+  assets?: unknown;
+  build?: unknown;
+  durable_objects?: unknown;
+  migrations?: unknown;
+  env: { dev: { assets?: unknown; build?: unknown; durable_objects?: unknown; migrations?: unknown } };
+};
 
 describe('wrangler.jsonc', () => {
   it('serves the built docs as assets, through the Worker first, as ASSETS', () => {
@@ -25,5 +31,28 @@ describe('wrangler.jsonc', () => {
   it('lets dev inherit both, so dev and live serve the same docs the same way', () => {
     expect(config.env.dev.assets).toBeUndefined();
     expect(config.env.dev.build).toBeUndefined();
+  });
+});
+
+// Each ticket's timer (shyden-labs/shydesk#22) is a SQLite-backed Durable
+// Object, the kind the Workers Free plan allows. Bindings are not inherited by
+// an environment, so dev names it too; migrations apply to both.
+describe('the ticket timer in wrangler.jsonc', () => {
+  const binding = { bindings: [{ name: 'TICKET_TIMER', class_name: 'TicketTimer' }] };
+
+  it('binds TICKET_TIMER to TicketTimer on live and on dev', () => {
+    expect(config.durable_objects).toEqual(binding);
+    expect(config.env.dev.durable_objects).toEqual(binding);
+  });
+
+  it('creates TicketTimer as a SQLite-backed class, once, for both', () => {
+    expect(config.migrations).toEqual([{ tag: 'v1', new_sqlite_classes: ['TicketTimer'] }]);
+    expect(config.env.dev.migrations).toBeUndefined();
+  });
+
+  it('is exported from the Worker entry point', async () => {
+    const entry = await import('../../src/index.ts');
+    const { TicketTimer } = await import('../../src/timers/ticket-timer.ts');
+    expect(entry.TicketTimer).toBe(TicketTimer);
   });
 });

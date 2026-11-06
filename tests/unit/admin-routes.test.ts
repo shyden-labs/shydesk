@@ -49,6 +49,9 @@ interface World {
   staff: { email: string; role: string }[];
   grants: { email: string; product_id: string }[];
   keys: { hash: string; label: string; created_at: number; revoked_at: number | null; product_id: string }[];
+  /** The stored_bytes counter, and the rows the overdue query returns. */
+  stored?: number;
+  overdue?: { kind: string; id: string; product_id: string; due_at: number }[];
 }
 
 const world = (): World => ({
@@ -61,6 +64,8 @@ const world = (): World => ({
 const answerFrom =
   (w: World): Answer =>
   (sql, values) => {
+    if (/UNION ALL/.test(sql)) return w.overdue ?? [];
+    if (/FROM counters/.test(sql)) return w.stored === undefined ? [] : [{ value: w.stored }];
     if (/FROM products WHERE id = \?/.test(sql)) return w.products.filter((p) => p.id === values[0]);
     if (/FROM products WHERE id IN/.test(sql)) return w.products.filter((p) => values.includes(p.id));
     if (/FROM products/.test(sql)) return w.products;
@@ -451,5 +456,36 @@ describe('pages with saved settings', () => {
     const page = await (await get('/admin/staff', ADMIN, setup(w).env)).text();
     expect(page).toContain('<li>boss@example.com: admin</li>');
     expect(page).toContain('<li>new@example.com: rep, no products</li>');
+  });
+});
+
+describe('storage and missed timers on /admin (shyden-labs/shydesk#22 AC3)', () => {
+  it('lists each item still stored past its due date', async () => {
+    const w = { ...world(), overdue: [{ kind: 'attachment', id: 'a1', product_id: 'shytalk', due_at: Date.UTC(2026, 9, 1, 8, 5) }] };
+    const page = await (await get('/admin', ADMIN, setup(w).env)).text();
+    expect(page).toContain('<h2>Storage and timers</h2>');
+    expect(page).toContain('<li>Attachment a1 (shytalk) was due for deletion at 2026-10-01 08:05 UTC and is still stored.</li>');
+  });
+
+  it('says so when nothing is past its due date', async () => {
+    const page = await (await get('/admin', ADMIN, setup().env)).text();
+    expect(page).toContain('<p>Nothing is past its due date.</p>');
+  });
+
+  it('shows the storage warning at 80 %', async () => {
+    const page = await (await get('/admin', ADMIN, setup({ ...world(), stored: 8_000_000_000 }).env)).text();
+    expect(page).toContain('<p role="alert">Attachment storage at 80 % of the free 10 GB.</p>');
+  });
+
+  it('hides the storage warning at 79.9 %', async () => {
+    const page = await (await get('/admin', ADMIN, setup({ ...world(), stored: 7_990_000_000 }).env)).text();
+    expect(page).not.toContain('Attachment storage at');
+  });
+
+  it('shows the same panel when an added product is refused', async () => {
+    const w = { ...world(), stored: 9_000_000_000 };
+    const response = await post('/admin/products', ADMIN, setup(w).env, { ...PRODUCT_FORM, name: '' });
+    expect(response.status).toBe(400);
+    expect(await response.text()).toContain('Attachment storage at 90 % of the free 10 GB.');
   });
 });

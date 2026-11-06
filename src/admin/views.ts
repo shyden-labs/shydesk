@@ -1,5 +1,6 @@
 import { html } from 'hono/html';
 import type { HtmlEscapedString } from 'hono/utils/html';
+import { overdueLine, type Overdue } from '../desk/overdue.ts';
 import type { ApiKeySummary, Canned, Product, StaffInput, SupportField, TicketType } from '../products.ts';
 
 /**
@@ -129,11 +130,31 @@ const productFields = (f: ProductForm, idLocked: boolean): Page => html`
   <input id="textKeepDays" name="textKeepDays" type="number" min="1" step="1" value="${f.textKeepDays}" required />
 `;
 
-/** The products list with the add-a-product form. */
-export const productsPage = (products: Product[], form: ProductForm = EMPTY_FORM, errors: string[] = []): Page =>
+/** What the admin desk shows about storage and timers (shyden-labs/shydesk#22 AC3), worked out when the page loads. */
+export interface Health {
+  /** The storage warning from 80 % of the free tier, or null. */
+  warning: string | null;
+  overdue: Overdue[];
+}
+
+const healthPanel = (h: Health) =>
+  html`<h2>Storage and timers</h2>
+    ${h.warning === null ? '' : html`<p role="alert">${h.warning}</p>`}
+    ${
+      h.overdue.length === 0
+        ? html`<p>Nothing is past its due date.</p>`
+        : html`<ul>
+            ${h.overdue.map((o) => html`<li>${overdueLine(o)}</li>`)}
+          </ul>`
+    }`;
+
+/** The products list with the add-a-product form, under the storage and timers panel. */
+export const productsPage = (products: Product[], health: Health, form: ProductForm = EMPTY_FORM, errors: string[] = []): Page =>
   layout(
     'Products',
-    html`<ul>
+    html`${healthPanel(health)}
+      <h2>Products</h2>
+      <ul>
         ${products.map((p) => html`<li><a href="/admin/products/${p.id}">${p.name}</a> (${p.id})</li>`)}
       </ul>
       <h2>Add a product</h2>

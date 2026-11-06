@@ -1,5 +1,6 @@
 import { Hono, type Context } from 'hono';
 import { csrf } from 'hono/csrf';
+import type { D1Database } from '@cloudflare/workers-types';
 import type { JWTVerifyGetKey } from 'jose';
 import { requireStaff, type Staff, type StaffEnv } from '../auth/staff.ts';
 import {
@@ -20,7 +21,9 @@ import {
   type ProductInput,
   type SupportField,
 } from '../products.ts';
-import { productPage, productsPage, staffPage, type ProductForm, type ProductPageData } from './views.ts';
+import { productPage, productsPage, staffPage, type Health, type ProductForm, type ProductPageData } from './views.ts';
+import { overdue } from '../desk/overdue.ts';
+import { storageWarning, storedBytes } from '../storage.ts';
 
 /**
  * The admin settings screen under /admin (shyden-labs/shydesk#17; plan
@@ -43,6 +46,12 @@ const texts = (form: Form, key: string): string[] => [form[key]].flat().filter((
 
 /** A number field: blank is not a number, so it fails validation rather than becoming 0. */
 const num = (s: string): number => (s.trim() === '' ? Number.NaN : Number(s));
+
+/** Storage and missed timers, worked out now: no job keeps them (shyden-labs/shydesk#22). */
+const health = async (db: D1Database): Promise<Health> => ({
+  warning: storageWarning(await storedBytes(db)),
+  overdue: await overdue(db, Date.now()),
+});
 
 const productForm = (form: Form): ProductForm => ({
   id: text(form, 'id'),
@@ -128,7 +137,7 @@ export function adminRoutes(jwks?: JWTVerifyGetKey): Hono<AdminEnv> {
   const renderProduct = async (c: Context<AdminEnv>, product: Product, extra: Partial<ProductPageData>, status: 200 | 400) =>
     c.html(productPage({ ...(await productPageData(c, product)), ...extra }), status);
 
-  app.get('/admin', async (c) => c.html(productsPage(await listProducts(c.env.DB))));
+  app.get('/admin', async (c) => c.html(productsPage(await listProducts(c.env.DB), await health(c.env.DB))));
 
   app.post('/admin/products', async (c) => {
     const form = productForm(await c.req.parseBody());
@@ -137,7 +146,7 @@ export function adminRoutes(jwks?: JWTVerifyGetKey): Hono<AdminEnv> {
         await saveProduct(c.env.DB, productInput(form));
         return c.redirect(`/admin/products/${form.id.trim()}`, 303);
       },
-      async (errors) => c.html(productsPage(await listProducts(c.env.DB), form, errors), 400),
+      async (errors) => c.html(productsPage(await listProducts(c.env.DB), await health(c.env.DB), form, errors), 400),
     );
   });
 
