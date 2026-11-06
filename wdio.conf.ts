@@ -47,6 +47,8 @@ export const config: Options.Testrunner & Capabilities.WithRequestedTestrunnerCa
   })),
   baseUrl: process.env.E2E_ORIGIN ?? `http://localhost:${String(PORT)}`,
   logLevel: 'warn',
+  // A session that fails to start fails once, naming why: a retry is not a fix (shyden-labs/shydesk#49).
+  connectionRetryCount: 0,
   framework: 'mocha',
   mochaOpts: { ui: 'bdd', timeout: 120_000 },
   reporters: ['spec'],
