@@ -18,3 +18,13 @@ describe('/admin on the Worker', () => {
     expect(response.status).toBe(401);
   });
 });
+
+// The product API (shyden-labs/shydesk#26) is mounted on the Worker: a call
+// with no key is refused with 401 before any database read.
+describe('/api/v1 on the Worker', () => {
+  it('is served, and refuses a feed request with no API key with 401', async () => {
+    const response = await app.request('/api/v1/products/shytalk/feed', {}, unconfigured);
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({ error: 'A valid API key is required.' });
+  });
+});

@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { adminRoutes } from './admin/routes.ts';
+import { apiRoutes } from './api/routes.ts';
 import type { StaffEnv } from './auth/staff.ts';
 
 /**
@@ -13,5 +14,6 @@ export const app = new Hono<{ Bindings: StaffEnv }>();
 app.get('/health', (c) => c.json({ ok: true }));
 
 app.route('/', adminRoutes());
+app.route('/', apiRoutes());
 
 export default app;
