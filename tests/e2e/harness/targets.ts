@@ -138,6 +138,10 @@ export function screenPoint(box: Box, ratio: number, page: { x: number; y: numbe
 export const ANDROID_PAGE = '//android.webkit.WebView';
 
 const SECONDS: Record<Exclude<Fixture, 'photo.jpg'>, string> = { 'ok-10s.mp4': '10', 'long-45s.mp4': '45' };
+/** How the iPhone picker speaks each length. */
+const SPOKEN: Record<Exclude<Fixture, 'photo.jpg'>, string> = { 'ok-10s.mp4': 'ten', 'long-45s.mp4': 'forty-five' };
+/** Only the items themselves: the grid around them is labelled with every item. */
+const IOS_ITEM = "-ios predicate string:type == 'XCUIElementTypeImage' AND";
 
 /** A selector for one test file in the phone's own photo picker, by its kind and length. */
 export function pickerItem(phone: Phone, fixture: Fixture): string {
@@ -146,6 +150,6 @@ export function pickerItem(phone: Phone, fixture: Fixture): string {
       ? 'android=new UiSelector().descriptionStartsWith("Photo taken")'
       : `android=new UiSelector().descriptionContains("with duration 00:${SECONDS[fixture]}")`;
   return fixture === 'photo.jpg'
-    ? "-ios predicate string:label BEGINSWITH 'Photo'"
-    : `-ios predicate string:label BEGINSWITH 'Video' AND label CONTAINS '${SECONDS[fixture]} seconds'`;
+    ? `${IOS_ITEM} label BEGINSWITH 'Photo,'`
+    : `${IOS_ITEM} label BEGINSWITH 'Video, ${SPOKEN[fixture]} seconds,'`;
 }

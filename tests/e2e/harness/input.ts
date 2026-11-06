@@ -57,7 +57,8 @@ export async function tap(label: string): Promise<void> {
  * the page and touched on screen, inside Chrome's page area.
  */
 async function touchDrawn(label: string): Promise<void> {
-  const element = driver().$(`aria/${label}`);
+  // Resolved, so the page script receives the DOM element, not WebdriverIO's handle.
+  const element = await driver().$(`aria/${label}`);
   await element.waitForExist({ timeout: WAIT, timeoutMsg: `android: the field named "${label}" never appeared on the page` });
   // Reads where the field is drawn; the input itself is the real touch below.
   const { box, ratio } = await driver().execute<{ box: Box; ratio: number }>(
@@ -111,6 +112,8 @@ export async function pickFile(label: string, fixture: Fixture): Promise<void> {
       await nativeTap(on, nativeFinder(on, 'Collections'), 'the Collections tab');
       await nativeTap(on, nativeFinder(on, 'ShyDesk tests'), 'the "ShyDesk tests" album (AirDrop tests/fixtures/media into it)');
       await nativeTap(on, pickerItem(on, fixture), `${fixture} in the "ShyDesk tests" album`);
+      // The picker keeps the choice open until it is confirmed (measured 2026-11-06).
+      await nativeTap(on, "-ios predicate string:label == 'Done' AND type == 'XCUIElementTypeButton'", "the picker's Done button");
       return;
     }
     await nativeTap(on, nativeFinder(on, 'Collections'), 'the Collections tab');

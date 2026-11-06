@@ -137,10 +137,13 @@ describe('pickerItem', () => {
     expect(pickerItem('android', fixture)).toBe(selector);
   });
 
+  // Measured on the iPhone, 2026-11-06: each item is an image labelled like
+  // "Video, ten seconds, 06 November, 10.16" (the length in words), inside a
+  // grid whose own label lists every item, so only images are matched.
   it.each([
-    ['photo.jpg', "-ios predicate string:label BEGINSWITH 'Photo'"],
-    ['ok-10s.mp4', "-ios predicate string:label BEGINSWITH 'Video' AND label CONTAINS '10 seconds'"],
-    ['long-45s.mp4', "-ios predicate string:label BEGINSWITH 'Video' AND label CONTAINS '45 seconds'"],
+    ['photo.jpg', "-ios predicate string:type == 'XCUIElementTypeImage' AND label BEGINSWITH 'Photo,'"],
+    ['ok-10s.mp4', "-ios predicate string:type == 'XCUIElementTypeImage' AND label BEGINSWITH 'Video, ten seconds,'"],
+    ['long-45s.mp4', "-ios predicate string:type == 'XCUIElementTypeImage' AND label BEGINSWITH 'Video, forty-five seconds,'"],
   ] as const)('finds %s in the iPhone picker by its kind and length', (fixture, selector) => {
     expect(pickerItem('ios', fixture)).toBe(selector);
   });

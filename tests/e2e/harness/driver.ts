@@ -32,7 +32,8 @@ export interface Driver {
   /** Runs `script` in the page with `args` (elements arrive as DOM elements); reads only, never input. */
   execute<T>(script: string, ...args: unknown[]): Promise<T>;
   action(type: 'pointer', options: { parameters: { pointerType: 'touch' } }): PointerAction;
-  $(selector: string): Element;
+  /** A lazy handle; awaiting it resolves the element, as a page script needs. */
+  $(selector: string): Element & PromiseLike<Element>;
   waitUntil(condition: () => Promise<boolean>, options: { timeout: number; timeoutMsg: string }): Promise<true>;
 }
 
