@@ -153,3 +153,29 @@ export function pickerItem(phone: Phone, fixture: Fixture): string {
     ? `${IOS_ITEM} label BEGINSWITH 'Photo,'`
     : `${IOS_ITEM} label BEGINSWITH 'Video, ${SPOKEN[fixture]} seconds,'`;
 }
+
+/**
+ * The viewport point, in CSS pixels, at the middle of a page element's box.
+ * A desktop click goes there as a real mouse press: Safari's Element Click
+ * cannot reach inside a shadow root (WebKit bug 202589; measured on PR
+ * shyden-labs/shydesk#69, "click intercepted"), and the support piece draws
+ * its form in one. Fails naming the element when it is not drawn in the window.
+ */
+export function viewportPoint(box: Box, viewport: { width: number; height: number }, label: string): { x: number; y: number } {
+  if (box.width <= 0 || box.height <= 0) throw new Error(`"${label}" is not drawn (it has no size)`);
+  const x = Math.round(box.x + box.width / 2);
+  const y = Math.round(box.y + box.height / 2);
+  if (x < 0 || y < 0 || x >= viewport.width || y >= viewport.height) {
+    throw new Error(
+      `"${label}" is drawn outside the window (its middle is at ${String(x)}, ${String(y)} in a ${String(viewport.width)} by ${String(viewport.height)} window)`,
+    );
+  }
+  return { x, y };
+}
+
+/** Why a lookup by name failed: the name wanted, and every distinct name the page did have. */
+export function notNamedMessage(label: string, seen: readonly string[]): string {
+  const missing = `no element named "${label}" appeared on the page`;
+  if (seen.length === 0) return `${missing}; it had no named elements at all`;
+  return `${missing}; the names seen were: ${[...new Set(seen)].map((name) => `"${name}"`).join(', ')}`;
+}

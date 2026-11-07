@@ -11,6 +11,7 @@
  * every target. The lookup only reads; input stays real WebDriver input.
  */
 import { driver, type Element, type ElementReference } from './driver.ts';
+import { notNamedMessage } from './targets.ts';
 
 const WAIT = 15_000;
 
@@ -31,15 +32,18 @@ const LIST_CANDIDATES = `
 
 const ELEMENT_KEY = 'element-6066-11e4-a52e-4f735466cecf';
 
-/** The ids of every element on the page whose accessible name is `label`. */
-async function idsNamed(label: string): Promise<string[]> {
+/** The ids of every element on the page whose accessible name is `label`, and every name seen. */
+async function idsNamed(label: string): Promise<{ ids: string[]; seen: string[] }> {
   const candidates = await driver().execute<ElementReference[]>(LIST_CANDIDATES, CANDIDATES);
   const ids: string[] = [];
+  const seen: string[] = [];
   for (const candidate of candidates) {
     const id = candidate[ELEMENT_KEY];
-    if ((await driver().getElementComputedLabel(id)) === label) ids.push(id);
+    const name = await driver().getElementComputedLabel(id);
+    seen.push(name);
+    if (name === label) ids.push(id);
   }
-  return ids;
+  return { ids, seen };
 }
 
 /**
@@ -48,15 +52,22 @@ async function idsNamed(label: string): Promise<string[]> {
  */
 export async function named(label: string): Promise<Element> {
   let ids: string[] = [];
-  await driver().waitUntil(
-    async () => {
-      ids = await idsNamed(label);
-      if (ids.length > 1) throw new Error(`${String(ids.length)} elements are named "${label}"; a test names exactly one`);
-      return ids.length === 1;
-    },
-    { timeout: WAIT, timeoutMsg: `no element named "${label}" appeared on the page` },
-  );
+  let seen: string[] = [];
+  try {
+    await driver().waitUntil(
+      async () => {
+        ({ ids, seen } = await idsNamed(label));
+        if (ids.length > 1) throw new Error(`${String(ids.length)} elements are named "${label}"; a test names exactly one`);
+        return ids.length === 1;
+      },
+      { timeout: WAIT, timeoutMsg: notNamedMessage(label, []) },
+    );
+  } catch (error) {
+    if (ids.length > 1) throw error;
+    // The names the browser did give, so a failure shows what each target calls the element.
+    throw new Error(notNamedMessage(label, seen), { cause: error });
+  }
   const [id] = ids;
-  if (id === undefined) throw new Error(`no element named "${label}" appeared on the page`);
+  if (id === undefined) throw new Error(notNamedMessage(label, seen));
   return driver().$({ [ELEMENT_KEY]: id });
 }

@@ -1,5 +1,15 @@
 import { describe, it, expect } from 'vitest';
-import { capabilitiesFor, nativeFinder, pickerItem, targetOf, TARGETS, targetsFrom, screenPoint } from '../e2e/harness/targets.ts';
+import {
+  capabilitiesFor,
+  nativeFinder,
+  pickerItem,
+  targetOf,
+  TARGETS,
+  targetsFrom,
+  screenPoint,
+  viewportPoint,
+  notNamedMessage,
+} from '../e2e/harness/targets.ts';
 
 /**
  * The every-target suite's targets (shyden-labs/shydesk#42 AC1): set-up is the
@@ -163,5 +173,41 @@ describe('screenPoint', () => {
 
   it('rounds to whole device pixels', () => {
     expect(screenPoint({ x: 0, y: 0, width: 3, height: 3 }, 2.625, { x: 0, y: 0 })).toEqual({ x: 4, y: 4 });
+  });
+});
+
+describe('viewportPoint', () => {
+  it('is the middle of the element, rounded, in CSS pixels from the top-left of the viewport', () => {
+    expect(viewportPoint({ x: 10, y: 20, width: 101, height: 41 }, { width: 800, height: 600 }, 'Email')).toEqual({ x: 61, y: 41 });
+  });
+
+  it('refuses an element drawn below the viewport, naming it', () => {
+    expect(() => viewportPoint({ x: 0, y: 590, width: 10, height: 40 }, { width: 800, height: 600 }, 'Send')).toThrow(
+      '"Send" is drawn outside the window (its middle is at 5, 610 in a 800 by 600 window)',
+    );
+  });
+
+  it('refuses an element drawn left of the viewport, naming it', () => {
+    expect(() => viewportPoint({ x: -30, y: 0, width: 10, height: 10 }, { width: 800, height: 600 }, 'Menu')).toThrow(
+      '"Menu" is drawn outside the window (its middle is at -25, 5 in a 800 by 600 window)',
+    );
+  });
+
+  it('refuses an element with no drawn size, naming it', () => {
+    expect(() => viewportPoint({ x: 5, y: 5, width: 0, height: 0 }, { width: 800, height: 600 }, 'Hidden')).toThrow(
+      '"Hidden" is not drawn (it has no size)',
+    );
+  });
+});
+
+describe('notNamedMessage', () => {
+  it('names the label wanted and every distinct name the page did have', () => {
+    expect(notNamedMessage('Harness file', ['Harness button', '', 'Browse… No file selected.', 'Harness button'])).toBe(
+      'no element named "Harness file" appeared on the page; the names seen were: "Harness button", "", "Browse… No file selected."',
+    );
+  });
+
+  it('says when the page had no candidate elements at all', () => {
+    expect(notNamedMessage('Send', [])).toBe('no element named "Send" appeared on the page; it had no named elements at all');
   });
 });

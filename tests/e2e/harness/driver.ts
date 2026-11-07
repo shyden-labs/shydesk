@@ -34,7 +34,7 @@ export interface Driver {
   keys(keys: string[]): Promise<void>;
   /** Runs `script` in the page with `args` (elements arrive as DOM elements); reads only, never input. */
   execute<T>(script: string, ...args: unknown[]): Promise<T>;
-  action(type: 'pointer', options: { parameters: { pointerType: 'touch' } }): PointerAction;
+  action(type: 'pointer', options: { parameters: { pointerType: 'touch' | 'mouse' } }): PointerAction;
   /** A lazy handle; awaiting it resolves the element, as a page script needs. */
   $(selector: string | ElementReference): Element & PromiseLike<Element>;
   /** The browser's own accessible name for the element (W3C Get Computed Label). */

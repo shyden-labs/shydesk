@@ -16,7 +16,17 @@
 import { driver } from './driver.ts';
 import { named } from './find.ts';
 import { resolve } from 'node:path';
-import { ANDROID_PAGE, nativeFinder, pickerItem, screenPoint, targetOf, type Box, type Fixture, type Phone } from './targets.ts';
+import {
+  ANDROID_PAGE,
+  nativeFinder,
+  pickerItem,
+  screenPoint,
+  targetOf,
+  viewportPoint,
+  type Box,
+  type Fixture,
+  type Phone,
+} from './targets.ts';
 
 const WAIT = 15_000;
 
@@ -42,11 +52,33 @@ async function nativeTap(on: Phone, selector: string, what: string): Promise<voi
   await element.click();
 }
 
+/**
+ * A real mouse press where the page draws the element named `label`. Safari's
+ * Element Click cannot reach inside a shadow root (WebKit bug 202589; "click
+ * intercepted" on PR shyden-labs/shydesk#69), so every desktop target presses
+ * the mouse at the element's middle instead, as a person would.
+ */
+async function clickDrawn(label: string): Promise<void> {
+  const element = await named(label);
+  // Reads where the element is drawn; the input itself is the real mouse press below.
+  const { box, viewport } = await driver().execute<{ box: Box; viewport: { width: number; height: number } }>(
+    'const r = arguments[0].getBoundingClientRect(); return { box: { x: r.x, y: r.y, width: r.width, height: r.height }, viewport: { width: window.innerWidth, height: window.innerHeight } };',
+    element,
+  );
+  await driver()
+    .action('pointer', { parameters: { pointerType: 'mouse' } })
+    .move(viewportPoint(box, viewport, label))
+    .down()
+    .pause(50)
+    .up()
+    .perform();
+}
+
 /** A real click or touch on the control named `label`. */
 export async function tap(label: string): Promise<void> {
   const on = phone();
   if (on === undefined) {
-    await (await named(label)).click();
+    await clickDrawn(label);
     return;
   }
   await native(() => nativeTap(on, nativeFinder(on, label), `the control named "${label}"`));
