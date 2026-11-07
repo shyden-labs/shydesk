@@ -102,6 +102,7 @@ describe('deploy-dev', () => {
       '          node scripts/npm-ci.ts',
       '          if [ $DEPLOY_REHEARSAL = true ]; then',
       '            npx wrangler deploy --env dev --dry-run --outdir dist',
+      '            npx wrangler deploy --config demo-host/wrangler.jsonc --dry-run --outdir dist/demo',
       '            exit 0',
       '          fi',
       '          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID; do',
@@ -112,6 +113,8 @@ describe('deploy-dev', () => {
       '          done',
       '          npx wrangler d1 migrations apply shydesk --env dev --remote',
       '          npx wrangler deploy --env dev',
+      '          npx wrangler d1 execute shydesk --env dev --remote --file demo-host/seed.sql',
+      '          npx wrangler deploy --config demo-host/wrangler.jsonc',
     ]);
   });
 

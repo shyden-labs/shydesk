@@ -40,9 +40,9 @@ describe('undeployedPaths', () => {
   });
 
   it('names every path no area covers, and leaves out the Worker area', () => {
-    expect(undeployedPaths(['docs/a.md', 'src/worker.ts', 'wrangler.toml', 'demo-host/index.html'])).toEqual([
+    expect(undeployedPaths(['docs/a.md', 'src/worker.ts', 'wrangler.toml', 'elsewhere/index.html'])).toEqual([
       'wrangler.toml',
-      'demo-host/index.html',
+      'elsewhere/index.html',
     ]);
   });
 
@@ -68,6 +68,11 @@ describe('workerChanged', () => {
   });
 
   // The API docs page serves the spec (shyden-labs/shydesk#26), so a spec change redeploys dev.
+  // The demo support page (shyden-labs/shydesk#19) deploys with the Worker.
+  it('is true for a change to the demo page under demo-host/', () => {
+    expect(workerChanged(['demo-host/public/index.html'])).toBe(true);
+  });
+
   it('is true for a change to the OpenAPI spec under openapi/', () => {
     expect(workerChanged(['openapi/shydesk.v1.yaml'])).toBe(true);
     expect(undeployedPaths(['openapi/shydesk.v1.yaml'])).toEqual([]);
@@ -92,17 +97,19 @@ describe('verdict', () => {
     expect(verdict(['docs/a.md', 'src/index.ts'])).toEqual({
       code: 0,
       worker: true,
-      lines: ['Deploying the Worker: a file under src/, public/, migrations/, openapi/ or wrangler.jsonc changed.'],
+      lines: [
+        'Deploying the Worker and the demo page: a file under src/, public/, migrations/, openapi/, demo-host/ or wrangler.jsonc changed.',
+      ],
     });
   });
 
   // Even with a Worker change, an unknown path fails the whole deploy.
   it('fails naming each path no area covers, and deploys nothing', () => {
-    expect(verdict(['src/a.ts', 'demo-host/a.html', 'other/b.ts'])).toEqual({
+    expect(verdict(['src/a.ts', 'elsewhere/a.html', 'other/b.ts'])).toEqual({
       code: 1,
       worker: false,
       lines: [
-        '::error title=No dev deploy for demo-host/a.html::Define the dev deploy for this area in scripts/deploy-dev.ts before it can merge.',
+        '::error title=No dev deploy for elsewhere/a.html::Define the dev deploy for this area in scripts/deploy-dev.ts before it can merge.',
         '::error title=No dev deploy for other/b.ts::Define the dev deploy for this area in scripts/deploy-dev.ts before it can merge.',
       ],
     });
