@@ -71,18 +71,31 @@ async function clickDrawn(label: string): Promise<void> {
   let { box, viewport } = await drawn();
   const delta = scrollNeeded(box, viewport);
   if (delta !== 0) {
+    const at = { x: Math.round(viewport.width / 2), y: Math.round(viewport.height / 2) };
+    // Read only, for the failure message: how far the page had scrolled, and what sits under the wheel.
+    const where = (): Promise<string> =>
+      driver().execute(
+        'const e = document.elementFromPoint(arguments[0], arguments[1]); return `page scrolled ${String(Math.round(window.scrollY))} px, under the wheel <${e === null ? "nothing" : e.localName}>`;',
+        at.x,
+        at.y,
+      );
+    const before = await where();
     // A real mouse-wheel scroll from the middle of the window, as a person brings a control into view.
-    await driver()
-      .action('wheel')
-      .scroll({ x: Math.round(viewport.width / 2), y: Math.round(viewport.height / 2), deltaX: 0, deltaY: delta, duration: 200 })
-      .perform();
-    await driver().waitUntil(
-      async () => {
-        ({ box, viewport } = await drawn());
-        return scrollNeeded(box, viewport) === 0;
-      },
-      { timeout: WAIT, timeoutMsg: `"${label}" was still outside the window after a ${String(delta)} px wheel scroll` },
-    );
+    await driver().action('wheel').scroll({ x: at.x, y: at.y, deltaX: 0, deltaY: delta, duration: 200 }).perform();
+    try {
+      await driver().waitUntil(
+        async () => {
+          ({ box, viewport } = await drawn());
+          return scrollNeeded(box, viewport) === 0;
+        },
+        { timeout: WAIT, timeoutMsg: `"${label}" stayed outside the window` },
+      );
+    } catch (error) {
+      throw new Error(
+        `"${label}" was still outside the window after a ${String(delta)} px wheel scroll (before: ${before}; after: ${await where()})`,
+        { cause: error },
+      );
+    }
   }
   await driver()
     .action('pointer', { parameters: { pointerType: 'mouse' } })
