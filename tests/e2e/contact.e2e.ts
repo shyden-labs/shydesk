@@ -38,9 +38,10 @@ describe('the contact form', () => {
     // The test site key passes by itself; the button is enabled once it has.
     await textHolding('Support status', 'Ready to send');
     await tap('Send');
+    // The status first: if the request fails, its failure shows what the status line said.
+    await textHolding('Support status', 'The email could not be sent. Keep this link to follow the request.');
     const link = await textHolding('Private link', '#t=');
     assert.match(link, /\/support\/ticket#t=[A-Za-z0-9_-]{43}$/);
-    await textHolding('Support status', 'The email could not be sent. Keep this link to follow the request.');
   });
 
   it('cannot load on a page whose origin the product does not allow', async () => {
