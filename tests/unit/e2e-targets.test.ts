@@ -11,6 +11,8 @@ import {
   notNamedMessage,
   nameMatches,
   scrollNeeded,
+  scrollInput,
+  scrollKey,
 } from '../e2e/harness/targets.ts';
 
 /**
@@ -251,5 +253,29 @@ describe('scrollNeeded', () => {
 
   it('counts an element whose middle sits on the bottom edge as outside', () => {
     expect(scrollNeeded({ x: 0, y: 580, width: 10, height: 40 }, { width: 800, height: 600 })).toBe(300);
+  });
+});
+
+describe('scrollInput', () => {
+  it('scrolls Chrome by the mouse wheel', () => {
+    expect(scrollInput('chromium')).toBe('wheel');
+  });
+
+  it('scrolls Firefox by the mouse wheel', () => {
+    expect(scrollInput('firefox')).toBe('wheel');
+  });
+
+  it("scrolls Safari by the keyboard, since Safari's driver performs no wheel scroll", () => {
+    expect(scrollInput('safari')).toBe('keys');
+  });
+});
+
+describe('scrollKey', () => {
+  it('is Page Down to bring a control below the window up into it', () => {
+    expect(scrollKey(441)).toBe('');
+  });
+
+  it('is Page Up to bring a control above the window down into it', () => {
+    expect(scrollKey(-680)).toBe('');
   });
 });

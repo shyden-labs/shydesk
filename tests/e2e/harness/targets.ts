@@ -200,3 +200,18 @@ export function scrollNeeded(box: Box, viewport: { width: number; height: number
   if (middle >= 0 && middle < viewport.height) return 0;
   return Math.round(middle - viewport.height / 2);
 }
+
+/**
+ * The real input that scrolls the page on each desktop target. Safari's driver
+ * accepts a W3C wheel action but scrolls nothing (measured on PR
+ * shyden-labs/shydesk#69, run 42408345149: 0 px after a 401 px wheel), so
+ * Safari scrolls the way a keyboard user does, by Page Down and Page Up.
+ */
+export function scrollInput(target: 'chromium' | 'firefox' | 'safari'): 'wheel' | 'keys' {
+  return target === 'safari' ? 'keys' : 'wheel';
+}
+
+/** The WebDriver key that scrolls toward a control `delta` px away (down is positive): Page Down or Page Up. */
+export function scrollKey(delta: number): string {
+  return delta > 0 ? '' : '';
+}

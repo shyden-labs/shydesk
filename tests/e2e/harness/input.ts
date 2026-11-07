@@ -22,6 +22,8 @@ import {
   pickerItem,
   screenPoint,
   targetOf,
+  scrollInput,
+  scrollKey,
   scrollNeeded,
   viewportPoint,
   type Box,
@@ -30,6 +32,9 @@ import {
 } from './targets.ts';
 
 const WAIT = 15_000;
+
+/** Page Down presses allowed to bring a control into view: more than any test page is long. */
+const PAGE_KEYS = 20;
 
 function phone(): Phone | undefined {
   const target = targetOf(driver().capabilities);
@@ -75,24 +80,34 @@ async function clickDrawn(label: string): Promise<void> {
     // Read only, for the failure message: how far the page had scrolled, and what sits under the wheel.
     const where = (): Promise<string> =>
       driver().execute(
-        'const e = document.elementFromPoint(arguments[0], arguments[1]); return `page scrolled ${String(Math.round(window.scrollY))} px, under the wheel <${e === null ? "nothing" : e.localName}>`;',
+        'const e = document.elementFromPoint(arguments[0], arguments[1]); return `page scrolled ${String(Math.round(window.scrollY))} px, under the scroll point <${e === null ? "nothing" : e.localName}>, focus on <${document.activeElement === null ? "nothing" : document.activeElement.localName}>`;',
         at.x,
         at.y,
       );
     const before = await where();
-    // A real mouse-wheel scroll from the middle of the window, as a person brings a control into view.
-    await driver().action('wheel').scroll({ x: at.x, y: at.y, deltaX: 0, deltaY: delta, duration: 200 }).perform();
+    const target = targetOf(driver().capabilities);
+    if (target !== 'chromium' && target !== 'firefox' && target !== 'safari') throw new Error(`no desktop scroll input for ${target}`);
+    const inView = async (): Promise<boolean> => {
+      ({ box, viewport } = await drawn());
+      return scrollNeeded(box, viewport) === 0;
+    };
     try {
-      await driver().waitUntil(
-        async () => {
-          ({ box, viewport } = await drawn());
-          return scrollNeeded(box, viewport) === 0;
-        },
-        { timeout: WAIT, timeoutMsg: `"${label}" stayed outside the window` },
-      );
+      if (scrollInput(target) === 'wheel') {
+        // A real mouse-wheel scroll from the middle of the window, as a person brings a control into view.
+        await driver().action('wheel').scroll({ x: at.x, y: at.y, deltaX: 0, deltaY: delta, duration: 200 }).perform();
+        await driver().waitUntil(inView, { timeout: WAIT, timeoutMsg: `"${label}" stayed outside the window` });
+      } else {
+        // Real Page Down or Page Up presses, one at a time, until the control is in the window.
+        let presses = 0;
+        while (!(await inView())) {
+          if (presses === PAGE_KEYS) throw new Error(`"${label}" stayed outside the window after ${String(PAGE_KEYS)} key presses`);
+          await driver().keys([scrollKey(delta)]);
+          presses += 1;
+        }
+      }
     } catch (error) {
       throw new Error(
-        `"${label}" was still outside the window after a ${String(delta)} px wheel scroll (before: ${before}; after: ${await where()})`,
+        `"${label}" was still outside the window after scrolling ${String(delta)} px by ${scrollInput(target)} (before: ${before}; after: ${await where()})`,
         { cause: error },
       );
     }
