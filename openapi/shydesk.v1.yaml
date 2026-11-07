@@ -8,8 +8,11 @@ info:
   description: >-
     Product servers read their tickets through /api/v1 with the API key made
     for them on the ShyDesk admin screen. The key is sent as a Bearer token and
-    only ever belongs to one product. The shared support piece's /support-api
-    routes are described in docs/embedding.md as they are added.
+    only ever belongs to one product. The shared support piece calls the
+    /support-api routes from a product's own support page (docs/embedding.md):
+    they need no key, and answer only the product's allowed origins, naming
+    that exact origin in Access-Control-Allow-Origin; any other origin gets
+    404 with no CORS header.
   license:
     name: Apache-2.0
     identifier: Apache-2.0
@@ -83,7 +86,89 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /support-api/config:
+    get:
+      operationId: getSupportConfig
+      summary: The contact form's settings for one product.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/ProductQuery'
+      responses:
+        '200':
+          description: The form's settings.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupportConfig'
+        '404':
+          description: An unknown product, or an origin not on its list. No CORS header.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /support-api/tickets:
+    post:
+      operationId: createSupportTicket
+      summary: A new support request from the contact form.
+      description: >-
+        Checked field by field, then by Turnstile (solved on one of the
+        product's own hosts), then by 20 requests per network address and 5
+        per email address per hour. The ticket stands even when the notice
+        email could not be sent; `emailSent` says which.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/ProductQuery'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewTicket'
+      responses:
+        '201':
+          description: The ticket was created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketCreated'
+        '400':
+          description: >-
+            A field is missing or wrong (`errors`, one message per field), the
+            Turnstile check failed (`errors.turnstileToken`), or the body could
+            not be read (`error`).
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/FieldErrors'
+                  - $ref: '#/components/schemas/Error'
+        '404':
+          description: An unknown product, an origin not on its list (no CORS header), or a product with no support type yet.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: Too many requests from this email or network address in the last hour.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: This ShyDesk has no Turnstile secret set, so no request can be checked.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 components:
+  parameters:
+    ProductQuery:
+      name: product
+      in: query
+      required: true
+      schema:
+        type: string
+      description: The product id, as set on the ShyDesk admin screen.
   securitySchemes:
     productKey:
       type: http
@@ -133,6 +218,116 @@ components:
         seq:
           type: integer
           minimum: 1
+    SupportConfig:
+      type: object
+      additionalProperties: false
+      required: [product, types, categories, turnstileSiteKey, maxAttachments, maxVideoSeconds]
+      properties:
+        product:
+          type: object
+          additionalProperties: false
+          required: [id, name]
+          properties:
+            id:
+              type: string
+            name:
+              type: string
+        types:
+          type: array
+          description: The product's support type, or none while it has not been set up.
+          maxItems: 1
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, name, fields]
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+              fields:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SupportField'
+        categories:
+          type: array
+          items:
+            type: string
+            enum: [question, bug, account, payment, other]
+        turnstileSiteKey:
+          type: string
+        maxAttachments:
+          type: integer
+          const: 10
+        maxVideoSeconds:
+          type: integer
+          const: 30
+    SupportField:
+      type: object
+      additionalProperties: false
+      required: [label, kind, required]
+      properties:
+        label:
+          type: string
+        kind:
+          type: string
+          enum: [text, select]
+        required:
+          type: boolean
+        options:
+          type: array
+          items:
+            type: string
+    NewTicket:
+      type: object
+      required: [email, subject, category, message, turnstileToken]
+      properties:
+        email:
+          type: string
+          maxLength: 254
+        subject:
+          type: string
+          maxLength: 150
+        category:
+          type: string
+          enum: [question, bug, account, payment, other]
+        message:
+          type: string
+          maxLength: 10000
+        fields:
+          type: object
+          description: The support type's extra fields, by label. Others are dropped.
+          additionalProperties:
+            type: string
+            maxLength: 1000
+        attachmentIds:
+          type: array
+          maxItems: 10
+          items:
+            type: string
+        turnstileToken:
+          type: string
+    TicketCreated:
+      type: object
+      additionalProperties: false
+      required: [ticketLink, emailSent]
+      properties:
+        ticketLink:
+          type: string
+          description: The product's ticket page with `#t=` and the 43-character private token. Shown once.
+        emailSent:
+          type: boolean
+          description: False when the notice email could not be sent; the customer should keep the link.
+    FieldErrors:
+      type: object
+      additionalProperties: false
+      required: [errors]
+      properties:
+        errors:
+          type: object
+          description: One message per field, keyed by field name (`fields.<label>` for extra fields).
+          additionalProperties:
+            type: string
     Error:
       type: object
       additionalProperties: false

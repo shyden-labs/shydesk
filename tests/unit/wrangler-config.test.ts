@@ -16,7 +16,8 @@ const config = JSON.parse(
   build?: unknown;
   durable_objects?: unknown;
   migrations?: unknown;
-  env: { dev: { assets?: unknown; build?: unknown; durable_objects?: unknown; migrations?: unknown } };
+  vars?: unknown;
+  env: { dev: { assets?: unknown; build?: unknown; durable_objects?: unknown; migrations?: unknown; vars?: unknown } };
 };
 
 describe('wrangler.jsonc', () => {
@@ -54,5 +55,16 @@ describe('the ticket timer in wrangler.jsonc', () => {
     const entry = await import('../../src/index.ts');
     const { TicketTimer } = await import('../../src/timers/ticket-timer.ts');
     expect(entry.TicketTimer).toBe(TicketTimer);
+  });
+
+  // shyden-labs/shydesk#19: Non-Prod checks the contact form with Cloudflare's
+  // published always-pass test keys until shyden-labs/shydesk#13 sets real
+  // ones; live never carries them, so it answers 503 until its secret is set.
+  it('gives dev the Turnstile test keys and live none', () => {
+    expect(config.env.dev.vars).toEqual({
+      TURNSTILE_SITE_KEY: '1x00000000000000000000AA',
+      TURNSTILE_SECRET: '1x0000000000000000000000000000000AA',
+    });
+    expect(config.vars).toBeUndefined();
   });
 });

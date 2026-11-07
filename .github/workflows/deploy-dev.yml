@@ -87,6 +87,8 @@ jobs:
       # A pull request builds the Worker without credentials (`--dry-run`);
       # develop deploys it with the dev environment's token, and fails naming
       # the missing secret rather than skipping when it is not there.
+      # The demo support page (shyden-labs/shydesk#19) goes with it: its product
+      # is upserted into the dev D1, then its static Worker deploys.
       - name: Deploy the Worker to dev
         if: ${{ steps.areas.outputs.worker == 'true' }}
         env:
@@ -98,6 +100,7 @@ jobs:
           node scripts/npm-ci.ts
           if [ "$DEPLOY_REHEARSAL" = "true" ]; then
             npx wrangler deploy --env dev --dry-run --outdir dist
+            npx wrangler deploy --config demo-host/wrangler.jsonc --dry-run --outdir dist/demo
             exit 0
           fi
           for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID; do
@@ -108,3 +111,5 @@ jobs:
           done
           npx wrangler d1 migrations apply shydesk --env dev --remote
           npx wrangler deploy --env dev
+          npx wrangler d1 execute shydesk --env dev --remote --file demo-host/seed.sql
+          npx wrangler deploy --config demo-host/wrangler.jsonc

@@ -153,3 +153,74 @@ export function pickerItem(phone: Phone, fixture: Fixture): string {
     ? `${IOS_ITEM} label BEGINSWITH 'Photo,'`
     : `${IOS_ITEM} label BEGINSWITH 'Video, ${SPOKEN[fixture]} seconds,'`;
 }
+
+/**
+ * The viewport point, in CSS pixels, at the middle of a page element's box.
+ * A desktop click goes there as a real mouse press: Safari's Element Click
+ * cannot reach inside a shadow root (WebKit bug 202589; measured on PR
+ * shyden-labs/shydesk#69, "click intercepted"), and the support piece draws
+ * its form in one. Fails naming the element when it is not drawn in the window.
+ */
+export function viewportPoint(box: Box, viewport: { width: number; height: number }, label: string): { x: number; y: number } {
+  if (box.width <= 0 || box.height <= 0) throw new Error(`"${label}" is not drawn (it has no size)`);
+  const x = Math.round(box.x + box.width / 2);
+  const y = Math.round(box.y + box.height / 2);
+  if (x < 0 || y < 0 || x >= viewport.width || y >= viewport.height) {
+    throw new Error(
+      `"${label}" is drawn outside the window (its middle is at ${String(x)}, ${String(y)} in a ${String(viewport.width)} by ${String(viewport.height)} window)`,
+    );
+  }
+  return { x, y };
+}
+
+/** Why a lookup by name failed: the name wanted, and every distinct name the page did have. */
+export function notNamedMessage(label: string, seen: readonly string[]): string {
+  const missing = `no element named "${label}" appeared on the page`;
+  if (seen.length === 0) return `${missing}; it had no named elements at all`;
+  return `${missing}; the names seen were: ${[...new Set(seen)].map((name) => `"${name}"`).join(', ')}`;
+}
+
+/**
+ * Whether a control's accessible name is `label`. A file input's name also
+ * carries the browser's own button text after the label on some targets
+ * (Firefox: "Harness file Browse… No file selected.", measured on PR
+ * shyden-labs/shydesk#69), so a file input matches the label followed by a space.
+ */
+export function nameMatches(label: string, name: string, fileInput: boolean): boolean {
+  return name === label || (fileInput && name.startsWith(`${label} `));
+}
+
+/**
+ * How far, in CSS pixels, the page must scroll (down is positive) to bring the
+ * middle of an element to the middle of the window; 0 when its middle is
+ * already in the window. The scroll itself is a real wheel action.
+ */
+export function scrollNeeded(box: Box, viewport: { width: number; height: number }): number {
+  const middle = box.y + box.height / 2;
+  if (middle >= 0 && middle < viewport.height) return 0;
+  return Math.round(middle - viewport.height / 2);
+}
+
+/**
+ * The real input that scrolls the page on each desktop target. Safari's driver
+ * accepts a W3C wheel action but scrolls nothing (measured on PR
+ * shyden-labs/shydesk#69, run 42408345149: 0 px after a 401 px wheel), so
+ * Safari scrolls the way a keyboard user does, by Page Down and Page Up.
+ */
+export function scrollInput(target: 'chromium' | 'firefox' | 'safari'): 'wheel' | 'keys' {
+  return target === 'safari' ? 'keys' : 'wheel';
+}
+
+/** The WebDriver key that scrolls toward a control `delta` px away (down is positive): Page Down or Page Up. */
+export function scrollKey(delta: number): string {
+  return delta > 0 ? '' : '';
+}
+
+/**
+ * Whether a control is drawn in the same place and size in two reads. A
+ * scroll animates, so a control is pressed only once it has stopped moving,
+ * never where it was partway through the scroll.
+ */
+export function sameBox(a: Box, b: Box): boolean {
+  return a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
+}

@@ -10,6 +10,14 @@ which finds controls by their accessible name, so every control a test touches
 needs one. On the phones the helpers use Appium's native layer: a real touch, real
 key presses and the phone's own photo picker.
 
+Before any target starts, the suite runs this branch's ShyDesk locally
+(`wrangler dev` on port 8787, a fresh local D1 with the migrations and a seed,
+Cloudflare's always-pass Turnstile test keys; `tests/e2e/harness/local-shydesk.ts`),
+so a pull request tests its own code. `/contact.html` serves the demo support
+page (`demo-host/public/index.html`) with its piece loaded from that ShyDesk;
+`?product=demo-elsewhere` names a product allowed only on another origin. The
+local ShyDesk's log is `.e2e-runs/shydesk.log`.
+
 Each run prints the total per target and fails naming any target that ran fewer
 tests (`scripts/e2e-totals.ts`).
 
@@ -36,6 +44,7 @@ Each run, with the phones unlocked and auto-lock off:
 
 ```sh
 adb reverse tcp:8765 tcp:8765
+adb reverse tcp:8787 tcp:8787
 E2E_TARGETS=android,ios E2E_ORIGIN=http://<this Mac's LAN address>:8765 \
   E2E_IOS_UDID=<xcrun xctrace list devices> E2E_ANDROID_SERIAL=<adb devices> \
   E2E_CHROMEDRIVER=<path> npm run test:e2e:device
@@ -44,5 +53,5 @@ E2E_TARGETS=android,ios E2E_ORIGIN=http://<this Mac's LAN address>:8765 \
 `test:e2e:device` is the same command as `test:e2e`; only real-device runs use
 it on a laptop, where every other suite is CI's.
 
-The suite serves its pages on port 8765; the iPhone reaches them over the LAN,
-Android through `adb reverse`.
+The suite serves its pages on port 8765 and the local ShyDesk on 8787; the
+iPhone reaches both over the LAN, Android through `adb reverse`.

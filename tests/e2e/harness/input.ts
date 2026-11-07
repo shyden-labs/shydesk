@@ -14,10 +14,28 @@
  * step that cannot happen fails naming what was missing.
  */
 import { driver } from './driver.ts';
+import { named } from './find.ts';
 import { resolve } from 'node:path';
-import { ANDROID_PAGE, nativeFinder, pickerItem, screenPoint, targetOf, type Box, type Fixture, type Phone } from './targets.ts';
+import {
+  ANDROID_PAGE,
+  nativeFinder,
+  pickerItem,
+  screenPoint,
+  targetOf,
+  sameBox,
+  scrollInput,
+  scrollKey,
+  scrollNeeded,
+  viewportPoint,
+  type Box,
+  type Fixture,
+  type Phone,
+} from './targets.ts';
 
 const WAIT = 15_000;
+
+/** Page Down presses allowed to bring a control into view: more than any test page is long. */
+const PAGE_KEYS = 20;
 
 function phone(): Phone | undefined {
   const target = targetOf(driver().capabilities);
@@ -41,11 +59,85 @@ async function nativeTap(on: Phone, selector: string, what: string): Promise<voi
   await element.click();
 }
 
+/**
+ * A real mouse press where the page draws the element named `label`. Safari's
+ * Element Click cannot reach inside a shadow root (WebKit bug 202589; "click
+ * intercepted" on PR shyden-labs/shydesk#69), so every desktop target presses
+ * the mouse at the element's middle instead, as a person would, after a real
+ * wheel scroll when the element is outside the window.
+ */
+async function clickDrawn(label: string): Promise<void> {
+  const element = await named(label);
+  // Reads where the element is drawn; the input itself is the real wheel and mouse actions below.
+  const drawn = (): Promise<{ box: Box; viewport: { width: number; height: number } }> =>
+    driver().execute(
+      'const r = arguments[0].getBoundingClientRect(); return { box: { x: r.x, y: r.y, width: r.width, height: r.height }, viewport: { width: window.innerWidth, height: window.innerHeight } };',
+      element,
+    );
+  let { box, viewport } = await drawn();
+  const delta = scrollNeeded(box, viewport);
+  if (delta !== 0) {
+    const at = { x: Math.round(viewport.width / 2), y: Math.round(viewport.height / 2) };
+    // Read only, for the failure message: how far the page had scrolled, and what sits under the wheel.
+    const where = (): Promise<string> =>
+      driver().execute(
+        'const e = document.elementFromPoint(arguments[0], arguments[1]); return `page scrolled ${String(Math.round(window.scrollY))} px, under the scroll point <${e === null ? "nothing" : e.localName}>, focus on <${document.activeElement === null ? "nothing" : document.activeElement.localName}>`;',
+        at.x,
+        at.y,
+      );
+    const before = await where();
+    const target = targetOf(driver().capabilities);
+    if (target !== 'chromium' && target !== 'firefox' && target !== 'safari') throw new Error(`no desktop scroll input for ${target}`);
+    const inView = async (): Promise<boolean> => {
+      ({ box, viewport } = await drawn());
+      return scrollNeeded(box, viewport) === 0;
+    };
+    try {
+      if (scrollInput(target) === 'wheel') {
+        // A real mouse-wheel scroll from the middle of the window, as a person brings a control into view.
+        await driver().action('wheel').scroll({ x: at.x, y: at.y, deltaX: 0, deltaY: delta, duration: 200 }).perform();
+        await driver().waitUntil(inView, { timeout: WAIT, timeoutMsg: `"${label}" stayed outside the window` });
+      } else {
+        // Real Page Down or Page Up presses, one at a time, until the control is in the window.
+        let presses = 0;
+        while (!(await inView())) {
+          if (presses === PAGE_KEYS) throw new Error(`"${label}" stayed outside the window after ${String(PAGE_KEYS)} key presses`);
+          await driver().keys([scrollKey(delta)]);
+          presses += 1;
+        }
+      }
+    } catch (error) {
+      throw new Error(
+        `"${label}" was still outside the window after scrolling ${String(delta)} px by ${scrollInput(target)} (before: ${before}; after: ${await where()})`,
+        { cause: error },
+      );
+    }
+  }
+  // A scroll animates: press only once the control has stopped moving, inside the window.
+  let last = box;
+  await driver().waitUntil(
+    async () => {
+      ({ box, viewport } = await drawn());
+      const still = sameBox(last, box);
+      last = box;
+      return still && scrollNeeded(box, viewport) === 0;
+    },
+    { timeout: WAIT, timeoutMsg: `"${label}" never stopped moving inside the window` },
+  );
+  await driver()
+    .action('pointer', { parameters: { pointerType: 'mouse' } })
+    .move(viewportPoint(box, viewport, label))
+    .down()
+    .pause(50)
+    .up()
+    .perform();
+}
+
 /** A real click or touch on the control named `label`. */
 export async function tap(label: string): Promise<void> {
   const on = phone();
   if (on === undefined) {
-    await driver().$(`aria/${label}`).click();
+    await clickDrawn(label);
     return;
   }
   await native(() => nativeTap(on, nativeFinder(on, label), `the control named "${label}"`));
@@ -58,8 +150,7 @@ export async function tap(label: string): Promise<void> {
  */
 async function touchDrawn(label: string): Promise<void> {
   // Resolved, so the page script receives the DOM element, not WebdriverIO's handle.
-  const element = await driver().$(`aria/${label}`);
-  await element.waitForExist({ timeout: WAIT, timeoutMsg: `android: the field named "${label}" never appeared on the page` });
+  const element = await named(label);
   // Reads where the field is drawn; the input itself is the real touch below.
   const { box, ratio } = await driver().execute<{ box: Box; ratio: number }>(
     'const r = arguments[0].getBoundingClientRect(); return { box: { x: r.x, y: r.y, width: r.width, height: r.height }, ratio: window.devicePixelRatio };',
@@ -102,7 +193,7 @@ const MEDIA = resolve(import.meta.dirname, '../../fixtures/media');
 export async function pickFile(label: string, fixture: Fixture): Promise<void> {
   const on = phone();
   if (on === undefined) {
-    await driver().$(`aria/${label}`).addValue(resolve(MEDIA, fixture));
+    await (await named(label)).addValue(resolve(MEDIA, fixture));
     return;
   }
   await native(async () => {
