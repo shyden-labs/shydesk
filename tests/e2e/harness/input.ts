@@ -26,6 +26,8 @@ import {
   scrollInput,
   scrollKey,
   scrollNeeded,
+  swipeUp,
+  centreInside,
   viewportPoint,
   type Box,
   type Fixture,
@@ -133,6 +135,34 @@ async function clickDrawn(label: string): Promise<void> {
     .perform();
 }
 
+/** Real finger swipes allowed to bring a page control onto a phone screen: more than any test page is long. */
+const SWIPES = 8;
+
+/**
+ * A real touch on a page control in the phone's native layer. The native tree
+ * leaves out controls drawn below the screen ("Send" never appeared on the
+ * OnePlus, 2026-11-08) and also lists controls hidden under the on-screen
+ * keyboard (Send at y 2820, below a page view ending at 1887). So once the
+ * control is in the page, real finger swipes bring it inside the page view,
+ * one at a time, and the touch fails naming how many.
+ */
+async function nativePageTap(on: 'android', label: string, what: string): Promise<void> {
+  const selector = nativeFinder(on, label);
+  const element = driver().$(selector);
+  // The native tree also lists controls under the keyboard, so a control must be inside the page view.
+  const onScreen = async (): Promise<boolean> =>
+    (await element.isExisting()) && centreInside({ ...(await element.getLocation()), ...(await element.getSize()) }, await pageView());
+  let swipes = 0;
+  while (!(await onScreen())) {
+    if (swipes === SWIPES) {
+      throw new Error(`${on}: ${what} was not inside the page view after ${String(SWIPES)} swipes up the page (${selector})`);
+    }
+    await swipePage(await pageView());
+    swipes += 1;
+  }
+  await element.click();
+}
+
 /** A real click or touch on the control named `label`. */
 export async function tap(label: string): Promise<void> {
   const on = phone();
@@ -140,34 +170,85 @@ export async function tap(label: string): Promise<void> {
     await clickDrawn(label);
     return;
   }
+  if (on === 'android') {
+    // In the page first, so a form still drawing is waited for, never swiped past.
+    await named(label);
+    await native(() => nativePageTap(on, label, `the control named "${label}"`));
+    return;
+  }
   await native(() => nativeTap(on, nativeFinder(on, label), `the control named "${label}"`));
+}
+
+/** A real finger swipe up Chrome's page view, which scrolls the page down. */
+async function swipePage(area: Box): Promise<void> {
+  const { from, to } = swipeUp(area);
+  await driver()
+    .action('pointer', { parameters: { pointerType: 'touch' } })
+    .move(from)
+    .down()
+    .move({ ...to, duration: 400 })
+    // Held still before lifting, so the page stops where the finger does instead of flicking on.
+    .pause(300)
+    .up()
+    .perform();
+}
+
+/** Chrome's page view in the native layer: the part of the screen showing the page, above the keyboard when it is up. */
+async function pageView(): Promise<Box> {
+  const page = driver().$(ANDROID_PAGE);
+  await page.waitForExist({ timeout: WAIT, timeoutMsg: `android: Chrome's page area never appeared (${ANDROID_PAGE})` });
+  return { ...(await page.getLocation()), ...(await page.getSize()) };
 }
 
 /**
  * A real touch where the page draws the element named `label`. Chrome on
  * Android gives text fields no native name, so the field's box is read from
- * the page and touched on screen, inside Chrome's page area.
+ * the page and touched on screen, inside Chrome's page view. A field drawn
+ * under the on-screen keyboard is first swiped up into the page view: a touch
+ * there hit the keyboard instead, typing "6" and "v" into the field above
+ * (measured on the OnePlus, 2026-11-08).
  */
 async function touchDrawn(label: string): Promise<void> {
   // Resolved, so the page script receives the DOM element, not WebdriverIO's handle.
   const element = await named(label);
-  // Reads where the field is drawn; the input itself is the real touch below.
-  const { box, ratio } = await driver().execute<{ box: Box; ratio: number }>(
-    'const r = arguments[0].getBoundingClientRect(); return { box: { x: r.x, y: r.y, width: r.width, height: r.height }, ratio: window.devicePixelRatio };',
-    element,
-  );
-  await native(async () => {
-    const page = driver().$(ANDROID_PAGE);
-    await page.waitForExist({ timeout: WAIT, timeoutMsg: `android: Chrome's page area never appeared (${ANDROID_PAGE})` });
-    const at = screenPoint(box, ratio, await page.getLocation());
-    await driver()
-      .action('pointer', { parameters: { pointerType: 'touch' } })
-      .move(at)
-      .down()
-      .pause(50)
-      .up()
-      .perform();
-  });
+  for (let swipes = 0; swipes <= SWIPES; swipes += 1) {
+    // Reads where the field is drawn, until two reads agree, so a page still moving is never touched.
+    const drawn = (): Promise<{ box: Box; ratio: number }> =>
+      driver().execute(
+        'const r = arguments[0].getBoundingClientRect(); return { box: { x: r.x, y: r.y, width: r.width, height: r.height }, ratio: window.devicePixelRatio };',
+        element,
+      );
+    let { box, ratio } = await drawn();
+    let last = box;
+    await driver().waitUntil(
+      async () => {
+        ({ box, ratio } = await drawn());
+        const still = sameBox(last, box);
+        last = box;
+        return still;
+      },
+      { timeout: WAIT, timeoutMsg: `android: the field named "${label}" never stopped moving` },
+    );
+    const touched = await native(async () => {
+      const area = await pageView();
+      const at = screenPoint(box, ratio, area);
+      // A point is a box with no size, whose middle is the point itself.
+      if (!centreInside({ ...at, width: 0, height: 0 }, area)) {
+        if (swipes < SWIPES) await swipePage(area);
+        return false;
+      }
+      await driver()
+        .action('pointer', { parameters: { pointerType: 'touch' } })
+        .move(at)
+        .down()
+        .pause(50)
+        .up()
+        .perform();
+      return true;
+    });
+    if (touched) return;
+  }
+  throw new Error(`android: the field named "${label}" was not inside the page view after ${String(SWIPES)} swipes up the page`);
 }
 
 /** Real key presses into the field named `label`, after a real tap on it. */

@@ -13,13 +13,16 @@ export interface Element {
   addValue(value: string): Promise<void>;
   getText(): Promise<string>;
   waitForExist(options: { timeout: number; timeoutMsg: string }): Promise<true>;
+  isExisting(): Promise<boolean>;
   /** In the native layer: the element's top-left corner, in device pixels. */
   getLocation(): Promise<{ x: number; y: number }>;
+  /** In the native layer: the element's size, in device pixels. */
+  getSize(): Promise<{ width: number; height: number }>;
 }
 
 /** A W3C pointer action sequence, sent as one real input. */
 export interface PointerAction {
-  move(to: { x: number; y: number }): PointerAction;
+  move(to: { x: number; y: number; duration?: number }): PointerAction;
   down(): PointerAction;
   pause(ms: number): PointerAction;
   up(): PointerAction;

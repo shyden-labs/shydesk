@@ -14,6 +14,8 @@ import {
   scrollInput,
   scrollKey,
   sameBox,
+  swipeUp,
+  centreInside,
 } from '../e2e/harness/targets.ts';
 
 /**
@@ -122,8 +124,17 @@ describe('targetOf', () => {
 });
 
 describe('nativeFinder', () => {
-  it('finds an Android control by the start of its accessible name', () => {
-    expect(nativeFinder('android', 'Your message')).toBe('android=new UiSelector().descriptionStartsWith("Your message")');
+  it('finds an Android control by the start of its description', () => {
+    expect(nativeFinder('android', 'Your message')).toBe(
+      '//*[starts-with(@content-desc, "Your message") or (@clickable="true" and @text="Your message")]',
+    );
+  });
+
+  // Chrome on Android names a button by its visible text, with no description
+  // ("Send": Button text="Send", content-desc empty, measured 2026-11-08); a
+  // label beside a field holds the same text but cannot be tapped.
+  it('also finds a tappable Android control by its visible text, never a plain label of the same text', () => {
+    expect(nativeFinder('android', 'Send')).toContain('(@clickable="true" and @text="Send")');
   });
 
   // The iPhone photo picker shows an album as a button holding a text of the
@@ -300,5 +311,51 @@ describe('sameBox', () => {
 
   it('is false when the control grew taller', () => {
     expect(sameBox({ x: 1, y: 2, width: 3, height: 4 }, { x: 1, y: 2, width: 3, height: 40 })).toBe(false);
+  });
+});
+
+describe('swipeUp', () => {
+  it('drags a finger up the middle of the page area, from 70% to 30% of its height', () => {
+    expect(swipeUp({ x: 0, y: 0, width: 1080, height: 2400 })).toEqual({ from: { x: 540, y: 1680 }, to: { x: 540, y: 720 } });
+  });
+
+  // With the on-screen keyboard up, the page area is the part above it
+  // (a swipe that starts on the keyboard scrolls nothing, 2026-11-08).
+  it('stays inside a page area that starts below the browser bar and ends above the keyboard', () => {
+    expect(swipeUp({ x: 0, y: 356, width: 1440, height: 1200 })).toEqual({ from: { x: 720, y: 1196 }, to: { x: 720, y: 716 } });
+  });
+
+  it('rounds to whole pixels in an odd-sized area', () => {
+    expect(swipeUp({ x: 1, y: 0, width: 375, height: 667 })).toEqual({ from: { x: 189, y: 467 }, to: { x: 189, y: 200 } });
+  });
+});
+
+describe('centreInside', () => {
+  const page = { x: 0, y: 356, width: 1440, height: 1531 };
+
+  it('is true for a control whose middle is inside the page area', () => {
+    expect(centreInside({ x: 112, y: 1500, width: 1218, height: 161 }, page)).toBe(true);
+  });
+
+  // Measured on the OnePlus, 2026-11-08: Send at y 2820 sat under the keyboard,
+  // below the page area that ends at 1887, and a tap there hit the keyboard.
+  it('is false for a control under the keyboard, below the page area', () => {
+    expect(centreInside({ x: 112, y: 2820, width: 1218, height: 161 }, page)).toBe(false);
+  });
+
+  it('is false for a control above the page area, under the browser bar', () => {
+    expect(centreInside({ x: 112, y: 200, width: 100, height: 100 }, page)).toBe(false);
+  });
+
+  it('is false for a control whose middle is right of the page area', () => {
+    expect(centreInside({ x: 1500, y: 1000, width: 100, height: 100 }, page)).toBe(false);
+  });
+
+  it('is false for a control whose middle is left of the page area', () => {
+    expect(centreInside({ x: -300, y: 1000, width: 100, height: 100 }, page)).toBe(false);
+  });
+
+  it('counts a middle exactly on the bottom edge as outside', () => {
+    expect(centreInside({ x: 0, y: 1837, width: 100, height: 100 }, page)).toBe(false);
   });
 });
