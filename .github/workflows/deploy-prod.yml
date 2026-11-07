@@ -1,0 +1,55 @@
+# Production gets only the frozen `release/*` cut, merged into `main` with
+# Shyden's approval (shyden-labs/shydesk#14 AC3). Every push to `main` deploys
+# the live Worker from the `production` environment, which lets only `main`
+# deploy and requires ShydenMcM as reviewer, so no path reaches production
+# without him. The live credential lives only there, never as a repository
+# secret, and the dev environment's token cannot reach the live account.
+#
+# Third-party actions are pinned to full SHAs with a `# vX.Y.Z` comment, as in
+# ci.yml.
+name: deploy-prod
+on:
+  push:
+    branches: [main]
+
+# A production deploy stopped halfway leaves the live Worker undefined, so a
+# newer push waits for the running deploy instead of cancelling it.
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy-prod:
+    if: ${{ github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-26.04
+    environment: production
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # The exact Node, from the one file Dependabot bumps (shyden-labs/repo-template#143).
+      - id: node
+        run: |
+          version=$(sed -nE 's/^FROM node:([0-9]+\.[0-9]+\.[0-9]+)$/\1/p' .github/node/Dockerfile)
+          test -n "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ steps.node.outputs.version }}
+      # Fails naming the missing secret rather than skipping when it is not there.
+      - name: Deploy the Worker to production
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          WRANGLER_SEND_METRICS: false
+        run: |
+          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID; do
+            if [ -z "${!name}" ]; then
+              echo "::error title=No $name in the production environment::Add it to the production environment before the Worker can deploy."
+              exit 1
+            fi
+          done
+          node scripts/npm-ci.ts
+          npx wrangler d1 migrations apply shydesk --remote
+          npx wrangler deploy
