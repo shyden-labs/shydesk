@@ -9,17 +9,18 @@
 import { describe, it } from 'mocha';
 import { strict as assert } from 'node:assert';
 import { driver } from './harness/driver.ts';
+import { named } from './harness/find.ts';
 import { tap, type } from './harness/input.ts';
 
 const WAIT = 20_000;
 
 /** The text of the element named `label` once it holds `expected`, or a failure showing what it held. */
 async function textHolding(label: string, expected: string): Promise<string> {
+  const element = await named(label);
   let text = '';
   await driver().waitUntil(
     async () => {
-      const element = driver().$(`aria/${label}`);
-      text = await element.getText().catch(() => '');
+      text = await element.getText();
       return text.includes(expected);
     },
     { timeout: WAIT, timeoutMsg: `"${label}" never held "${expected}"; it held "${text}"` },

@@ -14,6 +14,7 @@
  * step that cannot happen fails naming what was missing.
  */
 import { driver } from './driver.ts';
+import { named } from './find.ts';
 import { resolve } from 'node:path';
 import { ANDROID_PAGE, nativeFinder, pickerItem, screenPoint, targetOf, type Box, type Fixture, type Phone } from './targets.ts';
 
@@ -45,7 +46,7 @@ async function nativeTap(on: Phone, selector: string, what: string): Promise<voi
 export async function tap(label: string): Promise<void> {
   const on = phone();
   if (on === undefined) {
-    await driver().$(`aria/${label}`).click();
+    await (await named(label)).click();
     return;
   }
   await native(() => nativeTap(on, nativeFinder(on, label), `the control named "${label}"`));
@@ -58,8 +59,7 @@ export async function tap(label: string): Promise<void> {
  */
 async function touchDrawn(label: string): Promise<void> {
   // Resolved, so the page script receives the DOM element, not WebdriverIO's handle.
-  const element = await driver().$(`aria/${label}`);
-  await element.waitForExist({ timeout: WAIT, timeoutMsg: `android: the field named "${label}" never appeared on the page` });
+  const element = await named(label);
   // Reads where the field is drawn; the input itself is the real touch below.
   const { box, ratio } = await driver().execute<{ box: Box; ratio: number }>(
     'const r = arguments[0].getBoundingClientRect(); return { box: { x: r.x, y: r.y, width: r.width, height: r.height }, ratio: window.devicePixelRatio };',
@@ -102,7 +102,7 @@ const MEDIA = resolve(import.meta.dirname, '../../fixtures/media');
 export async function pickFile(label: string, fixture: Fixture): Promise<void> {
   const on = phone();
   if (on === undefined) {
-    await driver().$(`aria/${label}`).addValue(resolve(MEDIA, fixture));
+    await (await named(label)).addValue(resolve(MEDIA, fixture));
     return;
   }
   await native(async () => {

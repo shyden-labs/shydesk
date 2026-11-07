@@ -8,6 +8,7 @@ import { strict as assert } from 'node:assert';
 import { statSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { driver } from './harness/driver.ts';
+import { named } from './harness/find.ts';
 import { pickFile, tap, type } from './harness/input.ts';
 import type { Fixture } from './harness/targets.ts';
 
@@ -18,7 +19,7 @@ async function eventsHolding(expected: string): Promise<string> {
   let events = '';
   await driver().waitUntil(
     async () => {
-      events = await driver().$('aria/Harness events').getText();
+      events = await (await named('Harness events')).getText();
       return events.split(' ').includes(expected);
     },
     { timeout: 15_000, timeoutMsg: `the page never logged "${expected}"; it logged "${events}"` },
