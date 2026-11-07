@@ -7,7 +7,8 @@
  * <out-folder>/api/docs/ gets the page and its start-up script from
  * public/api/docs/, the Swagger UI files from the pinned swagger-ui-dist
  * package (its licence and notice beside them, as Apache-2.0 asks), and the
- * spec. Every request reaches the Worker first, which serves these only to
+ * spec. <out-folder>/embed.js is the shared support piece, public/embed.js.
+ * Every request reaches the Worker first, which serves these only to
  * staff (src/api/docs.ts).
  */
 import { copyFileSync, existsSync, mkdirSync, rmSync } from 'node:fs';
@@ -34,6 +35,8 @@ export function buildApiDocs(root: string, out: string): void {
   rmSync(docs, { recursive: true, force: true });
   mkdirSync(docs, { recursive: true });
   for (const [name, source] of Object.entries(DOCS_FILES)) copyFileSync(join(root, source), join(docs, name));
+  // The shared support piece (shyden-labs/shydesk#19) sits at the assets root; the Worker serves it as /embed.js.
+  copyFileSync(join(root, 'public/embed.js'), join(out, 'embed.js'));
 }
 
 export function main(args: string[]): number {

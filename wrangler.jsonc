@@ -22,6 +22,9 @@
       "workers_dev": true,
       "d1_databases": [{ "binding": "DB", "database_name": "shydesk", "database_id": "482eef16-a848-488a-a1fa-e859031aabd1" }],
       "durable_objects": { "bindings": [{ "name": "TICKET_TIMER", "class_name": "TicketTimer" }] },
+      // Non-Prod's Turnstile: Cloudflare's published always-pass test keys (shyden-labs/shydesk#19)
+      // until shyden-labs/shydesk#13 sets real ones. Live has none: its contact form answers 503.
+      "vars": { "TURNSTILE_SITE_KEY": "1x00000000000000000000AA", "TURNSTILE_SECRET": "1x0000000000000000000000000000000AA" },
     },
   },
 }

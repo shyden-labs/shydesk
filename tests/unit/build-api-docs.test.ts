@@ -50,6 +50,16 @@ describe('buildApiDocs', () => {
   });
 });
 
+describe('the shared piece', () => {
+  // shyden-labs/shydesk#19: the same build puts public/embed.js at the
+  // assets root, where the Worker serves it as /embed.js.
+  it('is copied unchanged to <out>/embed.js', () => {
+    const dir = out();
+    buildApiDocs(ROOT, dir);
+    expect(readFileSync(join(dir, 'embed.js')).equals(readFileSync(join(ROOT, 'public/embed.js')))).toBe(true);
+  });
+});
+
 describe('the docs page', () => {
   const page = readFileSync(join(ROOT, 'public/api/docs/index.html'), 'utf8');
   const start = readFileSync(join(ROOT, 'public/api/docs/init.js'), 'utf8');

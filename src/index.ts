@@ -2,6 +2,9 @@ import { Hono } from 'hono';
 import { adminRoutes } from './admin/routes.ts';
 import { docsRoutes, type DocsEnv } from './api/docs.ts';
 import { apiRoutes } from './api/routes.ts';
+import { contactRoutes, type ContactBindings } from './customer/contact.ts';
+import { embedRoutes, type EmbedEnv } from './customer/embed.ts';
+import type { Deliver } from './mail/notify.ts';
 
 // The Durable Object classes wrangler.jsonc binds must be exported from the entry point.
 export { TicketTimer } from './timers/ticket-timer.ts';
@@ -11,7 +14,14 @@ export { TicketTimer } from './timers/ticket-timer.ts';
  * Access settings and FIRST_ADMIN_EMAIL; on a deploy without them (until
  * shyden-labs/shydesk#13 sets Access up) they answer 401 to everyone.
  */
-export const app = new Hono<{ Bindings: DocsEnv }>();
+export const app = new Hono<{ Bindings: DocsEnv & ContactBindings & EmbedEnv }>();
+
+/**
+ * Mail delivery for the Worker. Nothing opens an SMTP connection yet
+ * (shyden-labs/shydesk#68), so each send fails by name: the customer is told
+ * the email could not be sent and to keep the private link.
+ */
+export const noSmtpYet: Deliver = () => Promise.reject(new Error('the Worker has no SMTP connection yet (shyden-labs/shydesk#68)'));
 
 // What a deploy is read back with: answers without touching any binding.
 app.get('/health', (c) => c.json({ ok: true }));
@@ -19,5 +29,7 @@ app.get('/health', (c) => c.json({ ok: true }));
 app.route('/', adminRoutes());
 app.route('/', apiRoutes());
 app.route('/', docsRoutes());
+app.route('/', contactRoutes({ fetcher: fetch.bind(globalThis), deliver: noSmtpYet }));
+app.route('/', embedRoutes());
 
 export default app;
