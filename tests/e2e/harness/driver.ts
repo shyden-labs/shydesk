@@ -13,13 +13,16 @@ export interface Element {
   addValue(value: string): Promise<void>;
   getText(): Promise<string>;
   waitForExist(options: { timeout: number; timeoutMsg: string }): Promise<true>;
+  isExisting(): Promise<boolean>;
   /** In the native layer: the element's top-left corner, in device pixels. */
   getLocation(): Promise<{ x: number; y: number }>;
+  /** In the native layer: the element's size, in device pixels. */
+  getSize(): Promise<{ width: number; height: number }>;
 }
 
 /** A W3C pointer action sequence, sent as one real input. */
 export interface PointerAction {
-  move(to: { x: number; y: number }): PointerAction;
+  move(to: { x: number; y: number; duration?: number }): PointerAction;
   down(): PointerAction;
   pause(ms: number): PointerAction;
   up(): PointerAction;
@@ -38,6 +41,10 @@ export interface Driver {
   getContext(): Promise<string | { id: string }>;
   switchContext(name: string): Promise<void>;
   keys(keys: string[]): Promise<void>;
+  /** Android: whether the on-screen keyboard is showing (read only). */
+  isKeyboardShown(): Promise<boolean>;
+  /** Android: one real key press by Android key code (4 is Back). */
+  pressKeyCode(code: number): Promise<void>;
   /** Runs `script` in the page with `args` (elements arrive as DOM elements); reads only, never input. */
   execute<T>(script: string, ...args: unknown[]): Promise<T>;
   action(type: 'pointer', options: { parameters: { pointerType: 'touch' | 'mouse' } }): PointerAction;

@@ -109,7 +109,8 @@ function plain(label: string): string {
 /** A selector for the control with this accessible name in the phone's native layer. */
 export function nativeFinder(phone: Phone, label: string): string {
   return phone === 'android'
-    ? `android=new UiSelector().descriptionStartsWith("${plain(label)}")`
+    ? // A description, or a tappable control's visible text: Chrome names a button by its text alone.
+      `//*[starts-with(@content-desc, "${plain(label)}") or (@clickable="true" and @text="${plain(label)}")]`
     : // The photo picker shows an album as a button holding a text of the same name.
       `-ios predicate string:label == '${plain(label)}' AND type != 'XCUIElementTypeStaticText'`;
 }
@@ -223,4 +224,28 @@ export function scrollKey(delta: number): string {
  */
 export function sameBox(a: Box, b: Box): boolean {
   return a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
+}
+
+/**
+ * A real finger swipe up the middle of the page area, from 70% to 30% of its
+ * height, which scrolls the page down by about 40% of that area. A phone's
+ * native tree leaves out controls drawn below the screen, so a control that is
+ * not there yet is brought onto it this way, as a person would. The area is
+ * Chrome's page view, which ends above the on-screen keyboard: a swipe that
+ * starts on the keyboard scrolls nothing (measured on the OnePlus, 2026-11-08).
+ */
+export function swipeUp(area: Box): { from: { x: number; y: number }; to: { x: number; y: number } } {
+  const x = Math.round(area.x + area.width / 2);
+  return { from: { x, y: Math.round(area.y + area.height * 0.7) }, to: { x, y: Math.round(area.y + area.height * 0.3) } };
+}
+
+/**
+ * Whether the middle of a control lies inside an area, such as Chrome's page
+ * view above the on-screen keyboard. A phone's native tree also lists controls
+ * hidden under the keyboard, and a touch there hits the keyboard instead.
+ */
+export function centreInside(box: Box, area: Box): boolean {
+  const x = box.x + box.width / 2;
+  const y = box.y + box.height / 2;
+  return x >= area.x && x < area.x + area.width && y >= area.y && y < area.y + area.height;
 }
