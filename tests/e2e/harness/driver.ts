@@ -41,6 +41,10 @@ export interface Driver {
   getContext(): Promise<string | { id: string }>;
   switchContext(name: string): Promise<void>;
   keys(keys: string[]): Promise<void>;
+  /** Android: whether the on-screen keyboard is showing (read only). */
+  isKeyboardShown(): Promise<boolean>;
+  /** Android: one real key press by Android key code (4 is Back). */
+  pressKeyCode(code: number): Promise<void>;
   /** Runs `script` in the page with `args` (elements arrive as DOM elements); reads only, never input. */
   execute<T>(script: string, ...args: unknown[]): Promise<T>;
   action(type: 'pointer', options: { parameters: { pointerType: 'touch' | 'mouse' } }): PointerAction;

@@ -138,6 +138,9 @@ async function clickDrawn(label: string): Promise<void> {
 /** Real finger swipes allowed to bring a page control onto a phone screen: more than any test page is long. */
 const SWIPES = 8;
 
+/** Android's Back key code, which closes the on-screen keyboard. */
+const ANDROID_BACK = 4;
+
 /**
  * A real touch on a page control in the phone's native layer. The native tree
  * leaves out controls drawn below the screen ("Send" never appeared on the
@@ -211,6 +214,16 @@ async function pageView(): Promise<Box> {
 async function touchDrawn(label: string): Promise<void> {
   // Resolved, so the page script receives the DOM element, not WebdriverIO's handle.
   const element = await named(label);
+  // The keyboard from the last field resizes the page view as it comes and goes, moving the
+  // page between a read and a touch; it is closed first with the Back key, as a person would.
+  await native(async () => {
+    if (!(await driver().isKeyboardShown())) return;
+    await driver().pressKeyCode(ANDROID_BACK);
+    await driver().waitUntil(async () => !(await driver().isKeyboardShown()), {
+      timeout: WAIT,
+      timeoutMsg: 'android: the on-screen keyboard stayed open after the Back key',
+    });
+  });
   for (let swipes = 0; swipes <= SWIPES; swipes += 1) {
     // Reads where the field is drawn, until two reads agree, so a page still moving is never touched.
     const drawn = (): Promise<{ box: Box; ratio: number }> =>
