@@ -179,3 +179,24 @@ export function notNamedMessage(label: string, seen: readonly string[]): string 
   if (seen.length === 0) return `${missing}; it had no named elements at all`;
   return `${missing}; the names seen were: ${[...new Set(seen)].map((name) => `"${name}"`).join(', ')}`;
 }
+
+/**
+ * Whether a control's accessible name is `label`. A file input's name also
+ * carries the browser's own button text after the label on some targets
+ * (Firefox: "Harness file Browse… No file selected.", measured on PR
+ * shyden-labs/shydesk#69), so a file input matches the label followed by a space.
+ */
+export function nameMatches(label: string, name: string, fileInput: boolean): boolean {
+  return name === label || (fileInput && name.startsWith(`${label} `));
+}
+
+/**
+ * How far, in CSS pixels, the page must scroll (down is positive) to bring the
+ * middle of an element to the middle of the window; 0 when its middle is
+ * already in the window. The scroll itself is a real wheel action.
+ */
+export function scrollNeeded(box: Box, viewport: { width: number; height: number }): number {
+  const middle = box.y + box.height / 2;
+  if (middle >= 0 && middle < viewport.height) return 0;
+  return Math.round(middle - viewport.height / 2);
+}

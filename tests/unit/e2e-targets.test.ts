@@ -9,6 +9,8 @@ import {
   screenPoint,
   viewportPoint,
   notNamedMessage,
+  nameMatches,
+  scrollNeeded,
 } from '../e2e/harness/targets.ts';
 
 /**
@@ -209,5 +211,45 @@ describe('notNamedMessage', () => {
 
   it('says when the page had no candidate elements at all', () => {
     expect(notNamedMessage('Send', [])).toBe('no element named "Send" appeared on the page; it had no named elements at all');
+  });
+});
+
+describe('nameMatches', () => {
+  it('matches a control whose name is exactly the label', () => {
+    expect(nameMatches('Email', 'Email', false)).toBe(true);
+  });
+
+  it('refuses a control whose name only starts with the label', () => {
+    expect(nameMatches('Email', 'Email address', false)).toBe(false);
+  });
+
+  it("matches a file input whose name is the label followed by the browser's own button text", () => {
+    expect(nameMatches('Harness file', 'Harness file Browse… No file selected.', true)).toBe(true);
+  });
+
+  it('refuses a file input whose name only shares the start of a word with the label', () => {
+    expect(nameMatches('Harness file', 'Harness files Browse…', true)).toBe(false);
+  });
+
+  it('matches a file input named exactly the label', () => {
+    expect(nameMatches('Photo', 'Photo', true)).toBe(true);
+  });
+});
+
+describe('scrollNeeded', () => {
+  it('is nothing for an element whose middle is in the window', () => {
+    expect(scrollNeeded({ x: 0, y: 100, width: 10, height: 40 }, { width: 800, height: 600 })).toBe(0);
+  });
+
+  it('brings an element below the window to the middle of the window', () => {
+    expect(scrollNeeded({ x: 0, y: 760, width: 10, height: 44 }, { width: 1366, height: 683 })).toBe(441);
+  });
+
+  it('brings an element above the window to the middle of the window, scrolling up', () => {
+    expect(scrollNeeded({ x: 0, y: -400, width: 10, height: 40 }, { width: 800, height: 600 })).toBe(-680);
+  });
+
+  it('counts an element whose middle sits on the bottom edge as outside', () => {
+    expect(scrollNeeded({ x: 0, y: 580, width: 10, height: 40 }, { width: 800, height: 600 })).toBe(300);
   });
 });

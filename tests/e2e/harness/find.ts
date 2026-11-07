@@ -11,7 +11,7 @@
  * every target. The lookup only reads; input stays real WebDriver input.
  */
 import { driver, type Element, type ElementReference } from './driver.ts';
-import { notNamedMessage } from './targets.ts';
+import { nameMatches, notNamedMessage } from './targets.ts';
 
 const WAIT = 15_000;
 
@@ -22,7 +22,7 @@ const LIST_CANDIDATES = `
   const found = [];
   const walk = (root) => {
     for (const element of root.querySelectorAll('*')) {
-      if (element.matches(arguments[0])) found.push(element);
+      if (element.matches(arguments[0])) found.push({ element, tag: element.localName, file: element.matches('input[type=file]') });
       if (element.shadowRoot) walk(element.shadowRoot);
     }
   };
@@ -32,16 +32,33 @@ const LIST_CANDIDATES = `
 
 const ELEMENT_KEY = 'element-6066-11e4-a52e-4f735466cecf';
 
-/** The ids of every element on the page whose accessible name is `label`, and every name seen. */
+interface Candidate {
+  element: ElementReference;
+  tag: string;
+  file: boolean;
+}
+
+/**
+ * The ids of every element on the page whose accessible name is `label`, and
+ * every name seen. An element the browser will not name (Safari answered
+ * "unknown error" for one on PR shyden-labs/shydesk#69) cannot be the one
+ * named `label`; it is listed by its tag and the browser's answer instead.
+ */
 async function idsNamed(label: string): Promise<{ ids: string[]; seen: string[] }> {
-  const candidates = await driver().execute<ElementReference[]>(LIST_CANDIDATES, CANDIDATES);
+  const candidates = await driver().execute<Candidate[]>(LIST_CANDIDATES, CANDIDATES);
   const ids: string[] = [];
   const seen: string[] = [];
-  for (const candidate of candidates) {
-    const id = candidate[ELEMENT_KEY];
-    const name = await driver().getElementComputedLabel(id);
+  for (const { element, tag, file } of candidates) {
+    const id = element[ELEMENT_KEY];
+    let name: string;
+    try {
+      name = await driver().getElementComputedLabel(id);
+    } catch (error) {
+      seen.push(`<${tag}> the browser could not name (${error instanceof Error ? (error.message.split('\n')[0] ?? '') : String(error)})`);
+      continue;
+    }
     seen.push(name);
-    if (name === label) ids.push(id);
+    if (nameMatches(label, name, file)) ids.push(id);
   }
   return { ids, seen };
 }

@@ -22,6 +22,7 @@ import {
   pickerItem,
   screenPoint,
   targetOf,
+  scrollNeeded,
   viewportPoint,
   type Box,
   type Fixture,
@@ -56,15 +57,33 @@ async function nativeTap(on: Phone, selector: string, what: string): Promise<voi
  * A real mouse press where the page draws the element named `label`. Safari's
  * Element Click cannot reach inside a shadow root (WebKit bug 202589; "click
  * intercepted" on PR shyden-labs/shydesk#69), so every desktop target presses
- * the mouse at the element's middle instead, as a person would.
+ * the mouse at the element's middle instead, as a person would, after a real
+ * wheel scroll when the element is outside the window.
  */
 async function clickDrawn(label: string): Promise<void> {
   const element = await named(label);
-  // Reads where the element is drawn; the input itself is the real mouse press below.
-  const { box, viewport } = await driver().execute<{ box: Box; viewport: { width: number; height: number } }>(
-    'const r = arguments[0].getBoundingClientRect(); return { box: { x: r.x, y: r.y, width: r.width, height: r.height }, viewport: { width: window.innerWidth, height: window.innerHeight } };',
-    element,
-  );
+  // Reads where the element is drawn; the input itself is the real wheel and mouse actions below.
+  const drawn = (): Promise<{ box: Box; viewport: { width: number; height: number } }> =>
+    driver().execute(
+      'const r = arguments[0].getBoundingClientRect(); return { box: { x: r.x, y: r.y, width: r.width, height: r.height }, viewport: { width: window.innerWidth, height: window.innerHeight } };',
+      element,
+    );
+  let { box, viewport } = await drawn();
+  const delta = scrollNeeded(box, viewport);
+  if (delta !== 0) {
+    // A real mouse-wheel scroll from the middle of the window, as a person brings a control into view.
+    await driver()
+      .action('wheel')
+      .scroll({ x: Math.round(viewport.width / 2), y: Math.round(viewport.height / 2), deltaX: 0, deltaY: delta, duration: 200 })
+      .perform();
+    await driver().waitUntil(
+      async () => {
+        ({ box, viewport } = await drawn());
+        return scrollNeeded(box, viewport) === 0;
+      },
+      { timeout: WAIT, timeoutMsg: `"${label}" was still outside the window after a ${String(delta)} px wheel scroll` },
+    );
+  }
   await driver()
     .action('pointer', { parameters: { pointerType: 'mouse' } })
     .move(viewportPoint(box, viewport, label))

@@ -26,6 +26,12 @@ export interface PointerAction {
   perform(): Promise<void>;
 }
 
+/** A W3C wheel action sequence, sent as one real input. */
+export interface WheelAction {
+  scroll(scroll: { x: number; y: number; deltaX: number; deltaY: number; duration: number }): WheelAction;
+  perform(): Promise<void>;
+}
+
 export interface Driver {
   capabilities: Record<string, unknown>;
   url(path: string): Promise<void>;
@@ -35,6 +41,7 @@ export interface Driver {
   /** Runs `script` in the page with `args` (elements arrive as DOM elements); reads only, never input. */
   execute<T>(script: string, ...args: unknown[]): Promise<T>;
   action(type: 'pointer', options: { parameters: { pointerType: 'touch' | 'mouse' } }): PointerAction;
+  action(type: 'wheel'): WheelAction;
   /** A lazy handle; awaiting it resolves the element, as a page script needs. */
   $(selector: string | ElementReference): Element & PromiseLike<Element>;
   /** The browser's own accessible name for the element (W3C Get Computed Label). */
