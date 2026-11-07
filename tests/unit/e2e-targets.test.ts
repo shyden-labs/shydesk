@@ -13,6 +13,7 @@ import {
   scrollNeeded,
   scrollInput,
   scrollKey,
+  sameBox,
 } from '../e2e/harness/targets.ts';
 
 /**
@@ -277,5 +278,27 @@ describe('scrollKey', () => {
 
   it('is Page Up to bring a control above the window down into it', () => {
     expect(scrollKey(-680)).toBe('');
+  });
+});
+
+describe('sameBox', () => {
+  it('is true for a control drawn in the same place twice', () => {
+    expect(sameBox({ x: 1, y: 2, width: 3, height: 4 }, { x: 1, y: 2, width: 3, height: 4 })).toBe(true);
+  });
+
+  it('is false while the page is still scrolling the control upward', () => {
+    expect(sameBox({ x: 1, y: 300, width: 3, height: 4 }, { x: 1, y: 250, width: 3, height: 4 })).toBe(false);
+  });
+
+  it('is false when the control moved sideways', () => {
+    expect(sameBox({ x: 1, y: 2, width: 3, height: 4 }, { x: 9, y: 2, width: 3, height: 4 })).toBe(false);
+  });
+
+  it('is false when the control grew wider', () => {
+    expect(sameBox({ x: 1, y: 2, width: 3, height: 4 }, { x: 1, y: 2, width: 30, height: 4 })).toBe(false);
+  });
+
+  it('is false when the control grew taller', () => {
+    expect(sameBox({ x: 1, y: 2, width: 3, height: 4 }, { x: 1, y: 2, width: 3, height: 40 })).toBe(false);
   });
 });

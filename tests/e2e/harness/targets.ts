@@ -215,3 +215,12 @@ export function scrollInput(target: 'chromium' | 'firefox' | 'safari'): 'wheel' 
 export function scrollKey(delta: number): string {
   return delta > 0 ? '' : '';
 }
+
+/**
+ * Whether a control is drawn in the same place and size in two reads. A
+ * scroll animates, so a control is pressed only once it has stopped moving,
+ * never where it was partway through the scroll.
+ */
+export function sameBox(a: Box, b: Box): boolean {
+  return a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
+}

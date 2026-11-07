@@ -22,6 +22,7 @@ import {
   pickerItem,
   screenPoint,
   targetOf,
+  sameBox,
   scrollInput,
   scrollKey,
   scrollNeeded,
@@ -112,6 +113,17 @@ async function clickDrawn(label: string): Promise<void> {
       );
     }
   }
+  // A scroll animates: press only once the control has stopped moving, inside the window.
+  let last = box;
+  await driver().waitUntil(
+    async () => {
+      ({ box, viewport } = await drawn());
+      const still = sameBox(last, box);
+      last = box;
+      return still && scrollNeeded(box, viewport) === 0;
+    },
+    { timeout: WAIT, timeoutMsg: `"${label}" never stopped moving inside the window` },
+  );
   await driver()
     .action('pointer', { parameters: { pointerType: 'mouse' } })
     .move(viewportPoint(box, viewport, label))
