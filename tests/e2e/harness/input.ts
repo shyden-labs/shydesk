@@ -13,6 +13,9 @@
  * Controls are found by their accessible name, the same on every target. A
  * step that cannot happen fails naming what was missing.
  */
+import { copyFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import { driver } from './driver.ts';
 import { named } from './find.ts';
 import { resolve } from 'node:path';
@@ -308,10 +311,19 @@ export async function type(label: string, text: string): Promise<void> {
 const MEDIA = resolve(import.meta.dirname, '../../fixtures/media');
 
 /** One test file chosen through the file input named `label`. */
+/** TEMPORARY experiment (shyden-labs/shydesk#21): does Safari read a driver-supplied file from another folder? */
+function desktopPath(fixture: Fixture): string {
+  if (targetOf(driver().capabilities) !== 'safari') return resolve(MEDIA, fixture);
+  const folder = fixture === 'photo.jpg' ? join(homedir(), 'Downloads') : '/tmp';
+  const path = join(folder, fixture);
+  copyFileSync(resolve(MEDIA, fixture), path);
+  return path;
+}
+
 export async function pickFile(label: string, fixture: Fixture): Promise<void> {
   const on = phone();
   if (on === undefined) {
-    await (await named(label)).addValue(resolve(MEDIA, fixture));
+    await (await named(label)).addValue(desktopPath(fixture));
     return;
   }
   await native(async () => {
