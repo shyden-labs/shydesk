@@ -1,7 +1,8 @@
 /**
  * The one end-to-end suite, run unchanged on every target (shyden-labs/shydesk#42).
  *
- *   E2E_TARGETS=chromium,firefox,safari npm run test:e2e    (CI, macOS runner)
+ *   E2E_TARGETS=chromium,firefox,safari E2E_DESKTOP_CHROMEDRIVER=<path> E2E_GECKODRIVER=<path> \
+ *     npm run test:e2e    (CI, macOS runner, with the image's own drivers)
  *   E2E_TARGETS=android,ios E2E_ORIGIN=http://<this Mac's LAN address>:8765 \
  *     E2E_IOS_UDID=<udid> E2E_ANDROID_SERIAL=<serial> \
  *     E2E_CHROMEDRIVER=<chromedriver for the phone's Chrome> npm run test:e2e:device   (real phones over USB, Appium on 4723)
@@ -22,7 +23,7 @@ import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { demoPage, seedSql, shydeskOrigin, wranglerDevArgs } from './tests/e2e/harness/local-shydesk.ts';
 import { capabilitiesFor, targetOf, targetsFrom, type Target, type TargetEnv } from './tests/e2e/harness/targets.ts';
-import { supportPieceState } from './tests/e2e/harness/report.ts';
+import { savePhoneScreen, supportPieceState } from './tests/e2e/harness/report.ts';
 
 const RUNS = '.e2e-runs';
 const PAGES = 'tests/e2e/pages';
@@ -40,6 +41,8 @@ const targets = targetsFrom(process.env.E2E_TARGETS ?? '');
 const targetEnv = Object.fromEntries(
   Object.entries({
     chromedriver: process.env.E2E_CHROMEDRIVER,
+    desktopChromedriver: process.env.E2E_DESKTOP_CHROMEDRIVER,
+    geckodriver: process.env.E2E_GECKODRIVER,
     iosUdid: process.env.E2E_IOS_UDID,
     androidSerial: process.env.E2E_ANDROID_SERIAL,
   }).filter((entry): entry is [string, string] => entry[1] !== undefined),
@@ -105,6 +108,7 @@ export const config: Options.Testrunner & Capabilities.WithRequestedTestrunnerCa
     counts[result.passed ? 'passed' : 'failed'] += 1;
     // A failure prints what the support piece showed, so its cause is in the log.
     if (!result.passed) console.log(`support piece after "${test.title}": ${await supportPieceState()}`);
+    if (!result.passed) await savePhoneScreen(RUNS, test.title);
   },
 
   /** Each worker (one target, one spec file) records what it ran. */

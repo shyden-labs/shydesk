@@ -32,6 +32,8 @@ export function targetsFrom(list: string): Target[] {
 
 export interface TargetEnv {
   chromedriver?: string;
+  desktopChromedriver?: string;
+  geckodriver?: string;
   iosUdid?: string;
   androidSerial?: string;
 }
@@ -49,10 +51,27 @@ function need(value: string | undefined, message: string): string {
  */
 export function capabilitiesFor(target: Target, env: TargetEnv): Capabilities {
   switch (target) {
+    // Each desktop driver is the one already on the machine, never fetched
+    // mid-run, where an outside 504 turned a PR red (shyden-labs/shydesk#77).
     case 'chromium':
-      return { browserName: 'chrome', 'goog:chromeOptions': { args: ['--headless=new'] } };
+      return {
+        browserName: 'chrome',
+        'goog:chromeOptions': { args: ['--headless=new'] },
+        'wdio:chromedriverOptions': {
+          binary: need(
+            env.desktopChromedriver,
+            'chromium needs E2E_DESKTOP_CHROMEDRIVER: the path to a chromedriver matching the installed Chrome',
+          ),
+        },
+      };
     case 'firefox':
-      return { browserName: 'firefox', 'moz:firefoxOptions': { args: ['-headless'] } };
+      return {
+        browserName: 'firefox',
+        'moz:firefoxOptions': { args: ['-headless'] },
+        'wdio:geckodriverOptions': {
+          binary: need(env.geckodriver, 'firefox needs E2E_GECKODRIVER: the path to a geckodriver'),
+        },
+      };
     case 'safari':
       return { browserName: 'safari' };
     case 'ios':
@@ -174,11 +193,17 @@ export function viewportPoint(box: Box, viewport: { width: number; height: numbe
   return { x, y };
 }
 
-/** Why a lookup by name failed: the name wanted, and every distinct name the page did have. */
-export function notNamedMessage(label: string, seen: readonly string[]): string {
+/**
+ * Why a lookup by name failed: the name wanted, every distinct name the page
+ * did have, and the error the last lookup threw, if it threw one.
+ */
+export function notNamedMessage(label: string, seen: readonly string[], failure?: string): string {
   const missing = `no element named "${label}" appeared on the page`;
-  if (seen.length === 0) return `${missing}; it had no named elements at all`;
-  return `${missing}; the names seen were: ${[...new Set(seen)].map((name) => `"${name}"`).join(', ')}`;
+  const names =
+    seen.length === 0
+      ? `${missing}; it had no named elements at all`
+      : `${missing}; the names seen were: ${[...new Set(seen)].map((name) => `"${name}"`).join(', ')}`;
+  return failure === undefined ? names : `${names}; the last lookup failed: ${failure}`;
 }
 
 /**
@@ -283,6 +308,55 @@ export function scrollKey(delta: number): string {
  */
 export function sameBox(a: Box, b: Box): boolean {
   return a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
+}
+
+/**
+ * iOS Safari answers WebDriver's Get Computed Label with "Method has not yet
+ * been implemented" (shyden-labs/shydesk#73), so on the iPhone the name is
+ * the one iOS gives the control in its native accessibility tree, the name
+ * VoiceOver reads. iOS appends a role after a comma to some names ("Support
+ * status, application status" for a live region). Text drawn on the page is
+ * left out, as a label's text has the same name as its field.
+ */
+export function iosNamed(label: string): string {
+  const name = plain(label);
+  return `-ios predicate string:(label == '${name}' OR label BEGINSWITH '${name}, ') AND type != 'XCUIElementTypeStaticText'`;
+}
+
+/** The page's own area in the iPhone's native tree, which iOS names after the document title. */
+export function iosPage(title: string): string {
+  return `-ios predicate string:label == '${plain(title)}' AND type == 'XCUIElementTypeOther'`;
+}
+
+/** The biggest box: the page area, over a heading that shares the title (measured 2026-11-08). */
+export function largest(boxes: readonly Box[]): Box | undefined {
+  let found: Box | undefined;
+  for (const box of boxes) if (found === undefined || box.width * box.height > found.width * found.height) found = box;
+  return found;
+}
+
+/**
+ * Where a native box sits in the document, in CSS pixels: measured from the
+ * page area's corner, which moves up as the page scrolls, and scaled by CSS
+ * pixels per native point (1 unless the page is zoomed).
+ */
+export function inDocument(native: Box, page: Box, scale: number): Box {
+  return {
+    x: (native.x - page.x) * scale,
+    y: (native.y - page.y) * scale,
+    width: native.width * scale,
+    height: native.height * scale,
+  };
+}
+
+/**
+ * Whether two boxes are the same control: each one's middle lies inside the
+ * other. iOS rounds native boxes to whole points and draws a focused field a
+ * point bigger on each side, so edges never quite agree; a neighbour, the form
+ * around a field, or a field inside a box fails one of the two checks.
+ */
+export function drawnAt(a: Box, b: Box): boolean {
+  return centreInside(a, b) && centreInside(b, a);
 }
 
 /** How long a control must stay in one place before it counts as stopped moving. */

@@ -20,6 +20,8 @@ export interface Element {
   getLocation(): Promise<{ x: number; y: number }>;
   /** In the native layer: the element's size, in device pixels. */
   getSize(): Promise<{ width: number; height: number }>;
+  /** In the native layer: one of the element's attributes, such as the name iOS gives it ("label"). */
+  getAttribute(name: string): Promise<string | null>;
 }
 
 /** A W3C pointer action sequence, sent as one real input. */
@@ -48,6 +50,10 @@ export interface Driver {
   capabilities: Record<string, unknown>;
   url(path: string): Promise<void>;
   getContext(): Promise<string | { id: string }>;
+  /** In the native layer: the screen's whole accessibility tree, as XML. */
+  getPageSource(): Promise<string>;
+  /** Saves what the screen shows as a PNG at `path`. */
+  saveScreenshot(path: string): Promise<unknown>;
   switchContext(name: string): Promise<void>;
   keys(keys: string[]): Promise<void>;
   /** Android: whether the on-screen keyboard is showing (read only). */
@@ -61,6 +67,8 @@ export interface Driver {
   action(type: 'key'): KeyAction;
   /** A lazy handle; awaiting it resolves the element, as a page script needs. */
   $(selector: string | ElementReference): Element & PromiseLike<Element>;
+  /** Every element the selector finds; none when there are none. */
+  $$(selector: string): Promise<Element[]>;
   /** The browser's own accessible name for the element (W3C Get Computed Label). */
   getElementComputedLabel(elementId: string): Promise<string>;
   waitUntil(condition: () => Promise<boolean>, options: { timeout: number; timeoutMsg: string }): Promise<true>;
