@@ -80,6 +80,7 @@ describe('tables', () => {
       'state',
       'created_at',
       'deleted_at',
+      'received_bytes',
     ]);
   });
   it('canned_replies', async () => {

@@ -30,6 +30,8 @@ interface Row {
   thumb_key: string;
   mime: string;
   bytes: number;
+  received_bytes: number;
+  ticket_id?: string | null;
   duration_ms: number | null;
   state: string;
   created_at: number;
@@ -42,7 +44,7 @@ function standInBucket() {
   const open = new Map<string, Map<number, Uint8Array>>();
   const aborted: string[] = [];
   const deleted: string[] = [];
-  const state = { vanishOnRead: false };
+  const state = { vanishOnRead: false, headThrows: false, deleteThrows: false };
   let next = 0;
   const handle = (key: string, uploadId: string) => ({
     key,
@@ -85,6 +87,7 @@ function standInBucket() {
     },
     resumeMultipartUpload: (key: string, uploadId: string) => handle(key, uploadId),
     head: (key: string) => {
+      if (state.headThrows) return Promise.reject(new Error('R2 is down'));
       const found = objects.get(key);
       return Promise.resolve(found ? { size: found.length } : null);
     },
@@ -99,9 +102,12 @@ function standInBucket() {
       objects.set(key, new Uint8Array(body));
       return Promise.resolve({ key });
     },
-    delete: (key: string) => {
-      deleted.push(key);
-      objects.delete(key);
+    delete: (keys: string | string[]) => {
+      if (state.deleteThrows) return Promise.reject(new Error('R2 is down'));
+      for (const key of [keys].flat()) {
+        deleted.push(key);
+        objects.delete(key);
+      }
       return Promise.resolve();
     },
   };
@@ -118,6 +124,7 @@ interface Options {
 function world(options: Options = {}) {
   const rows = new Map<string, Row>((options.rows ?? []).map((r) => [r.id, r]));
   const counters = { stored: options.stored ?? 0 };
+  const statementsAnswering = { claimLost: false };
   const { db, statements } = standInDb((sql, v) => {
     if (sql.includes('FROM products')) return ['shytalk', 'other'].includes(String(v[0])) ? [product(String(v[0]))] : [];
     if (sql.includes('SELECT value FROM counters')) return [{ value: counters.stored }];
@@ -127,6 +134,10 @@ function world(options: Options = {}) {
       if (counters.stored + n > FREE_STORAGE_BYTES) return [];
       counters.stored += n;
       return [{ value: counters.stored }];
+    }
+    if (sql.includes('UPDATE counters SET value = value -')) {
+      counters.stored -= Number(v[0]);
+      return [];
     }
     if (sql.includes('INSERT INTO attachments')) {
       const [id, product_id, r2_key, r2_upload_id, thumb_key, mime, bytes, created_at] = v as [
@@ -147,6 +158,8 @@ function world(options: Options = {}) {
         thumb_key,
         mime,
         bytes,
+        received_bytes: 0,
+        ticket_id: null,
         duration_ms: null,
         state: 'pending',
         created_at,
@@ -154,9 +167,21 @@ function world(options: Options = {}) {
       });
       return [];
     }
+    if (sql.includes('SET r2_upload_id = NULL') && sql.includes('RETURNING')) {
+      const row = rows.get(String(v[0]));
+      if (statementsAnswering.claimLost || !row) return [];
+      if (row.product_id !== v[1] || row.state !== 'pending' || row.r2_upload_id === null) return [];
+      row.r2_upload_id = null;
+      return [{ ...row }];
+    }
+    if (sql.includes('received_bytes = received_bytes +')) {
+      const row = rows.get(String(v[1]));
+      if (row) row.received_bytes += Number(v[0]);
+      return [];
+    }
     if (sql.includes('UPDATE attachments') && sql.includes("state = 'stored'") && sql.includes('duration_ms')) {
       const row = rows.get(String(v[2]));
-      if (row) Object.assign(row, { mime: v[0], duration_ms: v[1], state: 'stored', r2_upload_id: null });
+      if (row) Object.assign(row, { mime: v[0], duration_ms: v[1], state: 'stored' });
       return [];
     }
     if (sql.includes('UPDATE attachments') && sql.includes('bytes = bytes +')) {
@@ -175,16 +200,19 @@ function world(options: Options = {}) {
         unknown
       >[];
     }
-    if (sql.includes('FROM attachments') && sql.includes('created_at <')) {
-      return [...rows.values()].filter(
-        (r) => r.product_id === v[0] && r.state === 'pending' && r.created_at < Number(v[1]),
-      ) as unknown as Record<string, unknown>[];
-    }
-    if (sql.includes('FROM attachments')) {
-      return [...rows.values()].filter((r) => r.id === v[0] && r.product_id === v[1] && r.state === 'pending') as unknown as Record<
+    if (sql.includes('FROM attachments') && sql.includes('ticket_id IS NULL')) {
+      return [...rows.values()].filter((r) => r.state === 'stored' && !r.ticket_id && r.created_at < Number(v[0])) as unknown as Record<
         string,
         unknown
       >[];
+    }
+    if (sql.includes('FROM attachments') && sql.includes('created_at <')) {
+      return [...rows.values()].filter((r) => r.state === 'pending' && r.created_at < Number(v[0])) as unknown as Record<string, unknown>[];
+    }
+    if (sql.includes('FROM attachments')) {
+      return [...rows.values()]
+        .filter((r) => r.id === v[0] && r.product_id === v[1] && r.state === 'pending' && r.r2_upload_id !== null)
+        .map((r) => ({ ...r }));
     }
     return [];
   });
@@ -212,7 +240,7 @@ function world(options: Options = {}) {
     await put(`/support-api/uploads/${started.id}/parts/1`, bytes);
     return { ...started, response: await complete(started.id, [{ n: 1, etag: 'etag-1' }]) };
   };
-  return { call, start, put, complete, uploadWhole, rows, counters, r2, statements };
+  return { call, start, put, complete, uploadWhole, rows, counters, r2, statements, statementsAnswering };
 }
 
 const fixture = (path: string): Uint8Array => new Uint8Array(readFileSync(new URL(`../fixtures/${path}`, import.meta.url)));
@@ -305,24 +333,74 @@ describe('starting an upload', () => {
     expect(w.statements.some((s) => s.values[0] === 'upload-product:shytalk')).toBe(false);
   });
 
-  it("aborts this product's upload still pending after an hour", async () => {
-    const stale: Row = {
-      id: 'old',
-      product_id: 'shytalk',
-      r2_key: 'k',
-      r2_upload_id: 'stale-upload',
-      thumb_key: 't',
-      mime: 'video/mp4',
-      bytes: 5,
-      duration_ms: null,
-      state: 'pending',
-      created_at: 0,
-      deleted_at: null,
-    };
-    const w = world({ rows: [stale] });
+  const old = (over: Partial<Row>): Row => ({
+    id: 'old',
+    product_id: 'other',
+    r2_key: 'old-key',
+    r2_upload_id: 'stale-upload',
+    thumb_key: 'old-thumb',
+    mime: 'video/mp4',
+    bytes: 50,
+    received_bytes: 0,
+    ticket_id: null,
+    duration_ms: null,
+    state: 'pending',
+    created_at: 0,
+    deleted_at: null,
+    ...over,
+  });
+
+  it("aborts any product's upload still pending after an hour, giving back the bytes it received", async () => {
+    const w = world({ rows: [old({ received_bytes: 20 })], stored: 20 });
     await w.start({ ...VIDEO, bytes: 5 });
     expect(w.r2.aborted).toEqual(['stale-upload']);
     expect(w.rows.get('old')?.state).toBe('deleted');
+    expect(w.counters.stored).toBe(0);
+  });
+
+  it('deletes the object of an old upload stopped part way through finishing', async () => {
+    const w = world({ rows: [old({ r2_upload_id: null, received_bytes: 20 })], stored: 20 });
+    w.r2.objects.set('old-key', new Uint8Array(20));
+    await w.start({ ...VIDEO, bytes: 5 });
+    expect(w.r2.aborted).toEqual([]);
+    expect(w.r2.objects.has('old-key')).toBe(false);
+    expect(w.rows.get('old')?.state).toBe('deleted');
+    expect(w.counters.stored).toBe(0);
+  });
+
+  it("expires any product's finished upload never put on a ticket after a day, with its thumbnail and bytes", async () => {
+    const w = world({ rows: [old({ state: 'stored', r2_upload_id: null, bytes: 50 })], stored: 50 });
+    w.r2.objects.set('old-key', new Uint8Array(45));
+    w.r2.objects.set('old-thumb', new Uint8Array(5));
+    await w.start({ ...VIDEO, bytes: 5 });
+    expect(w.r2.objects.size).toBe(0);
+    expect(w.rows.get('old')?.state).toBe('deleted');
+    expect(w.counters.stored).toBe(0);
+  });
+
+  it('still starts when expiring an old upload fails, leaving that one stored for the admin desk to list', async () => {
+    const w = world({ rows: [old({ state: 'stored', r2_upload_id: null })], stored: 50 });
+    w.r2.state.deleteThrows = true;
+    expect((await w.start({ ...VIDEO, bytes: 5 })).status).toBe(201);
+    expect(w.rows.get('old')?.state).toBe('stored');
+  });
+
+  it('keeps a finished upload not on a ticket for under a day', async () => {
+    const w = world({ rows: [old({ state: 'stored', r2_upload_id: null, created_at: Date.now() - 3_600_000 })], stored: 50 });
+    await w.start({ ...VIDEO, bytes: 5 });
+    expect(w.rows.get('old')?.state).toBe('stored');
+    expect(w.counters.stored).toBe(50);
+  });
+
+  it('keeps an old upload that is on a ticket', async () => {
+    const w = world({ rows: [old({ state: 'stored', r2_upload_id: null, ticket_id: 't1' })], stored: 50 });
+    await w.start({ ...VIDEO, bytes: 5 });
+    expect(w.rows.get('old')?.state).toBe('stored');
+  });
+
+  it('makes room by expiring before it checks the free storage', async () => {
+    const w = world({ rows: [old({ state: 'stored', r2_upload_id: null, bytes: FREE_STORAGE_BYTES })], stored: FREE_STORAGE_BYTES });
+    expect((await w.start({ ...VIDEO, bytes: 5 })).status).toBe(201);
   });
 
   it('still starts when aborting an old upload fails, leaving that one pending for the admin desk to list', async () => {
@@ -334,6 +412,7 @@ describe('starting an upload', () => {
       thumb_key: 't',
       mime: 'video/mp4',
       bytes: 5,
+      received_bytes: 0,
       duration_ms: null,
       state: 'pending',
       created_at: 0,
@@ -353,6 +432,7 @@ describe('starting an upload', () => {
       thumb_key: 't',
       mime: 'video/mp4',
       bytes: 5,
+      received_bytes: 0,
       duration_ms: null,
       state: 'pending',
       created_at: Date.now() - 60_000,
@@ -390,6 +470,23 @@ describe('sending a part', () => {
     const response = await w.put(`/support-api/uploads/${id}/parts/1`, new Uint8Array(PART_SIZE));
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ etag: 'etag-1' });
+  });
+
+  it('counts the bytes as each part arrives', async () => {
+    const { w, id } = await twoParts();
+    await w.put(`/support-api/uploads/${id}/parts/1`, new Uint8Array(PART_SIZE));
+    expect(w.counters.stored).toBe(PART_SIZE);
+    expect(w.rows.get(id)?.received_bytes).toBe(PART_SIZE);
+  });
+
+  it('refuses a part with no room left, storing none of it', async () => {
+    const { w, id } = await twoParts();
+    w.counters.stored = FREE_STORAGE_BYTES - 9;
+    const response = await w.put(`/support-api/uploads/${id}/parts/2`, new Uint8Array(10));
+    expect(response.status).toBe(422);
+    expect(await response.json()).toEqual({ error: MESSAGES.storageFull });
+    expect(w.rows.get(id)?.received_bytes).toBe(0);
+    expect(w.counters.stored).toBe(FREE_STORAGE_BYTES - 9);
   });
 
   it('stores a last part of exactly the remainder', async () => {
@@ -560,17 +657,54 @@ describe('completing an upload', () => {
     expect(w.rows.get(id)?.state).toBe('deleted');
   });
 
-  it('refuses at the finish when others filled the storage meanwhile, and deletes it', async () => {
+  it('counts a part sent twice only once when the upload finishes', async () => {
     const w = world();
     const bytes = fixture('uploads/photo.webp');
     const { id } = (await (await w.start({ kind: 'image', mime: 'image/webp', bytes: bytes.length })).json()) as { id: string };
     await w.put(`/support-api/uploads/${id}/parts/1`, bytes);
-    w.counters.stored = FREE_STORAGE_BYTES;
+    await w.put(`/support-api/uploads/${id}/parts/1`, bytes);
+    expect(w.counters.stored).toBe(bytes.length * 2);
+    expect((await w.complete(id, [{ n: 1, etag: 'etag-1' }])).status).toBe(200);
+    expect(w.counters.stored).toBe(bytes.length);
+  });
+
+  it('gives back the bytes of a finish R2 refuses', async () => {
+    const w = world();
+    const { id } = (await (await w.start({ kind: 'image', mime: 'image/webp', bytes: 5 })).json()) as { id: string };
+    await w.put(`/support-api/uploads/${id}/parts/1`, new Uint8Array(5));
+    await w.complete(id, [{ n: 1, etag: 'wrong' }]);
+    expect(w.counters.stored).toBe(0);
+  });
+
+  it('deletes the object and gives back its bytes when a check fails unexpectedly', async () => {
+    const w = world();
+    const bytes = fixture('uploads/photo.webp');
+    const { id } = (await (await w.start({ kind: 'image', mime: 'image/webp', bytes: bytes.length })).json()) as { id: string };
+    await w.put(`/support-api/uploads/${id}/parts/1`, bytes);
+    w.r2.state.headThrows = true;
     const response = await w.complete(id, [{ n: 1, etag: 'etag-1' }]);
     expect(response.status).toBe(422);
-    expect(await response.json()).toEqual({ error: MESSAGES.storageFull });
-    expect(w.counters.stored).toBe(FREE_STORAGE_BYTES);
-    expect(w.rows.get(id)?.state).toBe('deleted');
+    expect(await response.json()).toEqual({ error: MESSAGES.uploadFailed });
+    expectRefused(w, id);
+  });
+
+  it('is 404 for an upload another call is already finishing, leaving it alone', async () => {
+    const w = world();
+    const { id } = (await (await w.start({ kind: 'image', mime: 'image/webp', bytes: 5 })).json()) as { id: string };
+    await w.put(`/support-api/uploads/${id}/parts/1`, new Uint8Array(5));
+    const row = w.rows.get(id);
+    w.statementsAnswering.claimLost = true;
+    expect((await w.complete(id, [{ n: 1, etag: 'etag-1' }])).status).toBe(404);
+    expect(row?.state).toBe('pending');
+    expect(w.r2.deleted).toEqual([]);
+  });
+
+  it('refuses another part once the upload is being finished', async () => {
+    const w = world();
+    const { id } = (await (await w.start({ kind: 'image', mime: 'image/webp', bytes: 5 })).json()) as { id: string };
+    const row = w.rows.get(id);
+    if (row) row.r2_upload_id = null;
+    expect((await w.put(`/support-api/uploads/${id}/parts/1`, new Uint8Array(5))).status).toBe(404);
   });
 
   it.each([

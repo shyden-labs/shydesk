@@ -53,6 +53,7 @@ function memoryBucket(): R2Bucket {
   return {
     createMultipartUpload: (key: string) => Promise.resolve(multipart(key, 'one-upload')),
     resumeMultipartUpload: multipart,
+    delete: () => Promise.resolve(),
     head: (key: string) => Promise.resolve(objects.has(key) ? { size: objects.get(key)?.length } : null),
     get: (key: string, { range }: { range: { offset: number; length: number } }) => {
       const slice = (objects.get(key) ?? new Uint8Array()).slice(range.offset, range.offset + range.length);
@@ -103,11 +104,43 @@ describe('uploads on D1', () => {
     const etags = JSON.stringify({ parts: [1, 2, 3].map((n) => ({ n, etag: `etag-${String(n)}` })) });
     expect.soft((await call('it-up-other', `/${id}/complete`, { method: 'POST', body: etags })).status).toBe(404);
     const before = await storedBytes(db);
+    expect.soft(before).toBeGreaterThanOrEqual(size);
     expect.soft((await call('it-up', `/${id}/complete`, { method: 'POST', body: etags })).status).toBe(200);
 
-    const row = await db.prepare('SELECT state, bytes FROM attachments WHERE id = ?').bind(id).first();
-    expect.soft(row).toEqual({ state: 'stored', bytes: size });
-    expect.soft(await storedBytes(db)).toBeGreaterThanOrEqual(before + size);
+    const row = await db.prepare('SELECT state, bytes, received_bytes, r2_upload_id FROM attachments WHERE id = ?').bind(id).first();
+    expect.soft(row).toEqual({ state: 'stored', bytes: size, received_bytes: size, r2_upload_id: null });
+    expect.soft(await storedBytes(db)).toBe(before);
+    const second = await call('it-up', `/${id}/complete`, { method: 'POST', body: etags });
+    expect.soft(second.status).toBe(404);
+  });
+
+  it('expires a day-old upload never put on a ticket, and keeps one that is', async () => {
+    await product('it-up-old');
+    const insert = (id: string, ticket: string | null) =>
+      db
+        .prepare(
+          `INSERT INTO attachments (id, product_id, ticket_id, r2_key, mime, bytes, state, created_at)
+           VALUES (?, 'it-up-old', ?, ?, 'image/jpeg', 7, 'stored', 0)`,
+        )
+        .bind(id, ticket, `key-${id}`)
+        .run();
+    await insert('it-up-orphan', null);
+    await addStoredWithin(db, 7);
+    const before = await storedBytes(db);
+    const FILES = memoryBucket();
+    const started = await uploadRoutes().request(
+      '/support-api/uploads?product=it-up-old',
+      {
+        method: 'POST',
+        body: JSON.stringify({ kind: 'image', mime: 'image/jpeg', bytes: 5 }),
+        headers: { Origin: 'https://it-up-old.example', 'CF-Connecting-IP': '203.0.113.21' },
+      },
+      { DB: db, FILES },
+    );
+    expect.soft(started.status).toBe(201);
+    const row = await db.prepare('SELECT state FROM attachments WHERE id = ?').bind('it-up-orphan').first();
+    expect.soft(row).toEqual({ state: 'deleted' });
+    expect.soft(await storedBytes(db)).toBe(before - 7);
   });
 
   it('adds to the running total only while it stays within the free storage', async () => {

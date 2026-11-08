@@ -2,11 +2,11 @@ import type { R2Bucket } from '@cloudflare/workers-types';
 import { Hono, type Context } from 'hono';
 import { MESSAGES } from '../customer/messages.ts';
 import { requireProductOrigin } from '../customer/origin.ts';
-import { UPLOAD_ABANDONED_MS } from '../desk/overdue.ts';
+import { UNATTACHED_EXPIRES_MS, UPLOAD_ABANDONED_MS } from '../desk/overdue.ts';
 import type { Env } from '../env.ts';
 import { hit } from '../limits.ts';
 import type { Product } from '../products.ts';
-import { addStoredWithin, FREE_STORAGE_BYTES, storedBytes } from '../storage.ts';
+import { addStoredWithin, FREE_STORAGE_BYTES, STORED_BYTES, storedBytes } from '../storage.ts';
 import { mp4DurationMs } from './mp4.ts';
 import { sniff } from './sniff.ts';
 
@@ -32,7 +32,8 @@ const HOUR_SECONDS = 3600;
 const STARTS_PER_IP = 30;
 /** Builder call: ten times one IP's limit, so one product's page cannot take the storage from the rest. */
 const STARTS_PER_PRODUCT = 300;
-const STALE_PER_START = 20;
+/** Few enough that one start stays well inside the free plan's 50 outside calls per request. */
+const STALE_PER_START = 5;
 
 const MIMES: Record<string, string[]> = { image: ['image/jpeg', 'image/webp'], video: ['video/mp4'] };
 const MIME_OF = { jpeg: 'image/jpeg', webp: 'image/webp', mp4: 'video/mp4' } as const;
@@ -49,12 +50,15 @@ interface UploadEnv {
 interface Attachment {
   id: string;
   r2_key: string;
-  r2_upload_id: string;
+  /** Null once a `complete` has claimed it, so nothing else can touch the upload. */
+  r2_upload_id: string | null;
+  thumb_key: string;
   mime: string;
   bytes: number;
+  received_bytes: number;
 }
 
-const COLUMNS = 'id, r2_key, r2_upload_id, thumb_key, mime, bytes';
+const COLUMNS = 'id, r2_key, r2_upload_id, thumb_key, mime, bytes, received_bytes';
 
 const partCount = (bytes: number): number => Math.ceil(bytes / PART_SIZE);
 const thumbKey = (productId: string, thumbId: string): string => `${productId}/thumbs/${thumbId}`;
@@ -69,8 +73,14 @@ async function bodyOf(c: Context<UploadEnv>): Promise<unknown> {
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 
-const markDeleted = (env: UploadBindings, id: string): Promise<unknown> =>
-  env.DB.prepare("UPDATE attachments SET state = 'deleted', deleted_at = ? WHERE id = ?").bind(Date.now(), id).run();
+type Pending = Attachment & { r2_upload_id: string };
+
+/** Marks an attachment deleted and takes `bytes` off the running total, together. */
+const closeOut = (env: UploadBindings, id: string, bytes: number): Promise<unknown> =>
+  env.DB.batch([
+    env.DB.prepare("UPDATE attachments SET state = 'deleted', deleted_at = ? WHERE id = ?").bind(Date.now(), id),
+    env.DB.prepare('UPDATE counters SET value = value - ? WHERE key = ?').bind(bytes, STORED_BYTES),
+  ]);
 
 /** The Content-Length as a number, or null if it is missing or is not one. */
 function declaredLength(c: Context<UploadEnv>): number | null {
@@ -79,30 +89,48 @@ function declaredLength(c: Context<UploadEnv>): number | null {
 }
 
 /**
- * Aborts this product's uploads pending over an hour, with no clock: each new
- * start does it. One that cannot be aborted stays pending, for the admin desk's
- * overdue panel to list, and never stops a new upload.
+ * Clears what customers left behind, with no clock: each new start, for any
+ * product, since all share one free storage. An upload pending over an hour is
+ * aborted, and a finished one never put on a ticket after a day is deleted. One
+ * that cannot be cleared stays for the admin desk's overdue panel to list, and
+ * never stops a new upload.
  */
-async function abortAbandoned(env: UploadBindings, productId: string): Promise<void> {
-  const { results } = await env.DB.prepare(
-    `SELECT ${COLUMNS} FROM attachments WHERE product_id = ? AND state = 'pending' AND created_at < ? LIMIT ${String(STALE_PER_START)}`,
+async function clearAbandoned(env: UploadBindings): Promise<void> {
+  const now = Date.now();
+  const { results: stale } = await env.DB.prepare(
+    `SELECT ${COLUMNS} FROM attachments WHERE state = 'pending' AND created_at < ? LIMIT ${String(STALE_PER_START)}`,
   )
-    .bind(productId, Date.now() - UPLOAD_ABANDONED_MS)
+    .bind(now - UPLOAD_ABANDONED_MS)
     .all<Attachment>();
-  for (const stale of results) {
+  const { results: unattached } = await env.DB.prepare(
+    `SELECT ${COLUMNS} FROM attachments WHERE state = 'stored' AND ticket_id IS NULL AND created_at < ? LIMIT ${String(STALE_PER_START)}`,
+  )
+    .bind(now - UNATTACHED_EXPIRES_MS)
+    .all<Attachment>();
+  for (const row of stale) {
     try {
-      await env.FILES.resumeMultipartUpload(stale.r2_key, stale.r2_upload_id).abort();
-      await markDeleted(env, stale.id);
+      // With no upload id a `complete` stopped part way, and the object may exist.
+      if (row.r2_upload_id !== null) await env.FILES.resumeMultipartUpload(row.r2_key, row.r2_upload_id).abort();
+      else await env.FILES.delete(row.r2_key);
+      await closeOut(env, row.id, row.received_bytes);
     } catch (error) {
-      console.error(`upload ${stale.id} could not be aborted`, error);
+      console.error(`upload ${row.id} could not be aborted`, error);
+    }
+  }
+  for (const row of unattached) {
+    try {
+      await env.FILES.delete([row.r2_key, row.thumb_key]);
+      await closeOut(env, row.id, row.bytes);
+    } catch (error) {
+      console.error(`upload ${row.id} could not be expired`, error);
     }
   }
 }
 
-const pending = (env: UploadBindings, id: string, productId: string): Promise<Attachment | null> =>
+const pending = (env: UploadBindings, id: string, productId: string): Promise<Pending | null> =>
   env.DB.prepare(`SELECT ${COLUMNS} FROM attachments WHERE id = ? AND product_id = ? AND state = 'pending'`)
     .bind(id, productId)
-    .first<Attachment>();
+    .first<Pending>();
 
 /** Why the finished object cannot be kept, or its length when it can. */
 async function check(env: UploadBindings, row: Attachment): Promise<{ error: string } | { durationMs: number | null }> {
@@ -145,8 +173,8 @@ export function uploadRoutes(): Hono<UploadEnv> {
     const db = c.env.DB;
     if (!(await hit(db, `upload-ip:${c.var.clientIp}`, STARTS_PER_IP, HOUR_SECONDS))) return c.json({ error: MESSAGES.tooMany }, 429);
     if (!(await hit(db, `upload-product:${product.id}`, STARTS_PER_PRODUCT, HOUR_SECONDS))) return c.json({ error: MESSAGES.tooMany }, 429);
+    await clearAbandoned(c.env);
     if ((await storedBytes(db)) + bytes > FREE_STORAGE_BYTES) return c.json({ error: MESSAGES.storageFull }, 422);
-    await abortAbandoned(c.env, product.id);
 
     const id = crypto.randomUUID();
     const thumbId = crypto.randomUUID();
@@ -176,6 +204,9 @@ export function uploadRoutes(): Hono<UploadEnv> {
     if (length !== expected) return c.json({ error: MESSAGES.badRequest }, 400);
     const body = await c.req.arrayBuffer();
     if (body.byteLength !== expected) return c.json({ error: MESSAGES.badRequest }, 400);
+    // Counted before R2 holds it: parts cost storage even before the upload finishes.
+    if (!(await addStoredWithin(c.env.DB, expected))) return c.json({ error: MESSAGES.storageFull }, 422);
+    await c.env.DB.prepare('UPDATE attachments SET received_bytes = received_bytes + ? WHERE id = ?').bind(expected, row.id).run();
     const part = await c.env.FILES.resumeMultipartUpload(row.r2_key, row.r2_upload_id).uploadPart(n, body);
     return c.json({ etag: part.etag });
   });
@@ -185,26 +216,44 @@ export function uploadRoutes(): Hono<UploadEnv> {
     if (!row) return c.json({ error: MESSAGES.notFound }, 404);
     const parts = parsedParts(await bodyOf(c), partCount(row.bytes));
     if (!parts) return c.json({ error: MESSAGES.badRequest }, 400);
-    const upload = c.env.FILES.resumeMultipartUpload(row.r2_key, row.r2_upload_id);
+    // Only one call can claim it, so a second `complete` can never delete what the first kept.
+    const claimed = await c.env.DB.prepare(
+      `UPDATE attachments SET r2_upload_id = NULL WHERE id = ? AND product_id = ? AND state = 'pending' AND r2_upload_id IS NOT NULL RETURNING ${COLUMNS}`,
+    )
+      .bind(row.id, c.var.product.id)
+      .first<Attachment>();
+    if (!claimed) return c.json({ error: MESSAGES.notFound }, 404);
+    const upload = c.env.FILES.resumeMultipartUpload(claimed.r2_key, row.r2_upload_id);
     try {
       await upload.complete(parts);
     } catch (error) {
-      console.error(`upload ${row.id} could not be completed`, error);
+      console.error(`upload ${claimed.id} could not be completed`, error);
       await upload.abort();
-      await markDeleted(c.env, row.id);
+      await closeOut(c.env, claimed.id, claimed.received_bytes);
       return c.json({ error: MESSAGES.uploadFailed }, 422);
     }
     const refuse = async (error: string): Promise<Response> => {
-      await c.env.FILES.delete(row.r2_key);
-      await markDeleted(c.env, row.id);
+      await c.env.FILES.delete(claimed.r2_key);
+      await closeOut(c.env, claimed.id, claimed.received_bytes);
       return c.json({ error }, 422);
     };
-    const checked = await check(c.env, row);
+    let checked: Awaited<ReturnType<typeof check>>;
+    try {
+      checked = await check(c.env, claimed);
+    } catch (error) {
+      console.error(`upload ${claimed.id} could not be checked`, error);
+      return refuse(MESSAGES.uploadFailed);
+    }
     if ('error' in checked) return refuse(checked.error);
-    if (!(await addStoredWithin(c.env.DB, row.bytes))) return refuse(MESSAGES.storageFull);
-    await c.env.DB.prepare("UPDATE attachments SET mime = ?, duration_ms = ?, state = 'stored', r2_upload_id = NULL WHERE id = ?")
-      .bind(row.mime, checked.durationMs, row.id)
-      .run();
+    // Keeps the file's own size in the total: a part sent twice was counted twice.
+    await c.env.DB.batch([
+      c.env.DB.prepare("UPDATE attachments SET mime = ?, duration_ms = ?, state = 'stored' WHERE id = ?").bind(
+        claimed.mime,
+        checked.durationMs,
+        claimed.id,
+      ),
+      c.env.DB.prepare('UPDATE counters SET value = value - ? WHERE key = ?').bind(claimed.received_bytes - claimed.bytes, STORED_BYTES),
+    ]);
     return c.json({ ok: true });
   });
 
