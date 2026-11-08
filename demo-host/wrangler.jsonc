@@ -1,0 +1,10 @@
+// The demo support page (shyden-labs/shydesk#19): a static page on its own
+// origin on the Non-Prod account, embedding the Non-Prod piece the way
+// docs/embedding.md tells products to. Static assets only; no Worker code.
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "shydesk-demo",
+  "compatibility_date": "2026-10-20",
+  "workers_dev": true,
+  "assets": { "directory": "./public" },
+}

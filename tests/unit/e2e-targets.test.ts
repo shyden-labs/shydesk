@@ -1,5 +1,22 @@
 import { describe, it, expect } from 'vitest';
-import { capabilitiesFor, nativeFinder, pickerItem, targetOf, TARGETS, targetsFrom, screenPoint } from '../e2e/harness/targets.ts';
+import {
+  capabilitiesFor,
+  nativeFinder,
+  pickerItem,
+  targetOf,
+  TARGETS,
+  targetsFrom,
+  screenPoint,
+  viewportPoint,
+  notNamedMessage,
+  nameMatches,
+  scrollNeeded,
+  scrollInput,
+  scrollKey,
+  sameBox,
+  swipeUp,
+  centreInside,
+} from '../e2e/harness/targets.ts';
 
 /**
  * The every-target suite's targets (shyden-labs/shydesk#42 AC1): set-up is the
@@ -107,8 +124,17 @@ describe('targetOf', () => {
 });
 
 describe('nativeFinder', () => {
-  it('finds an Android control by the start of its accessible name', () => {
-    expect(nativeFinder('android', 'Your message')).toBe('android=new UiSelector().descriptionStartsWith("Your message")');
+  it('finds an Android control by the start of its description', () => {
+    expect(nativeFinder('android', 'Your message')).toBe(
+      '//*[starts-with(@content-desc, "Your message") or (@clickable="true" and @text="Your message")]',
+    );
+  });
+
+  // Chrome on Android names a button by its visible text, with no description
+  // ("Send": Button text="Send", content-desc empty, measured 2026-11-08); a
+  // label beside a field holds the same text but cannot be tapped.
+  it('also finds a tappable Android control by its visible text, never a plain label of the same text', () => {
+    expect(nativeFinder('android', 'Send')).toContain('(@clickable="true" and @text="Send")');
   });
 
   // The iPhone photo picker shows an album as a button holding a text of the
@@ -163,5 +189,173 @@ describe('screenPoint', () => {
 
   it('rounds to whole device pixels', () => {
     expect(screenPoint({ x: 0, y: 0, width: 3, height: 3 }, 2.625, { x: 0, y: 0 })).toEqual({ x: 4, y: 4 });
+  });
+});
+
+describe('viewportPoint', () => {
+  it('is the middle of the element, rounded, in CSS pixels from the top-left of the viewport', () => {
+    expect(viewportPoint({ x: 10, y: 20, width: 101, height: 41 }, { width: 800, height: 600 }, 'Email')).toEqual({ x: 61, y: 41 });
+  });
+
+  it('refuses an element drawn below the viewport, naming it', () => {
+    expect(() => viewportPoint({ x: 0, y: 590, width: 10, height: 40 }, { width: 800, height: 600 }, 'Send')).toThrow(
+      '"Send" is drawn outside the window (its middle is at 5, 610 in a 800 by 600 window)',
+    );
+  });
+
+  it('refuses an element drawn left of the viewport, naming it', () => {
+    expect(() => viewportPoint({ x: -30, y: 0, width: 10, height: 10 }, { width: 800, height: 600 }, 'Menu')).toThrow(
+      '"Menu" is drawn outside the window (its middle is at -25, 5 in a 800 by 600 window)',
+    );
+  });
+
+  it('refuses an element with no drawn size, naming it', () => {
+    expect(() => viewportPoint({ x: 5, y: 5, width: 0, height: 0 }, { width: 800, height: 600 }, 'Hidden')).toThrow(
+      '"Hidden" is not drawn (it has no size)',
+    );
+  });
+});
+
+describe('notNamedMessage', () => {
+  it('names the label wanted and every distinct name the page did have', () => {
+    expect(notNamedMessage('Harness file', ['Harness button', '', 'Browse… No file selected.', 'Harness button'])).toBe(
+      'no element named "Harness file" appeared on the page; the names seen were: "Harness button", "", "Browse… No file selected."',
+    );
+  });
+
+  it('says when the page had no candidate elements at all', () => {
+    expect(notNamedMessage('Send', [])).toBe('no element named "Send" appeared on the page; it had no named elements at all');
+  });
+});
+
+describe('nameMatches', () => {
+  it('matches a control whose name is exactly the label', () => {
+    expect(nameMatches('Email', 'Email', false)).toBe(true);
+  });
+
+  it('refuses a control whose name only starts with the label', () => {
+    expect(nameMatches('Email', 'Email address', false)).toBe(false);
+  });
+
+  it("matches a file input whose name is the label followed by the browser's own button text", () => {
+    expect(nameMatches('Harness file', 'Harness file Browse… No file selected.', true)).toBe(true);
+  });
+
+  it('refuses a file input whose name only shares the start of a word with the label', () => {
+    expect(nameMatches('Harness file', 'Harness files Browse…', true)).toBe(false);
+  });
+
+  it('matches a file input named exactly the label', () => {
+    expect(nameMatches('Photo', 'Photo', true)).toBe(true);
+  });
+});
+
+describe('scrollNeeded', () => {
+  it('is nothing for an element whose middle is in the window', () => {
+    expect(scrollNeeded({ x: 0, y: 100, width: 10, height: 40 }, { width: 800, height: 600 })).toBe(0);
+  });
+
+  it('brings an element below the window to the middle of the window', () => {
+    expect(scrollNeeded({ x: 0, y: 760, width: 10, height: 44 }, { width: 1366, height: 683 })).toBe(441);
+  });
+
+  it('brings an element above the window to the middle of the window, scrolling up', () => {
+    expect(scrollNeeded({ x: 0, y: -400, width: 10, height: 40 }, { width: 800, height: 600 })).toBe(-680);
+  });
+
+  it('counts an element whose middle sits on the bottom edge as outside', () => {
+    expect(scrollNeeded({ x: 0, y: 580, width: 10, height: 40 }, { width: 800, height: 600 })).toBe(300);
+  });
+});
+
+describe('scrollInput', () => {
+  it('scrolls Chrome by the mouse wheel', () => {
+    expect(scrollInput('chromium')).toBe('wheel');
+  });
+
+  it('scrolls Firefox by the mouse wheel', () => {
+    expect(scrollInput('firefox')).toBe('wheel');
+  });
+
+  it("scrolls Safari by the keyboard, since Safari's driver performs no wheel scroll", () => {
+    expect(scrollInput('safari')).toBe('keys');
+  });
+});
+
+describe('scrollKey', () => {
+  it('is Page Down to bring a control below the window up into it', () => {
+    expect(scrollKey(441)).toBe('');
+  });
+
+  it('is Page Up to bring a control above the window down into it', () => {
+    expect(scrollKey(-680)).toBe('');
+  });
+});
+
+describe('sameBox', () => {
+  it('is true for a control drawn in the same place twice', () => {
+    expect(sameBox({ x: 1, y: 2, width: 3, height: 4 }, { x: 1, y: 2, width: 3, height: 4 })).toBe(true);
+  });
+
+  it('is false while the page is still scrolling the control upward', () => {
+    expect(sameBox({ x: 1, y: 300, width: 3, height: 4 }, { x: 1, y: 250, width: 3, height: 4 })).toBe(false);
+  });
+
+  it('is false when the control moved sideways', () => {
+    expect(sameBox({ x: 1, y: 2, width: 3, height: 4 }, { x: 9, y: 2, width: 3, height: 4 })).toBe(false);
+  });
+
+  it('is false when the control grew wider', () => {
+    expect(sameBox({ x: 1, y: 2, width: 3, height: 4 }, { x: 1, y: 2, width: 30, height: 4 })).toBe(false);
+  });
+
+  it('is false when the control grew taller', () => {
+    expect(sameBox({ x: 1, y: 2, width: 3, height: 4 }, { x: 1, y: 2, width: 3, height: 40 })).toBe(false);
+  });
+});
+
+describe('swipeUp', () => {
+  it('drags a finger up the middle of the page area, from 70% to 30% of its height', () => {
+    expect(swipeUp({ x: 0, y: 0, width: 1080, height: 2400 })).toEqual({ from: { x: 540, y: 1680 }, to: { x: 540, y: 720 } });
+  });
+
+  // With the on-screen keyboard up, the page area is the part above it
+  // (a swipe that starts on the keyboard scrolls nothing, 2026-11-08).
+  it('stays inside a page area that starts below the browser bar and ends above the keyboard', () => {
+    expect(swipeUp({ x: 0, y: 356, width: 1440, height: 1200 })).toEqual({ from: { x: 720, y: 1196 }, to: { x: 720, y: 716 } });
+  });
+
+  it('rounds to whole pixels in an odd-sized area', () => {
+    expect(swipeUp({ x: 1, y: 0, width: 375, height: 667 })).toEqual({ from: { x: 189, y: 467 }, to: { x: 189, y: 200 } });
+  });
+});
+
+describe('centreInside', () => {
+  const page = { x: 0, y: 356, width: 1440, height: 1531 };
+
+  it('is true for a control whose middle is inside the page area', () => {
+    expect(centreInside({ x: 112, y: 1500, width: 1218, height: 161 }, page)).toBe(true);
+  });
+
+  // Measured on the OnePlus, 2026-11-08: Send at y 2820 sat under the keyboard,
+  // below the page area that ends at 1887, and a tap there hit the keyboard.
+  it('is false for a control under the keyboard, below the page area', () => {
+    expect(centreInside({ x: 112, y: 2820, width: 1218, height: 161 }, page)).toBe(false);
+  });
+
+  it('is false for a control above the page area, under the browser bar', () => {
+    expect(centreInside({ x: 112, y: 200, width: 100, height: 100 }, page)).toBe(false);
+  });
+
+  it('is false for a control whose middle is right of the page area', () => {
+    expect(centreInside({ x: 1500, y: 1000, width: 100, height: 100 }, page)).toBe(false);
+  });
+
+  it('is false for a control whose middle is left of the page area', () => {
+    expect(centreInside({ x: -300, y: 1000, width: 100, height: 100 }, page)).toBe(false);
+  });
+
+  it('counts a middle exactly on the bottom edge as outside', () => {
+    expect(centreInside({ x: 0, y: 1837, width: 100, height: 100 }, page)).toBe(false);
   });
 });

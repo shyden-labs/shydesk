@@ -33,4 +33,7 @@ export default defineConfig(
       '@typescript-eslint/no-unused-vars': ['error', { ignoreRestSiblings: true }],
     },
   },
+  // Browser scripts: `tsc` checks every name in them against the DOM library they reference
+  // (checkJs), so ESLint's own undefined-name rule, which knows no browser globals, stays off.
+  { files: ['public/**/*.js'], rules: { 'no-undef': 'off' } },
 );

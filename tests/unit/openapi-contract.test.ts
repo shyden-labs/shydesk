@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import { Ajv2020 } from 'ajv/dist/2020.js';
 import { parse } from 'yaml';
+import { contactRoutes } from '../../src/customer/contact.ts';
 import { app } from '../../src/index.ts';
 import { hashKey } from '../../src/products.ts';
 import { standInDb, type Answer } from './d1-stand-in.ts';
@@ -76,7 +77,7 @@ async function call(url: string, key = KEY) {
     return [];
   };
   const response = await app.request(url, { headers: { Authorization: `Bearer ${key}` } }, { DB: standInDb(answer).db });
-  return { status: response.status, body: await response.json() };
+  return { status: response.status, body: (await response.json()) as unknown };
 }
 
 describe('openapi/shydesk.v1.yaml', () => {
@@ -105,5 +106,84 @@ describe('openapi/shydesk.v1.yaml', () => {
     expect(check(FEED, 'get', 200, { items: [{ id: 't1' }], next_cursor: 1 })).not.toEqual([]);
     expect(check(FEED, 'get', 200, { items: [], next_cursor: 1, extra: true })).not.toEqual([]);
     expect(check(FEED, 'get', 418, {})).toEqual([`get ${FEED} does not document status 418`]);
+  });
+});
+
+// The customer API, through the contact routes with Turnstile and mail stood
+// in (shyden-labs/shydesk#19): the Worker's own wiring reaches the network.
+const PRODUCT = {
+  id: 'shytalk',
+  name: 'ShyTalk',
+  sender_address: 'no-reply@shytalk.app',
+  ticket_page_url: 'https://shytalk.app/support/ticket',
+  allowed_origins_json: '["https://shytalk.app"]',
+  monthly_email_share: 100,
+  attachments_keep_days: 30,
+  text_keep_days: 365,
+  created_at: 1,
+};
+async function customer(method: 'GET' | 'POST', url: string, body?: unknown, counted = 1, secret: string | null = 's') {
+  const answer: Answer = (sql, values) => {
+    if (sql.includes('FROM products')) return values[0] === 'shytalk' ? [PRODUCT] : [];
+    if (sql.includes('FROM ticket_types')) return [{ id: 'shytalk:support', name: 'Support', fields_json: '[]' }];
+    if (sql.includes('INSERT INTO counters') && String(values[0]).startsWith('contact:')) return [{ value: counted }];
+    if (sql.includes('INSERT INTO counters')) return [{ value: 1 }];
+    return [];
+  };
+  const routes = contactRoutes({
+    fetcher: () => Promise.resolve(Response.json({ success: true, hostname: 'shytalk.app' })),
+    deliver: () => Promise.resolve(),
+  });
+  const init: RequestInit = { method, headers: { Origin: 'https://shytalk.app', 'Content-Type': 'application/json' } };
+  if (body !== undefined) init.body = typeof body === 'string' ? body : JSON.stringify(body);
+  const env = {
+    DB: standInDb(answer).db,
+    ...(secret === null ? {} : { TURNSTILE_SECRET: secret }),
+    TURNSTILE_SITE_KEY: 'k',
+    SMTP_LOGINS: '{"no-reply@shytalk.app":{"user":"u","pass":"p"}}',
+  };
+  const response = await routes.request(url, init, env);
+  return { status: response.status, body: (await response.json()) as unknown };
+}
+
+const TICKET = { email: 'a@b.co', subject: 'S', category: 'bug', message: 'M', fields: {}, attachmentIds: [], turnstileToken: 't' };
+
+describe('openapi/shydesk.v1.yaml for the customer API', () => {
+  it.each([
+    ['the form settings', '/support-api/config?product=shytalk', 200],
+    ['an unknown product', '/support-api/config?product=nope', 404],
+  ])('the config answer to %s matches the spec', async (_case, url, status) => {
+    const answer = await customer('GET', url);
+    expect(answer.status).toBe(status);
+    expect(check('/support-api/config', 'get', answer.status, answer.body)).toEqual([]);
+  });
+
+  it.each([
+    ['a new ticket', TICKET, 201, 1],
+    ['bad fields', { ...TICKET, email: 'x' }, 400, 1],
+    ['an unreadable body', '{', 400, 1],
+    ['too many requests', TICKET, 429, 99],
+  ])('the tickets answer to %s matches the spec', async (_case, body, status, counted) => {
+    const answer = await customer('POST', '/support-api/tickets?product=shytalk', body, counted);
+    expect(answer.status).toBe(status);
+    expect(check('/support-api/tickets', 'post', answer.status, answer.body)).toEqual([]);
+  });
+
+  it('the tickets answer from a ShyDesk with no Turnstile secret matches the spec', async () => {
+    const original = console.error;
+    console.error = () => undefined;
+    try {
+      const answer = await customer('POST', '/support-api/tickets?product=shytalk', TICKET, 1, null);
+      expect(answer.status).toBe(503);
+      expect(check('/support-api/tickets', 'post', answer.status, answer.body)).toEqual([]);
+    } finally {
+      console.error = original;
+    }
+  });
+
+  it('the tickets answer to an unknown product matches the spec', async () => {
+    const answer = await customer('POST', '/support-api/tickets?product=nope', TICKET);
+    expect(answer.status).toBe(404);
+    expect(check('/support-api/tickets', 'post', answer.status, answer.body)).toEqual([]);
   });
 });
