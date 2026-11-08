@@ -191,6 +191,24 @@ export function typedMismatch(label: string, typed: string, held: string): strin
   return `"${label}" held "${held}" after typing "${typed}"; the browser lost or changed key presses`;
 }
 
+/** A W3C key action sequence being built: each step presses or lifts one key. */
+export interface KeySequence {
+  down(key: string): KeySequence;
+  up(key: string): KeySequence;
+}
+
+/**
+ * Adds `text` to `sequence` as a person types it: each key pressed and lifted
+ * before the next. WebdriverIO's `keys` presses every key down before lifting
+ * any, so a key already held (a repeated letter, every space after the first)
+ * gave Safari no new key press: "The app will not open" arrived as
+ * "The apwilnotopen" (runs 42440108844 and 42441734182, shyden-labs/shydesk#71).
+ */
+export function typed<T extends KeySequence>(sequence: T, text: string): T {
+  for (const key of Array.from(text)) sequence.down(key).up(key);
+  return sequence;
+}
+
 /**
  * Whether a control's accessible name is `label`. A file input's name also
  * carries the browser's own button text after the label on some targets

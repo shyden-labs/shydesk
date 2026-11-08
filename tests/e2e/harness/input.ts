@@ -33,6 +33,7 @@ import {
   type Fixture,
   type Phone,
   typedMismatch,
+  typed,
 } from './targets.ts';
 
 const WAIT = 15_000;
@@ -277,8 +278,8 @@ export async function type(label: string, text: string): Promise<void> {
   } else {
     if (on === 'android') await touchDrawn(label);
     else await tap(label);
-    // W3C key actions: trusted keydown and input per key, on desktop and Android alike.
-    await driver().keys(Array.from(text));
+    // W3C key actions, each key pressed and lifted in turn: trusted keydown and input per key, on desktop and Android alike.
+    await typed(driver().action('key'), text).perform();
   }
   // Every target: the field holds exactly the text typed, or the test fails naming what it held.
   const mismatch = typedMismatch(label, text, String(await (await named(label)).getProperty('value')));

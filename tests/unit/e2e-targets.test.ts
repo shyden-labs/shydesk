@@ -13,6 +13,8 @@ import {
   nameMatches,
   scrollNeeded,
   scrollInput,
+  typed,
+  type KeySequence,
   scrollKey,
   sameBox,
   swipeUp,
@@ -266,6 +268,42 @@ describe('scrollNeeded', () => {
 
   it('counts an element whose middle sits on the bottom edge as outside', () => {
     expect(scrollNeeded({ x: 0, y: 580, width: 10, height: 40 }, { width: 800, height: 600 })).toBe(300);
+  });
+});
+
+describe('typed', () => {
+  /** Records each key action in the order it was added. */
+  function recorder(): KeySequence & { steps: string[] } {
+    const steps: string[] = [];
+    const sequence = {
+      steps,
+      down(key: string) {
+        steps.push(`down ${key}`);
+        return sequence;
+      },
+      up(key: string) {
+        steps.push(`up ${key}`);
+        return sequence;
+      },
+    };
+    return sequence;
+  }
+
+  it('presses and lifts each key before the next, as a person types, so a repeated key or space is pressed again', () => {
+    expect(typed(recorder(), 'pp a').steps).toEqual(['down p', 'up p', 'down p', 'up p', 'down  ', 'up  ', 'down a', 'up a']);
+  });
+
+  it('types a letter outside the basic plane as one key', () => {
+    expect(typed(recorder(), '😀').steps).toEqual(['down 😀', 'up 😀']);
+  });
+
+  it('adds nothing for empty text', () => {
+    expect(typed(recorder(), '').steps).toEqual([]);
+  });
+
+  it('returns the sequence it was given, ready to perform', () => {
+    const sequence = recorder();
+    expect(typed(sequence, 'a')).toBe(sequence);
   });
 });
 
