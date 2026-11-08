@@ -66,6 +66,8 @@
     .field { display: grid; gap: 4px; }
     .attachments { display: grid; gap: 4px; min-height: 1px; overflow-wrap: anywhere; }
     .attachments p { margin: 0; }
+    .picker-name { font-weight: 600; }
+    ::slotted(input) { font: inherit; min-width: 0; }
     label { display: grid; gap: 4px; font-weight: 600; }
     input, select, textarea { font: inherit; font-weight: 400; padding: 10px; min-width: 0; border-radius: 8px; border: 1px solid var(--shydesk-border, #c8c8d0); background: #ffffff; color: inherit; }
     textarea { min-height: 140px; resize: vertical; }
@@ -267,7 +269,11 @@
       });
       const checkError = make('span', { class: 'error' });
       errorFor.set('turnstileToken', checkError);
-      const picker = /** @type {HTMLInputElement} */ (make('input', { type: 'file', multiple: '', accept: 'image/*,video/*' }));
+      const picker = /** @type {HTMLInputElement} */ (
+        make('input', { type: 'file', multiple: '', accept: 'image/*,video/*', slot: 'picker', 'aria-label': TEXT.attach })
+      );
+      const pickerError = make('span', { class: 'error' });
+      errorFor.set('attachmentIds', pickerError);
       const attachments = make('div', { class: 'attachments', role: 'status', 'aria-live': 'polite', 'aria-label': TEXT.attachments });
       const send = /** @type {HTMLButtonElement} */ (make('button', { type: 'submit', disabled: '' }, [TEXT.send]));
 
@@ -277,7 +283,11 @@
         field('category', TEXT.category, category),
         field('message', TEXT.message, message),
         ...extras.map((x) => field(`fields.${x.label}`, x.label, x.control)),
-        field('attachmentIds', TEXT.attach, picker),
+        make('div', { class: 'field' }, [
+          make('span', { class: 'picker-name' }, [TEXT.attach]),
+          make('slot', { name: 'picker' }),
+          pickerError,
+        ]),
         attachments,
         make('slot', { name: 'turnstile' }),
         checkError,
@@ -317,7 +327,8 @@
       });
 
       const holder = make('div', { slot: 'turnstile' });
-      this.append(holder);
+      // In the light DOM too: WebDriver file input does not reach inside a shadow root on Safari (shyden-labs/shydesk#21).
+      this.append(holder, picker);
       /** @type {string | undefined} */
       let widget;
       useTurnstile().then(
@@ -371,6 +382,7 @@
           const raw = /** @type {unknown} */ (await answer.json().catch(() => ({})));
           const body = /** @type {TicketAnswer} */ (raw);
           if (answer.status === 201 && typeof body.ticketLink === 'string') {
+            picker.remove();
             this.showLink(form, holder, body.ticketLink, body.emailSent === true);
             return;
           }
