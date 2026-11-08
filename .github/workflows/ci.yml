@@ -116,6 +116,16 @@ jobs:
       # Safari's driver ships with macOS but answers only once enabled.
       - name: Enable safaridriver
         run: sudo safaridriver --enable
+      # The runner image's own drivers, matching its Chrome and Firefox, so the run
+      # never downloads one mid-run (shyden-labs/shydesk#77). A missing one fails by name.
+      - name: Find the preinstalled Chrome and Firefox drivers
+        run: |
+          chromedriver="${CHROMEWEBDRIVER:?the runner image sets no CHROMEWEBDRIVER}/chromedriver"
+          geckodriver="${GECKOWEBDRIVER:?the runner image sets no GECKOWEBDRIVER}/geckodriver"
+          test -x "$chromedriver" || { echo "no chromedriver at $chromedriver"; exit 1; }
+          test -x "$geckodriver" || { echo "no geckodriver at $geckodriver"; exit 1; }
+          echo "E2E_DESKTOP_CHROMEDRIVER=$chromedriver" >> "$GITHUB_ENV"
+          echo "E2E_GECKODRIVER=$geckodriver" >> "$GITHUB_ENV"
       - name: End-to-end suite on every desktop target
         env:
           E2E_TARGETS: chromium,firefox,safari

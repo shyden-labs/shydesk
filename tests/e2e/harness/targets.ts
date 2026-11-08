@@ -32,6 +32,8 @@ export function targetsFrom(list: string): Target[] {
 
 export interface TargetEnv {
   chromedriver?: string;
+  desktopChromedriver?: string;
+  geckodriver?: string;
   iosUdid?: string;
   androidSerial?: string;
 }
@@ -49,10 +51,27 @@ function need(value: string | undefined, message: string): string {
  */
 export function capabilitiesFor(target: Target, env: TargetEnv): Capabilities {
   switch (target) {
+    // Each desktop driver is the one already on the machine, never fetched
+    // mid-run, where an outside 504 turned a PR red (shyden-labs/shydesk#77).
     case 'chromium':
-      return { browserName: 'chrome', 'goog:chromeOptions': { args: ['--headless=new'] } };
+      return {
+        browserName: 'chrome',
+        'goog:chromeOptions': { args: ['--headless=new'] },
+        'wdio:chromedriverOptions': {
+          binary: need(
+            env.desktopChromedriver,
+            'chromium needs E2E_DESKTOP_CHROMEDRIVER: the path to a chromedriver matching the installed Chrome',
+          ),
+        },
+      };
     case 'firefox':
-      return { browserName: 'firefox', 'moz:firefoxOptions': { args: ['-headless'] } };
+      return {
+        browserName: 'firefox',
+        'moz:firefoxOptions': { args: ['-headless'] },
+        'wdio:geckodriverOptions': {
+          binary: need(env.geckodriver, 'firefox needs E2E_GECKODRIVER: the path to a geckodriver'),
+        },
+      };
     case 'safari':
       return { browserName: 'safari' };
     case 'ios':

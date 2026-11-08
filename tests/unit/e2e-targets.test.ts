@@ -54,7 +54,13 @@ describe('targetsFrom', () => {
   });
 });
 
-const PHONES = { chromedriver: '/cd', iosUdid: '0000-IPHONE', androidSerial: 'SERIAL1' };
+const PHONES = {
+  chromedriver: '/cd',
+  desktopChromedriver: '/desktop-cd',
+  geckodriver: '/gd',
+  iosUdid: '0000-IPHONE',
+  androidSerial: 'SERIAL1',
+};
 
 describe('capabilitiesFor and targetOf agree', () => {
   it.each(TARGETS.map((target) => [target]))('%s', (target) => {
@@ -63,12 +69,32 @@ describe('capabilitiesFor and targetOf agree', () => {
 });
 
 describe('capabilitiesFor', () => {
-  it('runs desktop Chrome and Firefox headless', () => {
-    expect(capabilitiesFor('chromium', {})).toEqual({
+  // A driver fetched mid-run turned a PR red on an outside 504 (shyden-labs/shydesk#77):
+  // desktop Chrome and Firefox use the driver already on the machine.
+  it('runs desktop Chrome headless with the given chromedriver', () => {
+    expect(capabilitiesFor('chromium', PHONES)).toEqual({
       browserName: 'chrome',
       'goog:chromeOptions': { args: ['--headless=new'] },
+      'wdio:chromedriverOptions': { binary: '/desktop-cd' },
     });
-    expect(capabilitiesFor('firefox', {})).toEqual({ browserName: 'firefox', 'moz:firefoxOptions': { args: ['-headless'] } });
+  });
+
+  it('runs desktop Firefox headless with the given geckodriver', () => {
+    expect(capabilitiesFor('firefox', PHONES)).toEqual({
+      browserName: 'firefox',
+      'moz:firefoxOptions': { args: ['-headless'] },
+      'wdio:geckodriverOptions': { binary: '/gd' },
+    });
+  });
+
+  it('refuses desktop Chrome without a chromedriver, naming the variable', () => {
+    expect(() => capabilitiesFor('chromium', {})).toThrow(
+      'chromium needs E2E_DESKTOP_CHROMEDRIVER: the path to a chromedriver matching the installed Chrome',
+    );
+  });
+
+  it('refuses desktop Firefox without a geckodriver, naming the variable', () => {
+    expect(() => capabilitiesFor('firefox', {})).toThrow('firefox needs E2E_GECKODRIVER: the path to a geckodriver');
   });
 
   it('drives the real iPhone through Appium with real touches in the page', () => {

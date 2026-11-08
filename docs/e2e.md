@@ -24,7 +24,10 @@ tests (`scripts/e2e-totals.ts`).
 ## Desktop (CI)
 
 The `e2e-desktop` job in `.github/workflows/ci.yml` runs
-`E2E_TARGETS=chromium,firefox,safari npm run test:e2e` on macOS.
+`E2E_TARGETS=chromium,firefox,safari npm run test:e2e` on macOS. Chrome and
+Firefox use the runner image's own drivers, passed as `E2E_DESKTOP_CHROMEDRIVER`
+and `E2E_GECKODRIVER`, so nothing is downloaded mid-run (shyden-labs/shydesk#77);
+a run without either fails naming the variable.
 
 ## Phones
 
