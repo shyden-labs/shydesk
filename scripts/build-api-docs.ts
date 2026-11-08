@@ -37,6 +37,8 @@ export function buildApiDocs(root: string, out: string): void {
   for (const [name, source] of Object.entries(DOCS_FILES)) copyFileSync(join(root, source), join(docs, name));
   // The shared support piece (shyden-labs/shydesk#19) sits at the assets root; the Worker serves it as /embed.js.
   copyFileSync(join(root, 'public/embed.js'), join(out, 'embed.js'));
+  // Its media code, imported on the first file picked (shyden-labs/shydesk#21).
+  copyFileSync(join(root, 'public/embed-media.js'), join(out, 'embed-media.js'));
 }
 
 export function main(args: string[]): number {

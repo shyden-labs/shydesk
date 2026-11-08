@@ -39,3 +39,26 @@ describe('GET /embed.js', () => {
     expect(response.headers.get('Cache-Control')).toBeNull();
   });
 });
+
+// shyden-labs/shydesk#21: the piece imports its media code on the first file
+// picked. A cross-origin import needs CORS, which a script tag does not.
+describe('GET /embed-media.js', () => {
+  const asset = () => new Response('/* media */', { headers: { 'Content-Type': 'text/javascript', ETag: '"abc"' } });
+  const call = (body = asset()) =>
+    embedRoutes().request('https://shydesk.dpdns.org/embed-media.js', {}, { ASSETS: { fetch: () => Promise.resolve(body) } });
+
+  it('serves the media code to any site, with CORS, cacheable like the piece', async () => {
+    const response = await call();
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe('/* media */');
+    expect(response.headers.get('Access-Control-Allow-Origin')).toBe('*');
+    expect(response.headers.get('Cache-Control')).toBe('public, max-age=300');
+    expect(response.headers.get('Cross-Origin-Resource-Policy')).toBe('cross-origin');
+  });
+
+  it('passes on a missing asset as it is', async () => {
+    const response = await call(new Response('gone', { status: 404 }));
+    expect(response.status).toBe(404);
+    expect(response.headers.get('Access-Control-Allow-Origin')).toBeNull();
+  });
+});

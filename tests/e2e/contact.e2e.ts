@@ -10,7 +10,7 @@ import { describe, it } from 'mocha';
 import { strict as assert } from 'node:assert';
 import { driver } from './harness/driver.ts';
 import { named } from './harness/find.ts';
-import { tap, type } from './harness/input.ts';
+import { pickFile, tap, type } from './harness/input.ts';
 
 const WAIT = 20_000;
 
@@ -28,6 +28,20 @@ async function textHolding(label: string, expected: string): Promise<string> {
   return text;
 }
 
+/** The size in KB of each attached file, once two are attached. */
+async function attachedTwo(): Promise<number[]> {
+  const element = await named('Attachments');
+  let sizes: number[] = [];
+  await driver().waitUntil(
+    async () => {
+      sizes = [...(await element.getText()).matchAll(/attached, (\d+) KB/g)].map((m) => Number(m[1]));
+      return sizes.length === 2;
+    },
+    { timeout: 120_000, timeoutMsg: 'two attachments never finished uploading' },
+  );
+  return sizes;
+}
+
 describe('the contact form', () => {
   it('sends a request typed and tapped in, and shows the private link', async () => {
     await driver().url('/contact.html?product=demo');
@@ -35,6 +49,18 @@ describe('the contact form', () => {
     await type('Subject', 'The app will not open');
     await type('Message', 'It closes as soon as it starts.');
     await type('Device', 'Test phone');
+    // Too long is refused before any upload; then a video and a photo go straight to ShyDesk.
+    await pickFile('Photos and videos', 'long-45s.mp4');
+    await textHolding('Attachments', 'Videos can be up to 30 seconds long.');
+    await pickFile('Photos and videos', 'ok-10s.mp4');
+    await textHolding('Attachments', 'attached,');
+    await pickFile('Photos and videos', 'photo.jpg');
+    const attached = await attachedTwo();
+    // shyden-labs/shydesk#21: the photo is stored smaller than the 3,011 KB fixture.
+    assert.ok(
+      attached.some((kb) => kb < 3011),
+      `no attachment under the photo's own 3011 KB: ${attached.join(', ')}`,
+    );
     // The test site key passes by itself; the button is enabled once it has.
     await textHolding('Support status', 'Ready to send');
     await tap('Send');

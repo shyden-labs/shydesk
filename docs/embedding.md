@@ -72,3 +72,11 @@ answered only for the product's allowed origins (any other origin gets 404):
   categories, the Turnstile site key, attachment limits).
 - `POST /support-api/tickets`: a new request, checked by Turnstile and limited
   to 5 per email and 20 per network address per hour.
+
+## Attachments
+
+The form takes photos and videos. On the first file picked, the piece imports
+`/embed-media.js` from the same ShyDesk host, so a page with a Content Security
+Policy must allow that host in `script-src` and `connect-src`. Photos are shrunk
+in the browser and sent in parts straight to ShyDesk. Videos go as they are for
+now (shyden-labs/shydesk#21), and a video over 30 seconds is refused before upload.

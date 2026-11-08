@@ -53,6 +53,12 @@ describe('buildApiDocs', () => {
 describe('the shared piece', () => {
   // shyden-labs/shydesk#19: the same build puts public/embed.js at the
   // assets root, where the Worker serves it as /embed.js.
+  it('copies the media code unchanged to <out>/embed-media.js', () => {
+    const dir = out();
+    buildApiDocs(ROOT, dir);
+    expect(readFileSync(join(dir, 'embed-media.js')).equals(readFileSync(join(ROOT, 'public/embed-media.js')))).toBe(true);
+  });
+
   it('is copied unchanged to <out>/embed.js', () => {
     const dir = out();
     buildApiDocs(ROOT, dir);

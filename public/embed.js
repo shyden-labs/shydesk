@@ -41,6 +41,14 @@
     pick: 'Choose…',
     privateLink: 'Private link',
     status: 'Support status',
+    attach: 'Photos and videos',
+    attachments: 'Attachments',
+    uploading: 'uploading…',
+    attached: 'attached',
+    tooLong: 'Videos can be up to 30 seconds long.',
+    wrongType: 'Only photos and MP4 videos can be attached.',
+    tooMany: 'Attach up to 10 files.',
+    notUploaded: 'The file could not be uploaded. Try again.',
   };
 
   /** @type {Record<string, string>} */
@@ -56,6 +64,8 @@
     :host { display: block; font-family: var(--shydesk-font, system-ui, sans-serif); color: var(--shydesk-text, #1b1b1f); }
     .panel { display: grid; gap: 12px; padding: 16px; border-radius: 12px; background: var(--shydesk-background, #ffffff); }
     .field { display: grid; gap: 4px; }
+    .attachments { display: grid; gap: 4px; min-height: 1px; overflow-wrap: anywhere; }
+    .attachments p { margin: 0; }
     label { display: grid; gap: 4px; font-weight: 600; }
     input, select, textarea { font: inherit; font-weight: 400; padding: 10px; min-width: 0; border-radius: 8px; border: 1px solid var(--shydesk-border, #c8c8d0); background: #ffffff; color: inherit; }
     textarea { min-height: 140px; resize: vertical; }
@@ -71,7 +81,7 @@
   /**
    * @typedef {{ label: string, kind: 'text' | 'select', required: boolean, options?: string[] }} SupportField
    * @typedef {{ id: string, name: string, fields: SupportField[] }} SupportType
-   * @typedef {{ product: { id: string, name: string }, types: SupportType[], categories: string[], turnstileSiteKey: string }} FormConfig
+   * @typedef {{ product: { id: string, name: string }, types: SupportType[], categories: string[], maxAttachments: number, maxVideoSeconds: number, turnstileSiteKey: string }} FormConfig
    * @typedef {{ render(target: HTMLElement, options: Record<string, unknown>): string, reset(widget: string): void }} TurnstileApi
    * @typedef {{ ticketLink?: string, emailSent?: boolean, errors?: Record<string, string>, error?: string }} TicketAnswer
    */
@@ -161,6 +171,57 @@
     }
 
     /**
+     * Checks, shrinks and sends one file, saying how it went. Its code loads on the first file picked.
+     * @param {File} file
+     * @param {FormConfig} config
+     * @param {string[]} attachedIds
+     * @param {(words: string) => void} say
+     */
+    async attach(file, config, attachedIds, say) {
+      if (attachedIds.length >= config.maxAttachments) {
+        say(TEXT.tooMany);
+        return;
+      }
+      const loaded = /** @type {unknown} */ (await import(`${HOST}/embed-media.js`));
+      const media = /** @type {typeof import('./embed-media.js')} */ (loaded);
+      const shape = media.uploadShape(file.type);
+      if (shape === null) {
+        say(TEXT.wrongType);
+        return;
+      }
+      /** @type {Blob | null} */
+      let chosen = file;
+      if (shape.kind === 'video') {
+        const seconds = await media.videoSeconds(file);
+        if (seconds !== null && seconds > config.maxVideoSeconds) {
+          say(TEXT.tooLong);
+          return;
+        }
+      } else {
+        const shrunk = await media.shrinkImage(file);
+        chosen = shape.mustConvert ? shrunk : media.pickSmaller(file, shrunk);
+      }
+      if (chosen === null) {
+        say(TEXT.wrongType);
+        return;
+      }
+      const sent = await media.uploadAttachment({
+        host: HOST,
+        product: this.getAttribute('product') ?? '',
+        file: chosen,
+        kind: shape.kind,
+        // A shrunk photo is always a JPEG, whatever was picked.
+        mime: chosen === file ? shape.mime : 'image/jpeg',
+        thumbnail: await media.thumbnailOf(file, shape.kind),
+        onProgress: (done) => {
+          say(`${TEXT.uploading} ${String(Math.round(done * 100))} %`);
+        },
+      });
+      attachedIds.push(sent.id);
+      say(`${TEXT.attached}, ${String(media.kilobytes(sent.bytes))} KB`);
+    }
+
+    /**
      * @param {FormConfig} config
      * @param {SupportType} type
      */
@@ -206,6 +267,8 @@
       });
       const checkError = make('span', { class: 'error' });
       errorFor.set('turnstileToken', checkError);
+      const picker = /** @type {HTMLInputElement} */ (make('input', { type: 'file', multiple: '', accept: 'image/*,video/*' }));
+      const attachments = make('div', { class: 'attachments', role: 'status', 'aria-live': 'polite', 'aria-label': TEXT.attachments });
       const send = /** @type {HTMLButtonElement} */ (make('button', { type: 'submit', disabled: '' }, [TEXT.send]));
 
       const form = make('form', { class: 'panel', novalidate: '' }, [
@@ -214,12 +277,44 @@
         field('category', TEXT.category, category),
         field('message', TEXT.message, message),
         ...extras.map((x) => field(`fields.${x.label}`, x.label, x.control)),
+        field('attachmentIds', TEXT.attach, picker),
+        attachments,
         make('slot', { name: 'turnstile' }),
         checkError,
         send,
       ]);
       this.shadow.insertBefore(form, this.statusLine);
       this.tell(TEXT.needsCheck);
+
+      /** The ids of the files fully uploaded, and how many are still on their way. */
+      const attachedIds = /** @type {string[]} */ ([]);
+      let uploading = 0;
+      const updateSend = () => {
+        send.disabled = this.token === '' || uploading > 0;
+      };
+      /** One at a time, so a phone is never sending several large files at once. */
+      let queue = Promise.resolve();
+      picker.addEventListener('change', () => {
+        for (const file of Array.from(picker.files ?? [])) {
+          const line = make('p', {}, [`${file.name}: ${TEXT.uploading}`]);
+          attachments.append(line);
+          uploading += 1;
+          updateSend();
+          queue = queue.then(async () => {
+            const say = (/** @type {string} */ words) => {
+              line.textContent = `${file.name}: ${words}`;
+            };
+            try {
+              await this.attach(file, config, attachedIds, say);
+            } catch (error) {
+              say(error instanceof Error ? error.message : TEXT.notUploaded);
+            }
+            uploading -= 1;
+            updateSend();
+          });
+        }
+        picker.value = '';
+      });
 
       const holder = make('div', { slot: 'turnstile' });
       this.append(holder);
@@ -231,7 +326,7 @@
             sitekey: config.turnstileSiteKey,
             callback: (/** @type {string} */ token) => {
               this.token = token;
-              send.disabled = false;
+              updateSend();
               this.tell(TEXT.ready);
             },
             'expired-callback': () => {
@@ -264,12 +359,12 @@
                 category: category.value,
                 message: message.value,
                 fields: Object.fromEntries(extras.map((x) => [x.label, x.control.value])),
-                attachmentIds: [],
+                attachmentIds: attachedIds,
                 turnstileToken: this.token,
               }),
             });
           } catch {
-            send.disabled = false;
+            updateSend();
             this.tell(TEXT.notSent);
             return;
           }
