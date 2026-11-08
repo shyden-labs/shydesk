@@ -77,6 +77,12 @@ export function requireStaff(jwks?: JWTVerifyGetKey): MiddlewareHandler<{ Bindin
       // verifyAccess wraps every failure, its key fetch included, in AuthError.
       return c.json({ error: 'unauthorised' }, 401);
     }
+    // A deploy without its first admin cannot decide who is staff: said by name, never a 500 (shyden-labs/shydesk#81).
+    const firstAdmin = c.env.FIRST_ADMIN_EMAIL as string | undefined;
+    if (firstAdmin === undefined || firstAdmin.trim() === '') {
+      console.error('FIRST_ADMIN_EMAIL is not set: no staff route can decide who is staff');
+      return c.json({ error: 'FIRST_ADMIN_EMAIL is not set on this deploy' }, 503);
+    }
     const staff = await loadStaff(c.env.DB, email, c.env.FIRST_ADMIN_EMAIL);
     if (!staff) return c.json({ error: 'forbidden' }, 403);
     c.set('staff', staff);

@@ -223,6 +223,29 @@ describe('requireStaff', () => {
     expect(await response.json()).toEqual({ error: 'forbidden' });
   });
 
+  // shyden-labs/shydesk#81: dev had Access but no FIRST_ADMIN_EMAIL, and every signed-in staff page answered 500.
+  it('answers 503 naming FIRST_ADMIN_EMAIL to a signed-in person when it is not set, reading no staff row', async () => {
+    const { db, queries } = standInDb(ROWS);
+    const unset = { ...env(), DB: db, FIRST_ADMIN_EMAIL: undefined } as unknown as StaffEnv;
+    const response = await desk().request('/desk/me', { headers: { 'Cf-Access-Jwt-Assertion': await sign('rep@example.com') } }, unset);
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: 'FIRST_ADMIN_EMAIL is not set on this deploy' });
+    expect(queries).toHaveLength(0);
+  });
+
+  it('answers 503 naming FIRST_ADMIN_EMAIL when it is only spaces', async () => {
+    const blank = { ...env(), FIRST_ADMIN_EMAIL: '  ' };
+    const response = await desk().request('/desk/me', { headers: { 'Cf-Access-Jwt-Assertion': await sign('rep@example.com') } }, blank);
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: 'FIRST_ADMIN_EMAIL is not set on this deploy' });
+  });
+
+  it('still answers 401 first when FIRST_ADMIN_EMAIL is not set and there is no Access token', async () => {
+    const unset = { ...env(), FIRST_ADMIN_EMAIL: undefined } as unknown as StaffEnv;
+    const response = await desk().request('/desk/me', {}, unset);
+    expect(response.status).toBe(401);
+  });
+
   it('passes on a database failure rather than turning it into a 401 or 403', async () => {
     const broken = {
       ...env(),

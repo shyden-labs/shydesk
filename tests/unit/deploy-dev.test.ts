@@ -87,6 +87,8 @@ describe('deploy-dev', () => {
   // A pull request builds the Worker with no credential; develop deploys with
   // the dev environment's token and fails, naming it, when a secret is missing.
   // The schema goes first, so the new Worker never reads a table not there yet (shyden-labs/shydesk#15).
+  // FIRST_ADMIN_EMAIL is a person's email in a public repo, so it lives as a dev environment secret and is put on
+  // the Worker as a Worker secret on each deploy (shyden-labs/shydesk#81).
   it('builds the Worker on a pull request and migrates and deploys it from develop, refusing a missing secret', () => {
     const jobs = topLevel(workflow(), 'jobs').split('\n');
     const step = jobs.indexOf('      - name: Deploy the Worker to dev');
@@ -97,6 +99,7 @@ describe('deploy-dev', () => {
       '          DEPLOY_REHEARSAL: ${{ github.event_name == pull_request }}',
       '          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}',
       '          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}',
+      '          FIRST_ADMIN_EMAIL: ${{ secrets.FIRST_ADMIN_EMAIL }}',
       '          WRANGLER_SEND_METRICS: false',
       '        run: |',
       '          node scripts/npm-ci.ts',
@@ -105,7 +108,7 @@ describe('deploy-dev', () => {
       '            npx wrangler deploy --config demo-host/wrangler.jsonc --dry-run --outdir dist/demo',
       '            exit 0',
       '          fi',
-      '          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID; do',
+      '          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID FIRST_ADMIN_EMAIL; do',
       '            if [ -z ${!name} ]; then',
       '              echo ::error title=No $name in the dev environment::Add it to the dev environment before the Worker can deploy.',
       '              exit 1',
@@ -113,6 +116,7 @@ describe('deploy-dev', () => {
       '          done',
       '          npx wrangler d1 migrations apply shydesk --env dev --remote',
       '          npx wrangler deploy --env dev',
+      '          printf %s $FIRST_ADMIN_EMAIL | npx wrangler secret put FIRST_ADMIN_EMAIL --env dev',
       '          npx wrangler d1 execute shydesk --env dev --remote --file demo-host/seed.sql',
       '          npx wrangler deploy --config demo-host/wrangler.jsonc',
     ]);

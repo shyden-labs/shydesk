@@ -11,8 +11,9 @@ export { TicketTimer } from './timers/ticket-timer.ts';
 
 /**
  * ShyDesk's single Worker (shyden-labs/shydesk#14). Staff routes need the
- * Access settings and FIRST_ADMIN_EMAIL; on a deploy without them (until
- * shyden-labs/shydesk#13 sets Access up) they answer 401 to everyone.
+ * Access settings and FIRST_ADMIN_EMAIL: without the Access settings they
+ * answer 401 to everyone; with them but no FIRST_ADMIN_EMAIL, a signed-in
+ * person gets 503 naming it (shyden-labs/shydesk#81).
  */
 export const app = new Hono<{ Bindings: DocsEnv & ContactBindings & EmbedEnv }>();
 
