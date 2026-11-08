@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { kilobytes, pickSmaller, planImage, planVideo, uploadAttachment, uploadShape } from '../../public/embed-media.js';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { kilobytes, pickSmaller, planImage, planVideo, shrinkVideo, uploadAttachment, uploadShape } from '../../public/embed-media.js';
 
 // What the shared piece decides about a file before and while it uploads
 // (shyden-labs/shydesk#21). Drawing and encoding need a browser: the e2e suite covers those.
@@ -197,5 +197,129 @@ describe('uploadAttachment', () => {
   it('fails in plain words when a refusal gives no reason', async () => {
     const { fetcher } = server((path) => (path.endsWith('/complete') ? json(500, {}) : undefined));
     await expect(send(fetcher)).rejects.toThrow('The file could not be uploaded. Try again.');
+  });
+});
+
+describe('shrinkVideo', () => {
+  type Options = Record<string, unknown>;
+
+  const bigTrack = {
+    getDisplayWidth: () => Promise.resolve(3840),
+    getDisplayHeight: () => Promise.resolve(2160),
+    computePacketStats: () => Promise.resolve({ averagePacketRate: 60 }),
+  };
+
+  /** Stands in for the video library, recording what the conversion was asked for. */
+  function videoTools({
+    isValid = true,
+    discardedTracks = [],
+    track = bigTrack,
+    execute = () => Promise.resolve(),
+  }: {
+    isValid?: boolean;
+    discardedTracks?: { reason: string }[];
+    track?: typeof bigTrack | null;
+    execute?: () => Promise<void>;
+  } = {}) {
+    const asked: Options[] = [];
+    const cancel = vi.fn(() => Promise.resolve());
+    const tools = {
+      ALL_FORMATS: [],
+      BlobSource: Object,
+      Input: class {
+        getPrimaryVideoTrack = () => Promise.resolve(track);
+      },
+      Mp4OutputFormat: Object,
+      BufferTarget: class {
+        buffer = new Uint8Array([1, 2, 3]).buffer;
+      },
+      Output: class {
+        target: unknown;
+        constructor(options: { target: unknown }) {
+          this.target = options.target;
+        }
+      },
+      Conversion: {
+        init: (options: Options) => {
+          asked.push(options);
+          return Promise.resolve({ isValid, discardedTracks, execute, cancel });
+        },
+      },
+    };
+    return { asked, cancel, load: () => Promise.resolve(tools as never) };
+  }
+  const file = new File(['original'], 'clip.mp4', { type: 'video/mp4' });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('encodes at the planned size, frame rate and bitrate, with AAC at 128 kbit/s', async () => {
+    const { asked, load } = videoTools();
+    await shrinkVideo(file, load);
+    expect(asked[0]?.video).toEqual({
+      width: 1920,
+      height: 1080,
+      fit: 'contain',
+      frameRate: 30,
+      codec: 'avc',
+      bitrate: 5_000_000,
+      forceTranscode: true,
+    });
+    expect(asked[0]?.audio).toEqual({ codec: 'aac', bitrate: 128_000 });
+  });
+
+  it('never makes a small, slow video bigger or faster', async () => {
+    const track = {
+      getDisplayWidth: () => Promise.resolve(640),
+      getDisplayHeight: () => Promise.resolve(360),
+      computePacketStats: () => Promise.resolve({ averagePacketRate: 24 }),
+    };
+    const { asked, load } = videoTools({ track });
+    await shrinkVideo(file, load);
+    expect(asked[0]?.video).toMatchObject({ width: 640, height: 360, frameRate: 24 });
+  });
+
+  it('gives back the encoded MP4', async () => {
+    const shrunk = await shrinkVideo(file, videoTools().load);
+    expect(shrunk?.type).toBe('video/mp4');
+    expect(new Uint8Array((await shrunk?.arrayBuffer()) ?? [])).toEqual(new Uint8Array([1, 2, 3]));
+  });
+
+  it('gives nothing when this browser cannot make the video, so the original goes', async () => {
+    const execute = vi.fn(() => Promise.resolve());
+    expect(await shrinkVideo(file, videoTools({ isValid: false, execute }).load)).toBeNull();
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it('gives nothing rather than lose the sound when this browser cannot encode it', async () => {
+    const execute = vi.fn(() => Promise.resolve());
+    const { load } = videoTools({ discardedTracks: [{ reason: 'no_encodable_target_codec' }], execute });
+    expect(await shrinkVideo(file, load)).toBeNull();
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it('gives nothing for a file with no video track', async () => {
+    expect(await shrinkVideo(file, videoTools({ track: null }).load)).toBeNull();
+  });
+
+  it('gives nothing when the library will not load', async () => {
+    expect(await shrinkVideo(file, () => Promise.reject(new Error('offline')))).toBeNull();
+  });
+
+  it('gives nothing when encoding fails', async () => {
+    const { load } = videoTools({ execute: () => Promise.reject(new Error('encoder died')) });
+    expect(await shrinkVideo(file, load)).toBeNull();
+  });
+
+  it('stops an encoder that never finishes after two minutes, so the original goes', async () => {
+    vi.useFakeTimers();
+    const { cancel, load } = videoTools({ execute: () => new Promise<void>(() => undefined) });
+    const shrinking = shrinkVideo(file, load);
+    await vi.advanceTimersByTimeAsync(119_999);
+    expect(cancel).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(await shrinking).toBeNull();
+    expect(cancel).toHaveBeenCalledOnce();
   });
 });

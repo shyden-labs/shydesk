@@ -2,8 +2,9 @@
 /**
  * The shared piece's media code (shyden-labs/shydesk#21), imported from ShyDesk
  * on the first file a customer picks, so a form with no attachments stays small.
- * Photos shrink in the browser. Videos go as they are until a video encoder is
- * chosen (shyden-labs/shydesk#21); `planVideo` holds the sizes it will use.
+ * Photos and videos shrink in the browser. The video library, Mediabunny
+ * (MPL-2.0, unmodified, source at https://github.com/Vanilagy/mediabunny), loads
+ * on the first video only, being far bigger than everything else here.
  *
  * A plain module, typed with JSDoc and checked by `tsc`, so it ships as written.
  */
@@ -12,6 +13,11 @@ const FAILED = 'The file could not be uploaded. Try again.';
 const THUMBNAIL_EDGE = 320;
 /** A browser that never reports on a file gets no answer, not an endless wait. */
 const MEDIA_WAIT_MS = 5000;
+/** A video no browser will finish shrinking in time is sent as it is. */
+const VIDEO_WAIT_MS = 120_000;
+const AUDIO_BITRATE = 128_000;
+/** Enough of the video to tell its frame rate without reading all of it. */
+const PACKETS_TO_MEASURE = 100;
 
 /** The size a photo is sent at: long edge at most 2560 px, shape kept, never bigger. */
 export function planImage(/** @type {number} */ w, /** @type {number} */ h) {
@@ -83,6 +89,82 @@ export async function shrinkImage(file) {
     return await jpegOf(bitmap, w, h, quality);
   } catch {
     return null;
+  }
+}
+
+/**
+ * What this file uses of the video library, written out because the package's
+ * own types clash with TypeScript's DOM types. The e2e suite proves the real one.
+ * @typedef {{
+ *   ALL_FORMATS: unknown,
+ *   BlobSource: new (blob: Blob) => unknown,
+ *   BufferTarget: new () => { buffer: ArrayBuffer | null },
+ *   Conversion: { init(options: object): Promise<{ isValid: boolean, discardedTracks: unknown[], execute(): Promise<void>, cancel(): Promise<void> }> },
+ *   Input: new (options: { source: unknown, formats: unknown }) => {
+ *     getPrimaryVideoTrack(): Promise<{
+ *       getDisplayWidth(): Promise<number>,
+ *       getDisplayHeight(): Promise<number>,
+ *       computePacketStats(packets: number): Promise<{ averagePacketRate: number }>,
+ *     } | null>,
+ *   },
+ *   Mp4OutputFormat: new () => unknown,
+ *   Output: new (options: { format: unknown, target: unknown }) => unknown,
+ * }} VideoTools
+ */
+
+/** @returns {Promise<VideoTools>} */
+function loadVideoTools() {
+  // Beside this file, wherever it was imported from: built from the pinned package (scripts/build-api-docs.ts).
+  const url = new URL('embed-video.js', import.meta.url).href;
+  return /** @type {Promise<VideoTools>} */ (import(/* @vite-ignore */ url));
+}
+
+/**
+ * The video as an MP4 at its planned size, or null if this browser cannot make
+ * one with its sound, or takes too long: the original is sent instead.
+ * @param {Blob} file
+ * @param {() => Promise<VideoTools>} [load]
+ * @returns {Promise<Blob | null>}
+ */
+export async function shrinkVideo(file, load = loadVideoTools) {
+  /** @type {ReturnType<typeof setTimeout> | undefined} */
+  let timer;
+  try {
+    const { ALL_FORMATS, BlobSource, BufferTarget, Conversion, Input, Mp4OutputFormat, Output } = await load();
+    const input = new Input({ source: new BlobSource(file), formats: ALL_FORMATS });
+    const track = await input.getPrimaryVideoTrack();
+    if (track === null) return null;
+    const { averagePacketRate } = await track.computePacketStats(PACKETS_TO_MEASURE);
+    const plan = planVideo(await track.getDisplayWidth(), await track.getDisplayHeight(), averagePacketRate);
+    const target = new BufferTarget();
+    const conversion = await Conversion.init({
+      input,
+      output: new Output({ format: new Mp4OutputFormat(), target }),
+      video: {
+        width: plan.w,
+        height: plan.h,
+        fit: 'contain',
+        frameRate: plan.fps,
+        codec: 'avc',
+        bitrate: plan.bitrate,
+        forceTranscode: true,
+      },
+      audio: { codec: 'aac', bitrate: AUDIO_BITRATE },
+      showWarnings: false,
+    });
+    if (!conversion.isValid || conversion.discardedTracks.length > 0) return null;
+    const stopped = new Promise((_, reject) => {
+      timer = setTimeout(() => {
+        void conversion.cancel();
+        reject(new Error('the video took too long to shrink'));
+      }, VIDEO_WAIT_MS);
+    });
+    await Promise.race([conversion.execute(), stopped]);
+    return target.buffer === null ? null : new Blob([target.buffer], { type: 'video/mp4' });
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
   }
 }
 

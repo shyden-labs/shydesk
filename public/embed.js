@@ -191,13 +191,15 @@
         return;
       }
       /** @type {Blob | null} */
-      let chosen = file;
+      let chosen;
       if (shape.kind === 'video') {
         const seconds = await media.videoSeconds(file);
         if (seconds !== null && seconds > config.maxVideoSeconds) {
           say(TEXT.tooLong);
           return;
         }
+        say(TEXT.uploading);
+        chosen = media.pickSmaller(file, await media.shrinkVideo(file));
       } else {
         const shrunk = await media.shrinkImage(file);
         chosen = shape.mustConvert ? shrunk : media.pickSmaller(file, shrunk);
@@ -211,8 +213,8 @@
         product: this.getAttribute('product') ?? '',
         file: chosen,
         kind: shape.kind,
-        // A shrunk photo is always a JPEG, whatever was picked.
-        mime: chosen === file ? shape.mime : 'image/jpeg',
+        // A shrunk photo is always a JPEG, whatever was picked; a video is an MP4 either way.
+        mime: chosen === file || shape.kind === 'video' ? shape.mime : 'image/jpeg',
         thumbnail: await media.thumbnailOf(file, shape.kind),
         onProgress: (done) => {
           say(`${TEXT.uploading} ${String(Math.round(done * 100))} %`);

@@ -27,10 +27,12 @@ export function embedRoutes(): Hono<{ Bindings: EmbedEnv }> {
   };
   routes.get('/embed.js', serve);
   // The piece's media code (shyden-labs/shydesk#21): a cross-origin import needs CORS, and any page may load the piece.
-  routes.get('/embed-media.js', async (c) => {
+  const serveImported = async (c: Context<{ Bindings: EmbedEnv }>): Promise<Response> => {
     const served = await serve(c);
     if (served.ok) served.headers.set('Access-Control-Allow-Origin', '*');
     return served;
-  });
+  };
+  routes.get('/embed-media.js', serveImported);
+  routes.get('/embed-video.js', serveImported);
   return routes;
 }
