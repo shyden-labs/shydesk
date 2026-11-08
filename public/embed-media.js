@@ -184,8 +184,16 @@ async function answerOf(response) {
  */
 export async function uploadAttachment({ host, product, file, kind, mime, thumbnail, fetcher = fetch, onProgress }) {
   const url = (/** @type {string} */ path) => `${host}/support-api/uploads${path}?product=${encodeURIComponent(product)}`;
+  /** A request that cannot connect throws the browser's own words, which mean nothing to a customer. */
+  const ask = async (/** @type {string} */ address, /** @type {RequestInit} */ init) => {
+    try {
+      return await fetcher(address, init);
+    } catch {
+      throw new Error(FAILED);
+    }
+  };
   const started = await answerOf(
-    await fetcher(url(''), {
+    await ask(url(''), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ kind, mime, bytes: file.size }),
@@ -196,12 +204,12 @@ export async function uploadAttachment({ host, product, file, kind, mime, thumbn
   for (let n = 1; n <= count; n += 1) {
     const end = Math.min(n * partSize, file.size);
     const body = file.slice((n - 1) * partSize, end);
-    const sent = await answerOf(await fetcher(url(`/${id}/parts/${String(n)}`), { method: 'PUT', body }));
+    const sent = await answerOf(await ask(url(`/${id}/parts/${String(n)}`), { method: 'PUT', body }));
     parts.push({ n, etag: sent.etag });
     onProgress?.(end / file.size);
   }
   await answerOf(
-    await fetcher(url(`/${id}/complete`), {
+    await ask(url(`/${id}/complete`), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ parts }),

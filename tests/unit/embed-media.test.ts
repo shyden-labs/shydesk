@@ -184,6 +184,11 @@ describe('uploadAttachment', () => {
     await expect(send(fetcher)).rejects.toThrow('Too long.');
   });
 
+  it("fails in plain words when a request cannot connect, never the browser's own", async () => {
+    const offline = (() => Promise.reject(new TypeError('Load failed'))) as unknown as typeof fetch;
+    await expect(send(offline)).rejects.toThrow('The file could not be uploaded. Try again.');
+  });
+
   it('fails in plain words when an answer is not readable', async () => {
     const { fetcher } = server((path) => (path.endsWith('/complete') ? new Response('<html>', { status: 500 }) : undefined));
     await expect(send(fetcher)).rejects.toThrow('The file could not be uploaded. Try again.');

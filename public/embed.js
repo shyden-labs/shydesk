@@ -64,8 +64,7 @@
     :host { display: block; font-family: var(--shydesk-font, system-ui, sans-serif); color: var(--shydesk-text, #1b1b1f); }
     .panel { display: grid; gap: 12px; padding: 16px; border-radius: 12px; background: var(--shydesk-background, #ffffff); }
     .field { display: grid; gap: 4px; }
-    .attachments { display: grid; gap: 4px; min-height: 1px; overflow-wrap: anywhere; }
-    .attachments p { margin: 0; }
+    .attachments { min-height: 1px; overflow-wrap: anywhere; white-space: pre-line; }
     .picker-name { font-weight: 600; }
     ::slotted(input) { font: inherit; min-width: 0; }
     label { display: grid; gap: 4px; font-weight: 600; }
@@ -304,16 +303,19 @@
       };
       /** One at a time, so a phone is never sending several large files at once. */
       let queue = Promise.resolve();
+      /** One line per file, in a single text so the status reads the same on every browser. */
+      const lines = /** @type {string[]} */ ([]);
       picker.addEventListener('change', () => {
         for (const file of Array.from(picker.files ?? [])) {
-          const line = make('p', {}, [`${file.name}: ${TEXT.uploading}`]);
-          attachments.append(line);
+          const at = lines.length;
+          const say = (/** @type {string} */ words) => {
+            lines[at] = `${file.name}: ${words}`;
+            attachments.textContent = lines.join('\n');
+          };
+          say(TEXT.uploading);
           uploading += 1;
           updateSend();
           queue = queue.then(async () => {
-            const say = (/** @type {string} */ words) => {
-              line.textContent = `${file.name}: ${words}`;
-            };
             try {
               await this.attach(file, config, attachedIds, say);
             } catch (error) {
@@ -321,9 +323,10 @@
             }
             uploading -= 1;
             updateSend();
+            // Only once nothing still reads a picked file, so the same file can be picked again.
+            if (uploading === 0) picker.value = '';
           });
         }
-        picker.value = '';
       });
 
       const holder = make('div', { slot: 'turnstile' });
