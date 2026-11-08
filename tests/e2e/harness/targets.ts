@@ -182,6 +182,16 @@ export function notNamedMessage(label: string, seen: readonly string[]): string 
 }
 
 /**
+ * Why the field named `label` does not hold `typed` after it was typed in, or
+ * undefined when it does. Safari lost key presses on run 42440108844
+ * (shyden-labs/shydesk#71): "The app will not open" arrived as "The apwilnotopen".
+ */
+export function typedMismatch(label: string, typed: string, held: string): string | undefined {
+  if (held === typed) return undefined;
+  return `"${label}" held "${held}" after typing "${typed}"; the browser lost or changed key presses`;
+}
+
+/**
  * Whether a control's accessible name is `label`. A file input's name also
  * carries the browser's own button text after the label on some targets
  * (Firefox: "Harness file Browse… No file selected.", measured on PR

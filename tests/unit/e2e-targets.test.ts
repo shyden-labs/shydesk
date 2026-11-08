@@ -9,6 +9,7 @@ import {
   screenPoint,
   viewportPoint,
   notNamedMessage,
+  typedMismatch,
   nameMatches,
   scrollNeeded,
   scrollInput,
@@ -357,5 +358,23 @@ describe('centreInside', () => {
 
   it('counts a middle exactly on the bottom edge as outside', () => {
     expect(centreInside({ x: 0, y: 1837, width: 100, height: 100 }, page)).toBe(false);
+  });
+});
+
+describe('typedMismatch', () => {
+  it('says nothing when the field holds exactly what was typed', () => {
+    expect(typedMismatch('Subject', 'The app will not open', 'The app will not open')).toBeUndefined();
+  });
+
+  it('names the field, the typed text and what it held when keys were lost (Safari, run 42440108844)', () => {
+    expect(typedMismatch('Subject', 'The app will not open', 'The apwilnotopen')).toBe(
+      '"Subject" held "The apwilnotopen" after typing "The app will not open"; the browser lost or changed key presses',
+    );
+  });
+
+  it('counts a field left empty as a mismatch', () => {
+    expect(typedMismatch('Device', 'Test phone', '')).toBe(
+      '"Device" held "" after typing "Test phone"; the browser lost or changed key presses',
+    );
   });
 });

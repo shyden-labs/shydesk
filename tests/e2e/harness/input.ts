@@ -32,6 +32,7 @@ import {
   type Box,
   type Fixture,
   type Phone,
+  typedMismatch,
 } from './targets.ts';
 
 const WAIT = 15_000;
@@ -273,12 +274,15 @@ export async function type(label: string, text: string): Promise<void> {
       await nativeTap(on, nativeFinder(on, label), `the field named "${label}"`);
       await driver().$(nativeFinder(on, label)).addValue(text);
     });
-    return;
+  } else {
+    if (on === 'android') await touchDrawn(label);
+    else await tap(label);
+    // W3C key actions: trusted keydown and input per key, on desktop and Android alike.
+    await driver().keys(Array.from(text));
   }
-  if (on === 'android') await touchDrawn(label);
-  else await tap(label);
-  // W3C key actions: trusted keydown and input per key, on desktop and Android alike.
-  await driver().keys(Array.from(text));
+  // Every target: the field holds exactly the text typed, or the test fails naming what it held.
+  const mismatch = typedMismatch(label, text, String(await (await named(label)).getProperty('value')));
+  if (mismatch !== undefined) throw new Error(mismatch);
 }
 
 const MEDIA = resolve(import.meta.dirname, '../../fixtures/media');

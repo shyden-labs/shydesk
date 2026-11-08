@@ -12,6 +12,8 @@ export interface Element {
   click(): Promise<void>;
   addValue(value: string): Promise<void>;
   getText(): Promise<string>;
+  /** The element's current DOM property `name`, as the page holds it (WebDriver Get Element Property). */
+  getProperty(name: string): Promise<unknown>;
   waitForExist(options: { timeout: number; timeoutMsg: string }): Promise<true>;
   isExisting(): Promise<boolean>;
   /** In the native layer: the element's top-left corner, in device pixels. */
