@@ -93,6 +93,8 @@ describe('uploads on D1', () => {
     expect(started.status).toBe(201);
     const { id, parts } = (await started.json()) as { id: string; parts: number };
     expect(parts).toBe(3);
+    // Read after the start: a start clears what any other test left behind.
+    const atStart = await storedBytes(db);
 
     const first = new Uint8Array(PART_SIZE);
     first.set([0xff, 0xd8, 0xff]);
@@ -103,13 +105,12 @@ describe('uploads on D1', () => {
 
     const etags = JSON.stringify({ parts: [1, 2, 3].map((n) => ({ n, etag: `etag-${String(n)}` })) });
     expect.soft((await call('it-up-other', `/${id}/complete`, { method: 'POST', body: etags })).status).toBe(404);
-    const before = await storedBytes(db);
-    expect.soft(before).toBeGreaterThanOrEqual(size);
+    expect.soft(await storedBytes(db)).toBe(atStart + size);
     expect.soft((await call('it-up', `/${id}/complete`, { method: 'POST', body: etags })).status).toBe(200);
 
     const row = await db.prepare('SELECT state, bytes, received_bytes, r2_upload_id FROM attachments WHERE id = ?').bind(id).first();
     expect.soft(row).toEqual({ state: 'stored', bytes: size, received_bytes: size, r2_upload_id: null });
-    expect.soft(await storedBytes(db)).toBe(before);
+    expect.soft(await storedBytes(db)).toBe(atStart + size);
     const second = await call('it-up', `/${id}/complete`, { method: 'POST', body: etags });
     expect.soft(second.status).toBe(404);
   });
@@ -140,7 +141,7 @@ describe('uploads on D1', () => {
     expect.soft(started.status).toBe(201);
     const row = await db.prepare('SELECT state FROM attachments WHERE id = ?').bind('it-up-orphan').first();
     expect.soft(row).toEqual({ state: 'deleted' });
-    expect.soft(await storedBytes(db)).toBe(before - 7);
+    expect.soft(await storedBytes(db)).toBeLessThanOrEqual(before - 7);
   });
 
   it('adds to the running total only while it stays within the free storage', async () => {

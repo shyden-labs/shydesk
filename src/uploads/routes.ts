@@ -98,12 +98,12 @@ function declaredLength(c: Context<UploadEnv>): number | null {
 async function clearAbandoned(env: UploadBindings): Promise<void> {
   const now = Date.now();
   const { results: stale } = await env.DB.prepare(
-    `SELECT ${COLUMNS} FROM attachments WHERE state = 'pending' AND created_at < ? LIMIT ${String(STALE_PER_START)}`,
+    `SELECT ${COLUMNS} FROM attachments WHERE state = 'pending' AND created_at < ? ORDER BY created_at LIMIT ${String(STALE_PER_START)}`,
   )
     .bind(now - UPLOAD_ABANDONED_MS)
     .all<Attachment>();
   const { results: unattached } = await env.DB.prepare(
-    `SELECT ${COLUMNS} FROM attachments WHERE state = 'stored' AND ticket_id IS NULL AND created_at < ? LIMIT ${String(STALE_PER_START)}`,
+    `SELECT ${COLUMNS} FROM attachments WHERE state = 'stored' AND ticket_id IS NULL AND created_at < ? ORDER BY created_at LIMIT ${String(STALE_PER_START)}`,
   )
     .bind(now - UNATTACHED_EXPIRES_MS)
     .all<Attachment>();
