@@ -5,6 +5,7 @@ import { apiRoutes } from './api/routes.ts';
 import { contactRoutes, type ContactBindings } from './customer/contact.ts';
 import { embedRoutes, type EmbedEnv } from './customer/embed.ts';
 import type { Deliver } from './mail/notify.ts';
+import { uploadRoutes, type UploadBindings } from './uploads/routes.ts';
 
 // The Durable Object classes wrangler.jsonc binds must be exported from the entry point.
 export { TicketTimer } from './timers/ticket-timer.ts';
@@ -15,7 +16,7 @@ export { TicketTimer } from './timers/ticket-timer.ts';
  * answer 401 to everyone; with them but no FIRST_ADMIN_EMAIL, a signed-in
  * person gets 503 naming it (shyden-labs/shydesk#81).
  */
-export const app = new Hono<{ Bindings: DocsEnv & ContactBindings & EmbedEnv }>();
+export const app = new Hono<{ Bindings: DocsEnv & ContactBindings & EmbedEnv & UploadBindings }>();
 
 /**
  * Mail delivery for the Worker. Nothing opens an SMTP connection yet
@@ -30,6 +31,8 @@ app.get('/health', (c) => c.json({ ok: true }));
 app.route('/', adminRoutes());
 app.route('/', apiRoutes());
 app.route('/', docsRoutes());
+// Before contact: its origin check covers all of /support-api, and this answers first with its own.
+app.route('/', uploadRoutes());
 app.route('/', contactRoutes({ fetcher: fetch.bind(globalThis), deliver: noSmtpYet }));
 app.route('/', embedRoutes());
 

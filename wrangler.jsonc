@@ -1,7 +1,7 @@
 // ShyDesk's one Worker (shyden-labs/shydesk#14). The top level is the live
 // "ShyDesk" account; `--env dev` is "ShyDesk Non-Prod". The account comes from
 // CLOUDFLARE_ACCOUNT_ID in each GitHub environment, never from this file.
-// Each later task adds the binding it uses (R2 waits on shyden-labs/shydesk#35).
+// Each later task adds the binding it uses.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "shydesk",
@@ -14,6 +14,7 @@
   "assets": { "directory": "./.assets", "binding": "ASSETS", "run_worker_first": true },
   "d1_databases": [{ "binding": "DB", "database_name": "shydesk", "database_id": "ac3be099-947d-4afc-9859-46fd3e4f52a8" }],
   // Each ticket's own timer (shyden-labs/shydesk#22): SQLite-backed, the kind the Free plan allows.
+  "r2_buckets": [{ "binding": "FILES", "bucket_name": "shydesk-attachments" }],
   "durable_objects": { "bindings": [{ "name": "TICKET_TIMER", "class_name": "TicketTimer" }] },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["TicketTimer"] }],
   "env": {
@@ -21,6 +22,7 @@
       "name": "shydesk",
       "workers_dev": true,
       "d1_databases": [{ "binding": "DB", "database_name": "shydesk", "database_id": "482eef16-a848-488a-a1fa-e859031aabd1" }],
+      "r2_buckets": [{ "binding": "FILES", "bucket_name": "shydesk-attachments" }],
       "durable_objects": { "bindings": [{ "name": "TICKET_TIMER", "class_name": "TicketTimer" }] },
       // Non-Prod's Turnstile: Cloudflare's published always-pass test keys (shyden-labs/shydesk#19)
       // until shyden-labs/shydesk#13 sets real ones. Live has none: its contact form answers 503.

@@ -5,6 +5,7 @@ import { parse } from 'yaml';
 import { contactRoutes } from '../../src/customer/contact.ts';
 import { app } from '../../src/index.ts';
 import { hashKey } from '../../src/products.ts';
+import { uploadRoutes } from '../../src/uploads/routes.ts';
 import { standInDb, type Answer } from './d1-stand-in.ts';
 
 // The hand-written spec, openapi/shydesk.v1.yaml, is the contract product
@@ -12,13 +13,17 @@ import { standInDb, type Answer } from './d1-stand-in.ts';
 // route the Worker registers under /api/v1 and /support-api is in it, every
 // path in it is registered, and every response the Worker gives validates
 // against the schema the spec documents for that status.
+interface Answered {
+  $ref?: string;
+  content?: { 'application/json'?: { schema: unknown } };
+}
 interface Operation {
-  responses: Record<string, { content?: { 'application/json'?: { schema: unknown } } }>;
+  responses: Record<string, Answered>;
 }
 interface Spec {
   openapi: string;
   paths: Record<string, Record<string, Operation>>;
-  components: { schemas: Record<string, unknown> };
+  components: { schemas: Record<string, unknown>; responses: Record<string, Answered> };
 }
 
 const spec = parse(readFileSync(new URL('../../openapi/shydesk.v1.yaml', import.meta.url), 'utf8')) as Spec;
@@ -55,7 +60,9 @@ for (const [name, schema] of Object.entries(spec.components.schemas)) {
 
 /** Validates a body against the schema the spec gives this path, method and status. */
 function check(path: string, method: string, status: number, body: unknown): string[] {
-  const response = spec.paths[path]?.[method]?.responses[String(status)];
+  const documented = spec.paths[path]?.[method]?.responses[String(status)];
+  const shared = documented?.$ref?.replace('#/components/responses/', '');
+  const response = shared === undefined ? documented : spec.components.responses[shared];
   if (!response) return [`${method} ${path} does not document status ${status}`];
   const schema = response.content?.['application/json']?.schema;
   if (!schema) return [`${method} ${path} ${status} has no application/json schema`];
@@ -146,6 +153,18 @@ async function customer(method: 'GET' | 'POST', url: string, body?: unknown, cou
   return { status: response.status, body: (await response.json()) as unknown };
 }
 
+async function startUpload(body: unknown, counted: number): Promise<{ status: number; body: unknown }> {
+  const answer: Answer = (sql) => {
+    if (sql.includes('FROM products')) return [PRODUCT];
+    if (sql.includes('window_start')) return [{ value: counted }];
+    return [];
+  };
+  const env = { DB: standInDb(answer).db, FILES: { createMultipartUpload: () => Promise.resolve({ uploadId: 'u' }) } };
+  const init = { method: 'POST', headers: { Origin: 'https://shytalk.app' }, body: JSON.stringify(body) };
+  const response = await uploadRoutes().request('/support-api/uploads?product=shytalk', init, env);
+  return { status: response.status, body: (await response.json()) as unknown };
+}
+
 const TICKET = { email: 'a@b.co', subject: 'S', category: 'bug', message: 'M', fields: {}, attachmentIds: [], turnstileToken: 't' };
 
 describe('openapi/shydesk.v1.yaml for the customer API', () => {
@@ -167,6 +186,16 @@ describe('openapi/shydesk.v1.yaml for the customer API', () => {
     const answer = await customer('POST', '/support-api/tickets?product=shytalk', body, counted);
     expect(answer.status).toBe(status);
     expect(check('/support-api/tickets', 'post', answer.status, answer.body)).toEqual([]);
+  });
+
+  it.each([
+    ['a new upload', { kind: 'video', mime: 'video/mp4', bytes: 5 }, 201, 1],
+    ['a type not allowed', { kind: 'video', mime: 'image/svg+xml', bytes: 5 }, 400, 1],
+    ['too many starts', { kind: 'video', mime: 'video/mp4', bytes: 5 }, 429, 999],
+  ])('the uploads answer to %s matches the spec', async (_case, body, status, counted) => {
+    const answer = await startUpload(body, counted);
+    expect(answer.status).toBe(status);
+    expect(check('/support-api/uploads', 'post', answer.status, answer.body)).toEqual([]);
   });
 
   it('the tickets answer from a ShyDesk with no Turnstile secret matches the spec', async () => {

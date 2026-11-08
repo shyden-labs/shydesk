@@ -17,6 +17,23 @@ export async function storedBytes(db: D1Database): Promise<number> {
   return row?.value ?? 0;
 }
 
+/**
+ * Adds to the running total unless that would pass the free tier, in one
+ * statement so two uploads finishing together cannot both take the last room.
+ * False when there is no room, and nothing was added.
+ */
+export async function addStoredWithin(db: D1Database, bytes: number): Promise<boolean> {
+  const row = await db
+    .prepare(
+      `INSERT INTO counters (key, value) VALUES (?1, ?2)
+       ON CONFLICT (key) DO UPDATE SET value = value + ?2 WHERE value + ?2 <= ?3
+       RETURNING value`,
+    )
+    .bind(STORED_BYTES, bytes, FREE_STORAGE_BYTES)
+    .first<{ value: number }>();
+  return row !== null;
+}
+
 /** The admin desk's warning from 80 % of the free tier, the percentage rounded down; null below it. */
 export function storageWarning(stored: number): string | null {
   if (stored * 5 < FREE_STORAGE_BYTES * 4) return null;
