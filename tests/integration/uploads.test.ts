@@ -1,0 +1,183 @@
+// Upload SQL on a real D1 database with the Release 1 schema (shyden-labs/shydesk#20):
+// a 3-part upload stays its own product's, and the running total never passes
+// the free storage. The dev-ci token reaches D1 only, so R2 is an in-memory
+// stand-in here; real R2 is measured on Non-Prod after the deploy.
+import type { R2Bucket } from '@cloudflare/workers-types';
+import { describe, expect, inject, it } from 'vitest';
+import { saveProduct } from '../../src/products.ts';
+import { addStoredWithin, FREE_STORAGE_BYTES, storedBytes } from '../../src/storage.ts';
+import { closeOut, PART_SIZE, uploadRoutes } from '../../src/uploads/routes.ts';
+import { restD1 } from './d1.ts';
+
+const db = restD1(inject('databaseId'));
+/** The journey makes about 30 D1 round trips, each up to about 1.7 s in CI (measured 2026-11-09), so the suite's 10 s is too short for it. */
+const JOURNEY_TIMEOUT_MS = 60_000;
+
+async function product(id: string): Promise<void> {
+  await saveProduct(
+    db,
+    {
+      id,
+      name: id,
+      senderAddress: `no-reply@${id}.example`,
+      ticketPageUrl: `https://${id}.example/ticket`,
+      allowedOrigins: [`https://${id}.example`],
+      monthlyEmailShare: 0,
+      attachmentsKeepDays: 30,
+      textKeepDays: 365,
+    },
+    Date.now(),
+  );
+}
+
+function memoryBucket(): R2Bucket {
+  const objects = new Map<string, Uint8Array>();
+  const open = new Map<number, Uint8Array>();
+  const multipart = (key: string, uploadId: string) => ({
+    key,
+    uploadId,
+    uploadPart: (n: number, body: ArrayBuffer) => {
+      open.set(n, new Uint8Array(body));
+      return Promise.resolve({ partNumber: n, etag: `etag-${String(n)}` });
+    },
+    complete: () => {
+      const chunks = [...open.keys()].sort((a, b) => a - b).map((n) => open.get(n) ?? new Uint8Array());
+      const whole = new Uint8Array(chunks.reduce((sum, c) => sum + c.length, 0));
+      let at = 0;
+      for (const c of chunks) {
+        whole.set(c, at);
+        at += c.length;
+      }
+      objects.set(key, whole);
+      return Promise.resolve({ key });
+    },
+  });
+  return {
+    createMultipartUpload: (key: string) => Promise.resolve(multipart(key, 'one-upload')),
+    resumeMultipartUpload: multipart,
+    delete: () => Promise.resolve(),
+    head: (key: string) => Promise.resolve(objects.has(key) ? { size: objects.get(key)?.length } : null),
+    get: (key: string, { range }: { range: { offset: number; length: number } }) => {
+      const slice = (objects.get(key) ?? new Uint8Array()).slice(range.offset, range.offset + range.length);
+      return Promise.resolve({ arrayBuffer: () => Promise.resolve(slice.buffer) });
+    },
+  } as unknown as R2Bucket;
+}
+
+describe('uploads on D1', () => {
+  it(
+    'completes a 3-part upload of the right size, and another product can touch none of it',
+    async () => {
+      await product('it-up');
+      await product('it-up-other');
+      const FILES = memoryBucket();
+      const app = uploadRoutes();
+      const call = (productId: string, path: string, init: RequestInit) =>
+        app.request(
+          `/support-api/uploads${path}?product=${productId}`,
+          {
+            ...init,
+            headers: {
+              Origin: `https://${productId}.example`,
+              'CF-Connecting-IP': '203.0.113.20',
+              ...(init.headers as Record<string, string> | undefined),
+            },
+          },
+          { DB: db, FILES },
+        );
+      const part = (productId: string, id: string, n: number, bytes: Uint8Array) =>
+        call(productId, `/${id}/parts/${String(n)}`, {
+          method: 'PUT',
+          body: bytes as unknown as BodyInit,
+          headers: { 'Content-Length': String(bytes.length) },
+        });
+
+      const size = PART_SIZE * 2 + 5;
+      const started = await call('it-up', '', { method: 'POST', body: JSON.stringify({ kind: 'image', mime: 'image/jpeg', bytes: size }) });
+      expect(started.status).toBe(201);
+      const { id, parts } = (await started.json()) as { id: string; parts: number };
+      expect(parts).toBe(3);
+      // Read after the start: a start clears what any other test left behind.
+      const atStart = await storedBytes(db);
+
+      const first = new Uint8Array(PART_SIZE);
+      first.set([0xff, 0xd8, 0xff]);
+      expect.soft((await part('it-up-other', id, 1, first)).status).toBe(404);
+      expect.soft((await part('it-up', id, 1, first)).status).toBe(200);
+      expect.soft((await part('it-up', id, 2, new Uint8Array(PART_SIZE))).status).toBe(200);
+      expect.soft((await part('it-up', id, 3, new Uint8Array(5))).status).toBe(200);
+
+      const etags = JSON.stringify({ parts: [1, 2, 3].map((n) => ({ n, etag: `etag-${String(n)}` })) });
+      expect.soft((await call('it-up-other', `/${id}/complete`, { method: 'POST', body: etags })).status).toBe(404);
+      expect.soft(await storedBytes(db)).toBe(atStart + size);
+      expect.soft((await call('it-up', `/${id}/complete`, { method: 'POST', body: etags })).status).toBe(200);
+
+      const row = await db.prepare('SELECT state, bytes, received_bytes, r2_upload_id FROM attachments WHERE id = ?').bind(id).first();
+      expect.soft(row).toEqual({ state: 'stored', bytes: size, received_bytes: size, r2_upload_id: null });
+      expect.soft(await storedBytes(db)).toBe(atStart + size);
+      // A claimed upload takes no more parts: only real SQL can show this.
+      const claimedStart = await call('it-up', '', {
+        method: 'POST',
+        body: JSON.stringify({ kind: 'image', mime: 'image/jpeg', bytes: 5 }),
+      });
+      const claimedId = ((await claimedStart.json()) as { id: string }).id;
+      await db.prepare('UPDATE attachments SET r2_upload_id = NULL WHERE id = ?').bind(claimedId).run();
+      expect.soft((await part('it-up', claimedId, 1, new Uint8Array(5))).status).toBe(404);
+      const second = await call('it-up', `/${id}/complete`, { method: 'POST', body: etags });
+      expect.soft(second.status).toBe(404);
+    },
+    JOURNEY_TIMEOUT_MS,
+  );
+
+  it('expires a day-old upload never put on a ticket, and keeps one that is', async () => {
+    await product('it-up-old');
+    const insert = (id: string, ticket: string | null) =>
+      db
+        .prepare(
+          `INSERT INTO attachments (id, product_id, ticket_id, r2_key, mime, bytes, state, created_at)
+           VALUES (?, 'it-up-old', ?, ?, 'image/jpeg', 7, 'stored', 0)`,
+        )
+        .bind(id, ticket, `key-${id}`)
+        .run();
+    await insert('it-up-orphan', null);
+    await addStoredWithin(db, 7);
+    const before = await storedBytes(db);
+    const FILES = memoryBucket();
+    const started = await uploadRoutes().request(
+      '/support-api/uploads?product=it-up-old',
+      {
+        method: 'POST',
+        body: JSON.stringify({ kind: 'image', mime: 'image/jpeg', bytes: 5 }),
+        headers: { Origin: 'https://it-up-old.example', 'CF-Connecting-IP': '203.0.113.21' },
+      },
+      { DB: db, FILES },
+    );
+    expect.soft(started.status).toBe(201);
+    const row = await db.prepare('SELECT state FROM attachments WHERE id = ?').bind('it-up-orphan').first();
+    expect.soft(row).toEqual({ state: 'deleted' });
+    expect.soft(await storedBytes(db)).toBeLessThanOrEqual(before - 7);
+  });
+
+  it('takes an attachment off the running total once, however many clear-outs reach it', async () => {
+    await product('it-up-twice');
+    await db
+      .prepare(
+        `INSERT INTO attachments (id, product_id, r2_key, mime, bytes, state, created_at)
+         VALUES ('it-up-twice-a', 'it-up-twice', 'key-twice', 'image/jpeg', 7, 'stored', 0)`,
+      )
+      .run();
+    await addStoredWithin(db, 7);
+    const before = await storedBytes(db);
+    const env = { DB: db, FILES: memoryBucket() };
+    await closeOut(env, 'it-up-twice-a', 'stored');
+    await closeOut(env, 'it-up-twice-a', 'stored');
+    expect.soft(await storedBytes(db)).toBe(before - 7);
+  });
+
+  it('adds to the running total only while it stays within the free storage', async () => {
+    expect.soft(await addStoredWithin(db, 1)).toBe(true);
+    const before = await storedBytes(db);
+    expect.soft(await addStoredWithin(db, FREE_STORAGE_BYTES)).toBe(false);
+    expect.soft(await storedBytes(db)).toBe(before);
+  });
+});

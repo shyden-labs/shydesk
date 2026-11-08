@@ -9,7 +9,7 @@ import { standInDb } from './d1-stand-in.ts';
 const NOW = Date.UTC(2026, 10, 6, 12);
 
 describe('overdue', () => {
-  it('asks once, with the time now for each of the four kinds, and returns the rows oldest due first', async () => {
+  it('asks once, with the time now for each of the five kinds, and returns the rows oldest due first', async () => {
     const rows = [
       { kind: 'attachment', id: 'a1', product_id: 'shytalk', due_at: NOW - 2 },
       { kind: 'text', id: 't1', product_id: 'shytalk', due_at: NOW - 1 },
@@ -20,7 +20,7 @@ describe('overdue', () => {
       { kind: 'text', id: 't1', productId: 'shytalk', dueAt: NOW - 1 },
     ]);
     expect(statements).toHaveLength(1);
-    expect(statements[0]?.values).toEqual([NOW, NOW, NOW, NOW]);
+    expect(statements[0]?.values).toEqual([NOW, NOW, NOW, NOW, NOW]);
     expect(statements[0]?.sql).toContain('ORDER BY due_at');
   });
 
@@ -35,6 +35,7 @@ describe('overdueLine', () => {
     ['attachment', 'Attachment a1 (shytalk) was due for deletion at 2026-10-01 08:05 UTC and is still stored.'],
     ['text', 'Ticket a1 (shytalk) was due for text deletion at 2026-10-01 08:05 UTC and is still stored.'],
     ['autoclose', 'Ticket a1 (shytalk) was due to close itself at 2026-10-01 08:05 UTC and is still waiting.'],
+    ['unattached', 'Upload a1 (shytalk) was never put on a ticket, was due for deletion at 2026-10-01 08:05 UTC and is still stored.'],
     ['upload', 'Upload a1 (shytalk) was due to be aborted at 2026-10-01 08:05 UTC and is still pending.'],
   ] as const)('names a missed %s', (kind, line) => {
     expect(overdueLine({ kind, id: 'a1', productId: 'shytalk', dueAt: at })).toBe(line);

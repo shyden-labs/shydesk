@@ -159,14 +159,17 @@ describe('overdue on D1', () => {
     // An upload pending 2 hours: past due; 30 minutes: not.
     await attachment('it-tm-due', 'it-tm-u1', null, 'pending', 1, NOW - 2 * 3_600_000);
     await attachment('it-tm-due', 'it-tm-u2', null, 'pending', 1, NOW - 1_800_000);
+    await attachment('it-tm-due', 'it-tm-o1', null, 'stored', 1, NOW - 2 * DAY_MS);
+    await attachment('it-tm-due', 'it-tm-o2', null, 'stored', 1, NOW - 3_600_000);
 
     const mine = (await overdue(db, NOW)).filter((o) => o.productId === 'it-tm-due');
-    expect(mine).toHaveLength(4);
+    expect(mine).toHaveLength(5);
     expect(mine).toEqual(
       expect.arrayContaining([
         { kind: 'text', id: 'it-tm-d3', productId: 'it-tm-due', dueAt: NOW - DAY_MS },
         { kind: 'autoclose', id: 'it-tm-d4', productId: 'it-tm-due', dueAt: NOW - DAY_MS },
         { kind: 'attachment', id: 'it-tm-d1-a', productId: 'it-tm-due', dueAt: NOW - DAY_MS },
+        { kind: 'unattached', id: 'it-tm-o1', productId: 'it-tm-due', dueAt: NOW - DAY_MS },
       ]),
     );
     // Oldest due first: the upload, due an hour ago, comes last.

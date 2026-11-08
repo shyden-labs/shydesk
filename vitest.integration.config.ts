@@ -10,6 +10,8 @@ export default {
   test: {
     include: ['tests/integration/**/*.test.ts'],
     globalSetup: ['tests/integration/global-setup.ts'],
+    // One shared database: a file reading the running total must not see another file change it.
+    fileParallelism: false,
     testTimeout: 10_000,
     hookTimeout: 60_000,
   },

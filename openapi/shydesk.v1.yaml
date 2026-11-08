@@ -160,6 +160,100 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /support-api/uploads:
+    post:
+      operationId: startUpload
+      summary: Starts an attachment upload in parts.
+      description: >-
+        No per-file size limit: only the free storage can refuse it here. Limited
+        to 30 starts per network address and 300 per product per hour.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/ProductQuery'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewUpload'
+      responses:
+        '201':
+          description: Started. Send `parts` parts, each `partSize` bytes but the last.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadStarted'
+        '400': { $ref: '#/components/responses/UploadError' }
+        '404': { $ref: '#/components/responses/UploadError' }
+        '422': { $ref: '#/components/responses/UploadError' }
+        '429': { $ref: '#/components/responses/UploadError' }
+  /support-api/uploads/{id}/parts/{n}:
+    put:
+      operationId: sendUploadPart
+      summary: One part's raw bytes, numbered from 1.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/ProductQuery'
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: n, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary }
+      responses:
+        '200':
+          description: Stored. Keep the etag for `complete`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadPart'
+        '400': { $ref: '#/components/responses/UploadError' }
+        '404': { $ref: '#/components/responses/UploadError' }
+        '411': { $ref: '#/components/responses/UploadError' }
+        '413': { $ref: '#/components/responses/UploadError' }
+  /support-api/uploads/{id}/complete:
+    post:
+      operationId: completeUpload
+      summary: Finishes an upload, keeping the file only if its content passes.
+      description: >-
+        The file must really be a JPEG, WebP or MP4 of the declared type, and a
+        video at most 30 seconds long. A refused file is deleted.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/ProductQuery'
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompleteUpload'
+      responses:
+        '200': { $ref: '#/components/responses/UploadOk' }
+        '400': { $ref: '#/components/responses/UploadError' }
+        '404': { $ref: '#/components/responses/UploadError' }
+        '422': { $ref: '#/components/responses/UploadError' }
+  /support-api/uploads/{thumbId}:
+    put:
+      operationId: sendUploadThumbnail
+      summary: The preview image of a finished upload, at most 1 MB, JPEG or WebP.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/ProductQuery'
+        - { name: thumbId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary }
+      responses:
+        '200': { $ref: '#/components/responses/UploadOk' }
+        '404': { $ref: '#/components/responses/UploadError' }
+        '409': { $ref: '#/components/responses/UploadError' }
+        '411': { $ref: '#/components/responses/UploadError' }
+        '413': { $ref: '#/components/responses/UploadError' }
+        '422': { $ref: '#/components/responses/UploadError' }
 components:
   parameters:
     ProductQuery:
@@ -174,6 +268,23 @@ components:
       type: http
       scheme: bearer
       description: The product's API key, made on the ShyDesk admin screen. Only its hash is stored.
+  responses:
+    UploadOk:
+      description: Done.
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [ok]
+            properties:
+              ok: { type: boolean, const: true }
+    UploadError:
+      description: Refused, saying why.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
   schemas:
     FeedPage:
       type: object
@@ -318,6 +429,40 @@ components:
         emailSent:
           type: boolean
           description: False when the notice email could not be sent; the customer should keep the link.
+    NewUpload:
+      type: object
+      required: [kind, mime, bytes]
+      properties:
+        kind: { type: string, enum: [image, video] }
+        mime: { type: string, enum: [image/jpeg, image/webp, video/mp4] }
+        bytes: { type: integer, minimum: 1 }
+    UploadStarted:
+      type: object
+      additionalProperties: false
+      required: [id, partSize, parts, thumbId]
+      properties:
+        id: { type: string }
+        partSize: { type: integer, const: 8388608 }
+        parts: { type: integer, minimum: 1 }
+        thumbId: { type: string }
+    UploadPart:
+      type: object
+      additionalProperties: false
+      required: [etag]
+      properties:
+        etag: { type: string }
+    CompleteUpload:
+      type: object
+      required: [parts]
+      properties:
+        parts:
+          type: array
+          items:
+            type: object
+            required: [n, etag]
+            properties:
+              n: { type: integer, minimum: 1 }
+              etag: { type: string }
     FieldErrors:
       type: object
       additionalProperties: false

@@ -8,7 +8,7 @@ import { AUTOCLOSE_AFTER_DAYS, DAY_MS } from '../tickets/status.ts';
  * uploads still pending an hour after they started (shyden-labs/shydesk#20).
  */
 
-export type OverdueKind = 'attachment' | 'text' | 'autoclose' | 'upload';
+export type OverdueKind = 'attachment' | 'text' | 'autoclose' | 'upload' | 'unattached';
 
 export interface Overdue {
   kind: OverdueKind;
@@ -19,6 +19,9 @@ export interface Overdue {
 
 /** An upload not finished within this long is abandoned. */
 export const UPLOAD_ABANDONED_MS = 3_600_000;
+
+/** A finished upload not put on a ticket after this long was abandoned too (shyden-labs/shydesk#20). */
+export const UNATTACHED_EXPIRES_MS = 86_400_000;
 
 const SQL = `
 SELECT 'attachment' AS kind, a.id AS id, t.product_id AS product_id, t.closed_at + p.attachments_keep_days * ${DAY_MS} AS due_at
@@ -36,13 +39,17 @@ UNION ALL
 SELECT 'upload', a.id, a.product_id, a.created_at + ${UPLOAD_ABANDONED_MS}
   FROM attachments a
   WHERE a.state = 'pending' AND a.created_at + ${UPLOAD_ABANDONED_MS} < ?
+UNION ALL
+SELECT 'unattached', a.id, a.product_id, a.created_at + ${UNATTACHED_EXPIRES_MS}
+  FROM attachments a
+  WHERE a.state = 'stored' AND a.ticket_id IS NULL AND a.created_at + ${UNATTACHED_EXPIRES_MS} < ?
 ORDER BY due_at`;
 
 /** Everything past its due date at `now`, oldest due first. */
 export async function overdue(db: D1Database, now: number): Promise<Overdue[]> {
   const { results } = await db
     .prepare(SQL)
-    .bind(now, now, now, now)
+    .bind(now, now, now, now, now)
     .all<{ kind: OverdueKind; id: string; product_id: string; due_at: number }>();
   return results.map((r) => ({ kind: r.kind, id: r.id, productId: r.product_id, dueAt: r.due_at }));
 }
@@ -61,5 +68,7 @@ export function overdueLine(o: Overdue): string {
       return `Ticket ${o.id} (${o.productId}) was due to close itself at ${at} and is still waiting.`;
     case 'upload':
       return `Upload ${o.id} (${o.productId}) was due to be aborted at ${at} and is still pending.`;
+    case 'unattached':
+      return `Upload ${o.id} (${o.productId}) was never put on a ticket, was due for deletion at ${at} and is still stored.`;
   }
 }
