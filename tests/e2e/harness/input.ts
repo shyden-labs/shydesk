@@ -22,7 +22,9 @@ import {
   pickerItem,
   screenPoint,
   targetOf,
-  sameBox,
+  steadyFrom,
+  steadyLongEnough,
+  type Steady,
   scrollInput,
   scrollKey,
   scrollNeeded,
@@ -32,6 +34,10 @@ import {
   type Box,
   type Fixture,
   type Phone,
+  typedMismatch,
+  typed,
+  pressMissed,
+  type Landed,
 } from './targets.ts';
 
 const WAIT = 15_000;
@@ -116,23 +122,30 @@ async function clickDrawn(label: string): Promise<void> {
     }
   }
   // A scroll animates: press only once the control has stopped moving, inside the window.
-  let last = box;
+  let steady: Steady | undefined;
   await driver().waitUntil(
     async () => {
       ({ box, viewport } = await drawn());
-      const still = sameBox(last, box);
-      last = box;
-      return still && scrollNeeded(box, viewport) === 0;
+      steady = steadyFrom(steady, box, Date.now());
+      return steadyLongEnough(steady, Date.now()) && scrollNeeded(box, viewport) === 0;
     },
     { timeout: WAIT, timeoutMsg: `"${label}" never stopped moving inside the window` },
   );
+  const at = viewportPoint(box, viewport, label);
+  // Read only: notes where the next real press lands, so a press that misses the control fails naming where it went.
+  await driver().execute(
+    'const control = arguments[0]; const aimedScroll = Math.round(window.scrollY); window.__e2ePress = null; document.addEventListener("pointerdown", (e) => { const path = e.composedPath(); const hit = path[0]; const r = control.getBoundingClientRect(); window.__e2ePress = { x: Math.round(e.clientX), y: Math.round(e.clientY), on: hit instanceof Element ? hit.localName : String(hit), inside: path.includes(control), control: { x: r.x, y: r.y, width: r.width, height: r.height }, aimedScroll, pressedScroll: Math.round(window.scrollY) }; }, { capture: true, once: true });',
+    element,
+  );
   await driver()
     .action('pointer', { parameters: { pointerType: 'mouse' } })
-    .move(viewportPoint(box, viewport, label))
+    .move(at)
     .down()
     .pause(50)
     .up()
     .perform();
+  const missed = pressMissed(label, at, await driver().execute<Landed | null>('return window.__e2ePress;'));
+  if (missed !== undefined) throw new Error(missed);
 }
 
 /** Real finger swipes allowed to bring a page control onto a phone screen: more than any test page is long. */
@@ -232,13 +245,12 @@ async function touchDrawn(label: string): Promise<void> {
         element,
       );
     let { box, ratio } = await drawn();
-    let last = box;
+    let steady: Steady | undefined;
     await driver().waitUntil(
       async () => {
         ({ box, ratio } = await drawn());
-        const still = sameBox(last, box);
-        last = box;
-        return still;
+        steady = steadyFrom(steady, box, Date.now());
+        return steadyLongEnough(steady, Date.now());
       },
       { timeout: WAIT, timeoutMsg: `android: the field named "${label}" never stopped moving` },
     );
@@ -273,12 +285,15 @@ export async function type(label: string, text: string): Promise<void> {
       await nativeTap(on, nativeFinder(on, label), `the field named "${label}"`);
       await driver().$(nativeFinder(on, label)).addValue(text);
     });
-    return;
+  } else {
+    if (on === 'android') await touchDrawn(label);
+    else await tap(label);
+    // W3C key actions, each key pressed and lifted in turn: trusted keydown and input per key, on desktop and Android alike.
+    await typed(driver().action('key'), text).perform();
   }
-  if (on === 'android') await touchDrawn(label);
-  else await tap(label);
-  // W3C key actions: trusted keydown and input per key, on desktop and Android alike.
-  await driver().keys(Array.from(text));
+  // Every target: the field holds exactly the text typed, or the test fails naming what it held.
+  const mismatch = typedMismatch(label, text, String(await (await named(label)).getProperty('value')));
+  if (mismatch !== undefined) throw new Error(mismatch);
 }
 
 const MEDIA = resolve(import.meta.dirname, '../../fixtures/media');

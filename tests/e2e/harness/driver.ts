@@ -12,6 +12,8 @@ export interface Element {
   click(): Promise<void>;
   addValue(value: string): Promise<void>;
   getText(): Promise<string>;
+  /** The element's current DOM property `name`, as the page holds it (WebDriver Get Element Property). */
+  getProperty(name: string): Promise<unknown>;
   waitForExist(options: { timeout: number; timeoutMsg: string }): Promise<true>;
   isExisting(): Promise<boolean>;
   /** In the native layer: the element's top-left corner, in device pixels. */
@@ -26,6 +28,13 @@ export interface PointerAction {
   down(): PointerAction;
   pause(ms: number): PointerAction;
   up(): PointerAction;
+  perform(): Promise<void>;
+}
+
+/** A W3C key action sequence, sent as one real input; performing it releases every key. */
+export interface KeyAction {
+  down(key: string): KeyAction;
+  up(key: string): KeyAction;
   perform(): Promise<void>;
 }
 
@@ -49,6 +58,7 @@ export interface Driver {
   execute<T>(script: string, ...args: unknown[]): Promise<T>;
   action(type: 'pointer', options: { parameters: { pointerType: 'touch' | 'mouse' } }): PointerAction;
   action(type: 'wheel'): WheelAction;
+  action(type: 'key'): KeyAction;
   /** A lazy handle; awaiting it resolves the element, as a page script needs. */
   $(selector: string | ElementReference): Element & PromiseLike<Element>;
   /** The browser's own accessible name for the element (W3C Get Computed Label). */

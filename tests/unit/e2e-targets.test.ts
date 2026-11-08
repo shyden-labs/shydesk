@@ -9,11 +9,18 @@ import {
   screenPoint,
   viewportPoint,
   notNamedMessage,
+  typedMismatch,
   nameMatches,
   scrollNeeded,
   scrollInput,
+  typed,
+  pressMissed,
+  type KeySequence,
   scrollKey,
   sameBox,
+  steadyFrom,
+  steadyLongEnough,
+  STEADY_MS,
   swipeUp,
   centreInside,
 } from '../e2e/harness/targets.ts';
@@ -268,6 +275,70 @@ describe('scrollNeeded', () => {
   });
 });
 
+describe('pressMissed', () => {
+  /** A press that met a paragraph because the page scrolled 60 px between aiming and pressing. */
+  const landed = {
+    x: 400,
+    y: 300,
+    on: 'p',
+    inside: false,
+    control: { x: 350, y: 250, width: 100, height: 44 },
+    aimedScroll: 1200,
+    pressedScroll: 1260,
+  };
+
+  it('is quiet when the press landed on the control', () => {
+    expect(pressMissed('Send', { x: 400, y: 300 }, { ...landed, x: 400, y: 300, on: 'button', inside: true })).toBeUndefined();
+  });
+
+  it('names where the press landed, where the control was then drawn and how far the page had scrolled', () => {
+    expect(pressMissed('Send', { x: 400, y: 300 }, landed)).toBe(
+      'the press on "Send" at 400, 300 landed on <p> at 400, 300 instead; "Send" was then drawn at 350, 250 (100 x 44), ' +
+        'page scrolled 1200 px when aimed and 1260 px when pressed',
+    );
+  });
+
+  it('says so when no press reached the page at all', () => {
+    expect(pressMissed('Send', { x: 400, y: 300 }, null)).toBe('the press on "Send" at 400, 300 never reached the page');
+  });
+});
+
+describe('typed', () => {
+  /** Records each key action in the order it was added. */
+  function recorder(): KeySequence & { steps: string[] } {
+    const steps: string[] = [];
+    const sequence = {
+      steps,
+      down(key: string) {
+        steps.push(`down ${key}`);
+        return sequence;
+      },
+      up(key: string) {
+        steps.push(`up ${key}`);
+        return sequence;
+      },
+    };
+    return sequence;
+  }
+
+  it('presses and lifts each key before the next, as a person types, so a repeated key or space is pressed again', () => {
+    expect(typed(recorder(), 'pp a').steps).toEqual(['down p', 'up p', 'down p', 'up p', 'down  ', 'up  ', 'down a', 'up a']);
+  });
+
+  it('types a letter outside the basic plane as one key', () => {
+    expect(typed(recorder(), '😀').steps).toEqual(['down 😀', 'up 😀']);
+  });
+
+  it('adds nothing for empty text', () => {
+    expect(typed(recorder(), '').steps).toEqual([]);
+  });
+
+  it('returns the sequence it was given, ready to perform', () => {
+    const sequence = recorder();
+    expect(typed(sequence, 'a')).toBe(sequence);
+  });
+});
+
 describe('scrollInput', () => {
   it('scrolls Chrome by the mouse wheel', () => {
     expect(scrollInput('chromium')).toBe('wheel');
@@ -289,6 +360,30 @@ describe('scrollKey', () => {
 
   it('is Page Up to bring a control above the window down into it', () => {
     expect(scrollKey(-680)).toBe('');
+  });
+});
+
+describe('steadyFrom', () => {
+  const box = { x: 1, y: 300, width: 3, height: 4 };
+
+  it('starts timing a control from its first read, so a first read is never steady', () => {
+    const first = steadyFrom(undefined, box, 1000);
+    expect(first).toEqual({ box, since: 1000 });
+    expect(steadyLongEnough(first, 1000)).toBe(false);
+  });
+
+  it('keeps the time a control was first seen while it stays in place', () => {
+    expect(steadyFrom({ box, since: 1000 }, { ...box }, 1100)).toEqual({ box, since: 1000 });
+  });
+
+  it('starts timing again when the control moved (two reads in one frame of a scroll match; the next ones do not)', () => {
+    const moved = { ...box, y: 250 };
+    expect(steadyFrom({ box, since: 1000 }, moved, 1100)).toEqual({ box: moved, since: 1100 });
+  });
+
+  it('counts a control steady once it has stayed put for STEADY_MS, and not a millisecond sooner', () => {
+    expect(steadyLongEnough({ box, since: 1000 }, 1000 + STEADY_MS - 1)).toBe(false);
+    expect(steadyLongEnough({ box, since: 1000 }, 1000 + STEADY_MS)).toBe(true);
   });
 });
 
@@ -357,5 +452,23 @@ describe('centreInside', () => {
 
   it('counts a middle exactly on the bottom edge as outside', () => {
     expect(centreInside({ x: 0, y: 1837, width: 100, height: 100 }, page)).toBe(false);
+  });
+});
+
+describe('typedMismatch', () => {
+  it('says nothing when the field holds exactly what was typed', () => {
+    expect(typedMismatch('Subject', 'The app will not open', 'The app will not open')).toBeUndefined();
+  });
+
+  it('names the field, the typed text and what it held when keys were lost (Safari, run 42440108844)', () => {
+    expect(typedMismatch('Subject', 'The app will not open', 'The apwilnotopen')).toBe(
+      '"Subject" held "The apwilnotopen" after typing "The app will not open"; the browser lost or changed key presses',
+    );
+  });
+
+  it('counts a field left empty as a mismatch', () => {
+    expect(typedMismatch('Device', 'Test phone', '')).toBe(
+      '"Device" held "" after typing "Test phone"; the browser lost or changed key presses',
+    );
   });
 });

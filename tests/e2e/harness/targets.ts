@@ -182,6 +182,65 @@ export function notNamedMessage(label: string, seen: readonly string[]): string 
 }
 
 /**
+ * Why the field named `label` does not hold `typed` after it was typed in, or
+ * undefined when it does. Safari lost key presses on run 42440108844
+ * (shyden-labs/shydesk#71): "The app will not open" arrived as "The apwilnotopen".
+ */
+export function typedMismatch(label: string, typed: string, held: string): string | undefined {
+  if (held === typed) return undefined;
+  return `"${label}" held "${held}" after typing "${typed}"; the browser lost or changed key presses`;
+}
+
+/** Where a real press reached the page: its point, the element it landed on, and whether that is the control or inside it. */
+export interface Landed {
+  x: number;
+  y: number;
+  on: string;
+  inside: boolean;
+  /** Where the control was drawn at the moment of the press. */
+  control: { x: number; y: number; width: number; height: number };
+  /** How far the page had scrolled when the press was aimed, and when it landed. */
+  aimedScroll: number;
+  pressedScroll: number;
+}
+
+/**
+ * Why a press aimed at `at` on the control named `label` did not reach it, or
+ * undefined when it did. On Safari a press on "Send" left the form unsent
+ * (runs 42440108844 and 42448093505, shyden-labs/shydesk#71), so every press
+ * says where it actually landed.
+ */
+export function pressMissed(label: string, at: { x: number; y: number }, landed: Landed | null): string | undefined {
+  const aimed = `the press on "${label}" at ${String(at.x)}, ${String(at.y)}`;
+  if (landed === null) return `${aimed} never reached the page`;
+  if (landed.inside) return undefined;
+  const c = landed.control;
+  return (
+    `${aimed} landed on <${landed.on}> at ${String(landed.x)}, ${String(landed.y)} instead; ` +
+    `"${label}" was then drawn at ${String(Math.round(c.x))}, ${String(Math.round(c.y))} (${String(Math.round(c.width))} x ${String(Math.round(c.height))}), ` +
+    `page scrolled ${String(landed.aimedScroll)} px when aimed and ${String(landed.pressedScroll)} px when pressed`
+  );
+}
+
+/** A W3C key action sequence being built: each step presses or lifts one key. */
+export interface KeySequence {
+  down(key: string): KeySequence;
+  up(key: string): KeySequence;
+}
+
+/**
+ * Adds `text` to `sequence` as a person types it: each key pressed and lifted
+ * before the next. WebdriverIO's `keys` presses every key down before lifting
+ * any, so a key already held (a repeated letter, every space after the first)
+ * gave Safari no new key press: "The app will not open" arrived as
+ * "The apwilnotopen" (runs 42440108844 and 42441734182, shyden-labs/shydesk#71).
+ */
+export function typed<T extends KeySequence>(sequence: T, text: string): T {
+  for (const key of Array.from(text)) sequence.down(key).up(key);
+  return sequence;
+}
+
+/**
  * Whether a control's accessible name is `label`. A file input's name also
  * carries the browser's own button text after the label on some targets
  * (Firefox: "Harness file Browse… No file selected.", measured on PR
@@ -224,6 +283,31 @@ export function scrollKey(delta: number): string {
  */
 export function sameBox(a: Box, b: Box): boolean {
   return a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
+}
+
+/** How long a control must stay in one place before it counts as stopped moving. */
+export const STEADY_MS = 300;
+
+/** A control's last drawn box and when it was first drawn there. */
+export interface Steady {
+  box: Box;
+  since: number;
+}
+
+/**
+ * The control's steadiness after a new read at `now`. Two reads taken one
+ * after the other can fall in the same frame of a scroll and match while the
+ * page is still moving: Safari's press on Send was aimed at a page scrolled
+ * 69 px and landed at 164 px (run 42457748277, shyden-labs/shydesk#71). So a
+ * control counts as still only once it has stayed put for STEADY_MS.
+ */
+export function steadyFrom(previous: Steady | undefined, box: Box, now: number): Steady {
+  return previous !== undefined && sameBox(previous.box, box) ? previous : { box, since: now };
+}
+
+/** Whether the control has stayed in one place for at least STEADY_MS by `now`. */
+export function steadyLongEnough(steady: Steady, now: number): boolean {
+  return now - steady.since >= STEADY_MS;
 }
 
 /**
