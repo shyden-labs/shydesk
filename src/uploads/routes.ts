@@ -75,11 +75,19 @@ const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'obj
 
 type Pending = Attachment & { r2_upload_id: string };
 
-/** Marks an attachment deleted and takes `bytes` off the running total, together. */
-const closeOut = (env: UploadBindings, id: string, bytes: number): Promise<unknown> =>
+/**
+ * Marks an attachment deleted and takes it off the running total, together and
+ * only if it is still in `state`, so two calls reaching one attachment take it
+ * off once. A pending upload gives back what it received, read fresh so a part
+ * that arrived late counts; a stored one gives back its size.
+ */
+export const closeOut = (env: Pick<UploadBindings, 'DB'>, id: string, state: 'pending' | 'stored'): Promise<unknown> =>
   env.DB.batch([
-    env.DB.prepare("UPDATE attachments SET state = 'deleted', deleted_at = ? WHERE id = ?").bind(Date.now(), id),
-    env.DB.prepare('UPDATE counters SET value = value - ? WHERE key = ?').bind(bytes, STORED_BYTES),
+    env.DB.prepare(
+      `UPDATE counters SET value = value - (SELECT ${state === 'pending' ? 'received_bytes' : 'bytes'} FROM attachments WHERE id = ?1 AND state = ?2)
+       WHERE key = ?3 AND EXISTS (SELECT 1 FROM attachments WHERE id = ?1 AND state = ?2)`,
+    ).bind(id, state, STORED_BYTES),
+    env.DB.prepare("UPDATE attachments SET state = 'deleted', deleted_at = ?1 WHERE id = ?2 AND state = ?3").bind(Date.now(), id, state),
   ]);
 
 /** The Content-Length as a number, or null if it is missing or is not one. */
@@ -112,7 +120,7 @@ async function clearAbandoned(env: UploadBindings): Promise<void> {
       // With no upload id a `complete` stopped part way, and the object may exist.
       if (row.r2_upload_id !== null) await env.FILES.resumeMultipartUpload(row.r2_key, row.r2_upload_id).abort();
       else await env.FILES.delete(row.r2_key);
-      await closeOut(env, row.id, row.received_bytes);
+      await closeOut(env, row.id, 'pending');
     } catch (error) {
       console.error(`upload ${row.id} could not be aborted`, error);
     }
@@ -120,7 +128,7 @@ async function clearAbandoned(env: UploadBindings): Promise<void> {
   for (const row of unattached) {
     try {
       await env.FILES.delete([row.r2_key, row.thumb_key]);
-      await closeOut(env, row.id, row.bytes);
+      await closeOut(env, row.id, 'stored');
     } catch (error) {
       console.error(`upload ${row.id} could not be expired`, error);
     }
@@ -128,7 +136,7 @@ async function clearAbandoned(env: UploadBindings): Promise<void> {
 }
 
 const pending = (env: UploadBindings, id: string, productId: string): Promise<Pending | null> =>
-  env.DB.prepare(`SELECT ${COLUMNS} FROM attachments WHERE id = ? AND product_id = ? AND state = 'pending'`)
+  env.DB.prepare(`SELECT ${COLUMNS} FROM attachments WHERE id = ? AND product_id = ? AND state = 'pending' AND r2_upload_id IS NOT NULL`)
     .bind(id, productId)
     .first<Pending>();
 
@@ -229,12 +237,12 @@ export function uploadRoutes(): Hono<UploadEnv> {
     } catch (error) {
       console.error(`upload ${claimed.id} could not be completed`, error);
       await upload.abort();
-      await closeOut(c.env, claimed.id, claimed.received_bytes);
+      await closeOut(c.env, claimed.id, 'pending');
       return c.json({ error: MESSAGES.uploadFailed }, 422);
     }
     const refuse = async (error: string): Promise<Response> => {
       await c.env.FILES.delete(claimed.r2_key);
-      await closeOut(c.env, claimed.id, claimed.received_bytes);
+      await closeOut(c.env, claimed.id, 'pending');
       return c.json({ error }, 422);
     };
     let checked: Awaited<ReturnType<typeof check>>;
@@ -246,14 +254,17 @@ export function uploadRoutes(): Hono<UploadEnv> {
     }
     if ('error' in checked) return refuse(checked.error);
     // Keeps the file's own size in the total: a part sent twice was counted twice.
-    await c.env.DB.batch([
-      c.env.DB.prepare("UPDATE attachments SET mime = ?, duration_ms = ?, state = 'stored' WHERE id = ?").bind(
-        claimed.mime,
-        checked.durationMs,
-        claimed.id,
-      ),
-      c.env.DB.prepare('UPDATE counters SET value = value - ? WHERE key = ?').bind(claimed.received_bytes - claimed.bytes, STORED_BYTES),
+    const [, kept] = await c.env.DB.batch([
+      c.env.DB.prepare(
+        `UPDATE counters SET value = value - (SELECT received_bytes - bytes FROM attachments WHERE id = ?1 AND state = ?2)
+         WHERE key = ?3 AND EXISTS (SELECT 1 FROM attachments WHERE id = ?1 AND state = ?2)`,
+      ).bind(claimed.id, 'pending', STORED_BYTES),
+      c.env.DB.prepare(
+        "UPDATE attachments SET mime = ?, duration_ms = ?, state = 'stored' WHERE id = ? AND state = 'pending' RETURNING id",
+      ).bind(claimed.mime, checked.durationMs, claimed.id),
     ]);
+    // A clear-out took it meanwhile (it was over an hour old), and has deleted the object.
+    if (kept?.results.length !== 1) return c.json({ error: MESSAGES.uploadFailed }, 422);
     return c.json({ ok: true });
   });
 

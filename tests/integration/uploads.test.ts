@@ -6,7 +6,7 @@ import type { R2Bucket } from '@cloudflare/workers-types';
 import { describe, expect, inject, it } from 'vitest';
 import { saveProduct } from '../../src/products.ts';
 import { addStoredWithin, FREE_STORAGE_BYTES, storedBytes } from '../../src/storage.ts';
-import { PART_SIZE, uploadRoutes } from '../../src/uploads/routes.ts';
+import { closeOut, PART_SIZE, uploadRoutes } from '../../src/uploads/routes.ts';
 import { restD1 } from './d1.ts';
 
 const db = restD1(inject('databaseId'));
@@ -111,6 +111,11 @@ describe('uploads on D1', () => {
     const row = await db.prepare('SELECT state, bytes, received_bytes, r2_upload_id FROM attachments WHERE id = ?').bind(id).first();
     expect.soft(row).toEqual({ state: 'stored', bytes: size, received_bytes: size, r2_upload_id: null });
     expect.soft(await storedBytes(db)).toBe(atStart + size);
+    // A claimed upload takes no more parts: only real SQL can show this.
+    const claimedStart = await call('it-up', '', { method: 'POST', body: JSON.stringify({ kind: 'image', mime: 'image/jpeg', bytes: 5 }) });
+    const claimedId = ((await claimedStart.json()) as { id: string }).id;
+    await db.prepare('UPDATE attachments SET r2_upload_id = NULL WHERE id = ?').bind(claimedId).run();
+    expect.soft((await part('it-up', claimedId, 1, new Uint8Array(5))).status).toBe(404);
     const second = await call('it-up', `/${id}/complete`, { method: 'POST', body: etags });
     expect.soft(second.status).toBe(404);
   });
@@ -142,6 +147,22 @@ describe('uploads on D1', () => {
     const row = await db.prepare('SELECT state FROM attachments WHERE id = ?').bind('it-up-orphan').first();
     expect.soft(row).toEqual({ state: 'deleted' });
     expect.soft(await storedBytes(db)).toBeLessThanOrEqual(before - 7);
+  });
+
+  it('takes an attachment off the running total once, however many clear-outs reach it', async () => {
+    await product('it-up-twice');
+    await db
+      .prepare(
+        `INSERT INTO attachments (id, product_id, r2_key, mime, bytes, state, created_at)
+         VALUES ('it-up-twice-a', 'it-up-twice', 'key-twice', 'image/jpeg', 7, 'stored', 0)`,
+      )
+      .run();
+    await addStoredWithin(db, 7);
+    const before = await storedBytes(db);
+    const env = { DB: db, FILES: memoryBucket() };
+    await closeOut(env, 'it-up-twice-a', 'stored');
+    await closeOut(env, 'it-up-twice-a', 'stored');
+    expect.soft(await storedBytes(db)).toBe(before - 7);
   });
 
   it('adds to the running total only while it stays within the free storage', async () => {

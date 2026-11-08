@@ -124,7 +124,7 @@ interface Options {
 function world(options: Options = {}) {
   const rows = new Map<string, Row>((options.rows ?? []).map((r) => [r.id, r]));
   const counters = { stored: options.stored ?? 0 };
-  const statementsAnswering = { claimLost: false };
+  const statementsAnswering = { claimLost: false, lateBytes: 0, sweptDuringFinish: false };
   const { db, statements } = standInDb((sql, v) => {
     if (sql.includes('FROM products')) return ['shytalk', 'other'].includes(String(v[0])) ? [product(String(v[0]))] : [];
     if (sql.includes('SELECT value FROM counters')) return [{ value: counters.stored }];
@@ -136,7 +136,11 @@ function world(options: Options = {}) {
       return [{ value: counters.stored }];
     }
     if (sql.includes('UPDATE counters SET value = value -')) {
-      counters.stored -= Number(v[0]);
+      const row = rows.get(String(v[0]));
+      if (!row || row.state !== v[1]) return [];
+      const column = /SELECT (received_bytes - bytes|received_bytes|bytes) FROM/.exec(sql)?.[1];
+      if (column === 'received_bytes - bytes') counters.stored -= row.received_bytes - row.bytes;
+      else counters.stored -= column === 'bytes' ? row.bytes : row.received_bytes;
       return [];
     }
     if (sql.includes('INSERT INTO attachments')) {
@@ -172,7 +176,10 @@ function world(options: Options = {}) {
       if (statementsAnswering.claimLost || !row) return [];
       if (row.product_id !== v[1] || row.state !== 'pending' || row.r2_upload_id === null) return [];
       row.r2_upload_id = null;
-      return [{ ...row }];
+      const snapshot = { ...row };
+      row.received_bytes += statementsAnswering.lateBytes;
+      counters.stored += statementsAnswering.lateBytes;
+      return [snapshot];
     }
     if (sql.includes('received_bytes = received_bytes +')) {
       const row = rows.get(String(v[1]));
@@ -181,8 +188,10 @@ function world(options: Options = {}) {
     }
     if (sql.includes('UPDATE attachments') && sql.includes("state = 'stored'") && sql.includes('duration_ms')) {
       const row = rows.get(String(v[2]));
-      if (row) Object.assign(row, { mime: v[0], duration_ms: v[1], state: 'stored' });
-      return [];
+      if (statementsAnswering.sweptDuringFinish && row) row.state = 'deleted';
+      if (row?.state !== 'pending') return [];
+      Object.assign(row, { mime: v[0], duration_ms: v[1], state: 'stored' });
+      return [{ id: row.id }];
     }
     if (sql.includes('UPDATE attachments') && sql.includes('bytes = bytes +')) {
       const row = rows.get(String(v[1]));
@@ -191,7 +200,7 @@ function world(options: Options = {}) {
     }
     if (sql.includes('UPDATE attachments') && sql.includes("state = 'deleted'")) {
       const row = rows.get(String(v[1]));
-      if (row) Object.assign(row, { state: 'deleted', deleted_at: v[0] });
+      if (row && row.state === v[2]) Object.assign(row, { state: 'deleted', deleted_at: v[0] });
       return [];
     }
     if (sql.includes('FROM attachments') && sql.includes('thumb_key = ?')) {
@@ -697,6 +706,27 @@ describe('completing an upload', () => {
     expect((await w.complete(id, [{ n: 1, etag: 'etag-1' }])).status).toBe(404);
     expect(row?.state).toBe('pending');
     expect(w.r2.deleted).toEqual([]);
+  });
+
+  it('gives back a part that arrived while the upload was being claimed', async () => {
+    const w = world();
+    const bytes = fixture('uploads/photo.webp');
+    const { id } = (await (await w.start({ kind: 'image', mime: 'image/webp', bytes: bytes.length })).json()) as { id: string };
+    await w.put(`/support-api/uploads/${id}/parts/1`, bytes);
+    w.statementsAnswering.lateBytes = 100;
+    expect((await w.complete(id, [{ n: 1, etag: 'etag-1' }])).status).toBe(200);
+    expect(w.counters.stored).toBe(bytes.length);
+  });
+
+  it('tells the customer when a clear-out took the upload during the finish', async () => {
+    const w = world();
+    const bytes = fixture('uploads/photo.webp');
+    const { id } = (await (await w.start({ kind: 'image', mime: 'image/webp', bytes: bytes.length })).json()) as { id: string };
+    await w.put(`/support-api/uploads/${id}/parts/1`, bytes);
+    w.statementsAnswering.sweptDuringFinish = true;
+    const response = await w.complete(id, [{ n: 1, etag: 'etag-1' }]);
+    expect(response.status).toBe(422);
+    expect(await response.json()).toEqual({ error: MESSAGES.uploadFailed });
   });
 
   it('refuses another part once the upload is being finished', async () => {
