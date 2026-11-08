@@ -3,68 +3,65 @@ import { readFileSync } from 'node:fs';
 import { licenceProblems, licenceVerdict, type LockFile } from './licences.ts';
 
 /**
- * The global licence rule (2026-10-07): a shipped package is permissive; a
- * build or test tool may also be LGPL or MPL; GPL, AGPL, SSPL and unknown
- * licences are refused (shyden-labs/repo-template#169).
+ * The global licence rule (2026-10-07; purpose ruled 2026-11-09): a package is
+ * refused only when using it would go against our own licence, so GPL, AGPL and
+ * SSPL are refused, and an unknown licence, which cannot be judged. Permissive
+ * licences and weak copyleft (LGPL, MPL) pass, shipped or not
+ * (shyden-labs/repo-template#169).
  */
 
-describe('licenceVerdict for a shipped package', () => {
+describe('licenceVerdict', () => {
   it.each(['MIT', 'ISC', 'Apache-2.0', 'BSD-2-Clause', 'BSD-3-Clause', 'BlueOak-1.0.0', '0BSD', 'CC0-1.0', 'PSF-2.0', 'CC-BY-3.0'])(
-    'passes %s',
+    'passes the permissive %s',
     (licence) => {
-      expect(licenceVerdict(licence, 'shipped')).toBe(true);
+      expect(licenceVerdict(licence)).toBe(true);
     },
   );
 
-  it.each(['MPL-2.0', 'LGPL-3.0-only', 'LGPL-2.1-or-later'])('refuses the weak copyleft %s', (licence) => {
-    expect(licenceVerdict(licence, 'shipped')).toBe(false);
-  });
-});
+  it.each(['MPL-2.0', 'LGPL-3.0-only', 'LGPL-3.0-or-later', 'LGPL-2.1-only', 'LGPL-2.1-or-later'])(
+    'passes the weak copyleft %s',
+    (licence) => {
+      expect(licenceVerdict(licence)).toBe(true);
+    },
+  );
 
-describe('licenceVerdict for a build-only package', () => {
-  it.each(['MIT', 'MPL-2.0', 'LGPL-3.0-only', 'LGPL-2.1-or-later'])('passes %s', (licence) => {
-    expect(licenceVerdict(licence, 'build')).toBe(true);
-  });
-});
-
-describe('licenceVerdict refuses wherever the package is used', () => {
   it.each(['GPL-3.0-only', 'AGPL-3.0-or-later', 'SSPL-1.0', 'UNLICENSED', 'SEE LICENSE IN LICENSE.md', '', undefined])(
     'refuses %s',
     (licence) => {
-      expect(licenceVerdict(licence, 'build')).toBe(false);
+      expect(licenceVerdict(licence)).toBe(false);
     },
   );
 
   it('refuses an exception it does not know, since WITH changes the terms', () => {
-    expect(licenceVerdict('GPL-2.0-only WITH Classpath-exception-2.0', 'build')).toBe(false);
+    expect(licenceVerdict('GPL-2.0-only WITH Classpath-exception-2.0')).toBe(false);
   });
 
   it('refuses an expression it cannot read', () => {
-    expect(licenceVerdict('(MIT OR', 'build')).toBe(false);
+    expect(licenceVerdict('(MIT OR')).toBe(false);
   });
 });
 
 describe('licenceVerdict reads SPDX expressions', () => {
   it('passes A OR B when one side passes', () => {
-    expect(licenceVerdict('GPL-3.0-only OR MIT', 'shipped')).toBe(true);
+    expect(licenceVerdict('GPL-3.0-only OR MIT')).toBe(true);
   });
 
   it('refuses A OR B when neither side passes', () => {
-    expect(licenceVerdict('GPL-3.0-only OR AGPL-3.0-only', 'build')).toBe(false);
+    expect(licenceVerdict('GPL-3.0-only OR AGPL-3.0-only')).toBe(false);
   });
 
   it('passes A AND B when both sides pass', () => {
-    expect(licenceVerdict('MIT AND Apache-2.0', 'shipped')).toBe(true);
+    expect(licenceVerdict('MIT AND MPL-2.0')).toBe(true);
   });
 
   it('refuses A AND B when one side fails', () => {
-    expect(licenceVerdict('MIT AND GPL-3.0-only', 'build')).toBe(false);
+    expect(licenceVerdict('MIT AND GPL-3.0-only')).toBe(false);
   });
 
   it('reads parentheses, with AND binding tighter than OR', () => {
-    expect(licenceVerdict('(MIT AND GPL-3.0-only) OR ISC', 'shipped')).toBe(true);
-    expect(licenceVerdict('MIT AND (GPL-3.0-only OR ISC)', 'shipped')).toBe(true);
-    expect(licenceVerdict('GPL-3.0-only OR ISC AND GPL-2.0-only', 'shipped')).toBe(false);
+    expect(licenceVerdict('(MIT AND GPL-3.0-only) OR ISC')).toBe(true);
+    expect(licenceVerdict('MIT AND (GPL-3.0-only OR ISC)')).toBe(true);
+    expect(licenceVerdict('GPL-3.0-only OR ISC AND GPL-2.0-only')).toBe(false);
   });
 });
 
@@ -76,12 +73,12 @@ describe('licenceProblems', () => {
 
   it('checks a new version of that package again, since the record is for one version', () => {
     const lock: LockFile = { packages: { '': {}, 'node_modules/css-value': { version: '0.0.2', dev: true } } };
-    expect(licenceProblems(lock)).toEqual(['node_modules/css-value@0.0.2 (build only): no licence']);
+    expect(licenceProblems(lock)).toEqual(['node_modules/css-value@0.0.2: no licence']);
   });
 
   const lock = (packages: LockFile['packages']): LockFile => ({ packages });
 
-  it('names each refused package with its version, licence and use', () => {
+  it('names each refused package with its version and licence, shipped or build-only alike', () => {
     expect(
       licenceProblems(
         lock({
@@ -89,19 +86,14 @@ describe('licenceProblems', () => {
           'node_modules/ok': { version: '1.0.0', license: 'MIT', dev: true },
           'node_modules/gpl': { version: '2.0.0', license: 'GPL-3.0-only', dev: true },
           'node_modules/mpl': { version: '3.0.0', license: 'MPL-2.0' },
+          'node_modules/agpl': { version: '3.1.0', license: 'AGPL-3.0-only' },
           'node_modules/a/node_modules/none': { version: '4.0.0' },
         }),
       ),
     ).toEqual([
-      'node_modules/gpl@2.0.0 (build only): GPL-3.0-only',
-      'node_modules/mpl@3.0.0 (shipped): MPL-2.0',
-      'node_modules/a/node_modules/none@4.0.0 (shipped): no licence',
-    ]);
-  });
-
-  it('counts a dev-optional package as shipped, since it can be installed for production', () => {
-    expect(licenceProblems(lock({ 'node_modules/x': { version: '1.0.0', license: 'MPL-2.0', devOptional: true } }))).toEqual([
-      'node_modules/x@1.0.0 (shipped): MPL-2.0',
+      'node_modules/gpl@2.0.0: GPL-3.0-only',
+      'node_modules/agpl@3.1.0: AGPL-3.0-only',
+      'node_modules/a/node_modules/none@4.0.0: no licence',
     ]);
   });
 
@@ -117,7 +109,7 @@ describe('the installed packages', () => {
     expect(Object.keys(lockFile.packages).length).toBeGreaterThan(1);
   });
 
-  it('each carry a licence the global rule accepts for how they are used', () => {
+  it('each carry a licence the global rule accepts', () => {
     expect(licenceProblems(lockFile)).toEqual([]);
   });
 });

@@ -46,7 +46,7 @@ The data model is designed for both from the start, so Release 2 adds rather tha
 - **Staff sign-in:** Cloudflare Access with an email allow-list (free to 50 users). An Access application covers the `/desk`, `/admin` and `/api/docs` paths on ShyDesk's host. The Worker verifies the Access JWT on every desk and admin request **(builder call)**; it never trusts a header without verifying it.
 - **Outgoing mail:** the Sparked Host mailbox already paid for (`mail.shyden.co.uk`, relayed by MailBaby), over SMTP submission on port 587 with STARTTLS (Workers block port 25), from each product's own domain; no-reply only; no Oracle **(Shyden 2026-11-04)**. Its sending cap is unknown and accepted by Shyden; each product's monthly email share in settings is ShyDesk's own cap. What Sparked Host and MailBaby keep of message content, and for how long, must be found out and written into the privacy policy before launch.
 - **Data region:** Shyden Labs is in Indonesia; never assume UK or EU hosting. D1 location hint Asia-Pacific **(builder call)**.
-- **Language and tooling:** TypeScript, on the repo-template toolchain already in the repo (Vitest, ESLint, Prettier, tsc). Framework choices are the builder's, under the licence rule: shipped packages permissive only (MIT, BSD, Apache, ISC); MPL/LGPL only for build or test tools; GPL, AGPL, SSPL refused.
+- **Language and tooling:** TypeScript, on the repo-template toolchain already in the repo (Vitest, ESLint, Prettier, tsc). Framework choices are the builder's, under the licence rule (ruled 2026-11-09): only what would go against our own licence is refused, so permissive, MPL and LGPL pass, shipped or not; GPL, AGPL, SSPL refused.
 
 ## Products and modules **(Shyden)**
 
