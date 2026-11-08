@@ -727,6 +727,7 @@ describe('completing an upload', () => {
     const response = await w.complete(id, [{ n: 1, etag: 'etag-1' }]);
     expect(response.status).toBe(422);
     expect(await response.json()).toEqual({ error: MESSAGES.uploadFailed });
+    expect(w.r2.objects.has(w.rows.get(id)?.r2_key ?? '')).toBe(false);
   });
 
   it('refuses another part once the upload is being finished', async () => {

@@ -10,6 +10,8 @@ import { closeOut, PART_SIZE, uploadRoutes } from '../../src/uploads/routes.ts';
 import { restD1 } from './d1.ts';
 
 const db = restD1(inject('databaseId'));
+/** The journey makes about 30 D1 round trips, each up to about 1.7 s in CI (measured 2026-11-09), so the suite's 10 s is too short for it. */
+const JOURNEY_TIMEOUT_MS = 60_000;
 
 async function product(id: string): Promise<void> {
   await saveProduct(
@@ -63,62 +65,69 @@ function memoryBucket(): R2Bucket {
 }
 
 describe('uploads on D1', () => {
-  it('completes a 3-part upload of the right size, and another product can touch none of it', async () => {
-    await product('it-up');
-    await product('it-up-other');
-    const FILES = memoryBucket();
-    const app = uploadRoutes();
-    const call = (productId: string, path: string, init: RequestInit) =>
-      app.request(
-        `/support-api/uploads${path}?product=${productId}`,
-        {
-          ...init,
-          headers: {
-            Origin: `https://${productId}.example`,
-            'CF-Connecting-IP': '203.0.113.20',
-            ...(init.headers as Record<string, string> | undefined),
+  it(
+    'completes a 3-part upload of the right size, and another product can touch none of it',
+    async () => {
+      await product('it-up');
+      await product('it-up-other');
+      const FILES = memoryBucket();
+      const app = uploadRoutes();
+      const call = (productId: string, path: string, init: RequestInit) =>
+        app.request(
+          `/support-api/uploads${path}?product=${productId}`,
+          {
+            ...init,
+            headers: {
+              Origin: `https://${productId}.example`,
+              'CF-Connecting-IP': '203.0.113.20',
+              ...(init.headers as Record<string, string> | undefined),
+            },
           },
-        },
-        { DB: db, FILES },
-      );
-    const part = (productId: string, id: string, n: number, bytes: Uint8Array) =>
-      call(productId, `/${id}/parts/${String(n)}`, {
-        method: 'PUT',
-        body: bytes as unknown as BodyInit,
-        headers: { 'Content-Length': String(bytes.length) },
+          { DB: db, FILES },
+        );
+      const part = (productId: string, id: string, n: number, bytes: Uint8Array) =>
+        call(productId, `/${id}/parts/${String(n)}`, {
+          method: 'PUT',
+          body: bytes as unknown as BodyInit,
+          headers: { 'Content-Length': String(bytes.length) },
+        });
+
+      const size = PART_SIZE * 2 + 5;
+      const started = await call('it-up', '', { method: 'POST', body: JSON.stringify({ kind: 'image', mime: 'image/jpeg', bytes: size }) });
+      expect(started.status).toBe(201);
+      const { id, parts } = (await started.json()) as { id: string; parts: number };
+      expect(parts).toBe(3);
+      // Read after the start: a start clears what any other test left behind.
+      const atStart = await storedBytes(db);
+
+      const first = new Uint8Array(PART_SIZE);
+      first.set([0xff, 0xd8, 0xff]);
+      expect.soft((await part('it-up-other', id, 1, first)).status).toBe(404);
+      expect.soft((await part('it-up', id, 1, first)).status).toBe(200);
+      expect.soft((await part('it-up', id, 2, new Uint8Array(PART_SIZE))).status).toBe(200);
+      expect.soft((await part('it-up', id, 3, new Uint8Array(5))).status).toBe(200);
+
+      const etags = JSON.stringify({ parts: [1, 2, 3].map((n) => ({ n, etag: `etag-${String(n)}` })) });
+      expect.soft((await call('it-up-other', `/${id}/complete`, { method: 'POST', body: etags })).status).toBe(404);
+      expect.soft(await storedBytes(db)).toBe(atStart + size);
+      expect.soft((await call('it-up', `/${id}/complete`, { method: 'POST', body: etags })).status).toBe(200);
+
+      const row = await db.prepare('SELECT state, bytes, received_bytes, r2_upload_id FROM attachments WHERE id = ?').bind(id).first();
+      expect.soft(row).toEqual({ state: 'stored', bytes: size, received_bytes: size, r2_upload_id: null });
+      expect.soft(await storedBytes(db)).toBe(atStart + size);
+      // A claimed upload takes no more parts: only real SQL can show this.
+      const claimedStart = await call('it-up', '', {
+        method: 'POST',
+        body: JSON.stringify({ kind: 'image', mime: 'image/jpeg', bytes: 5 }),
       });
-
-    const size = PART_SIZE * 2 + 5;
-    const started = await call('it-up', '', { method: 'POST', body: JSON.stringify({ kind: 'image', mime: 'image/jpeg', bytes: size }) });
-    expect(started.status).toBe(201);
-    const { id, parts } = (await started.json()) as { id: string; parts: number };
-    expect(parts).toBe(3);
-    // Read after the start: a start clears what any other test left behind.
-    const atStart = await storedBytes(db);
-
-    const first = new Uint8Array(PART_SIZE);
-    first.set([0xff, 0xd8, 0xff]);
-    expect.soft((await part('it-up-other', id, 1, first)).status).toBe(404);
-    expect.soft((await part('it-up', id, 1, first)).status).toBe(200);
-    expect.soft((await part('it-up', id, 2, new Uint8Array(PART_SIZE))).status).toBe(200);
-    expect.soft((await part('it-up', id, 3, new Uint8Array(5))).status).toBe(200);
-
-    const etags = JSON.stringify({ parts: [1, 2, 3].map((n) => ({ n, etag: `etag-${String(n)}` })) });
-    expect.soft((await call('it-up-other', `/${id}/complete`, { method: 'POST', body: etags })).status).toBe(404);
-    expect.soft(await storedBytes(db)).toBe(atStart + size);
-    expect.soft((await call('it-up', `/${id}/complete`, { method: 'POST', body: etags })).status).toBe(200);
-
-    const row = await db.prepare('SELECT state, bytes, received_bytes, r2_upload_id FROM attachments WHERE id = ?').bind(id).first();
-    expect.soft(row).toEqual({ state: 'stored', bytes: size, received_bytes: size, r2_upload_id: null });
-    expect.soft(await storedBytes(db)).toBe(atStart + size);
-    // A claimed upload takes no more parts: only real SQL can show this.
-    const claimedStart = await call('it-up', '', { method: 'POST', body: JSON.stringify({ kind: 'image', mime: 'image/jpeg', bytes: 5 }) });
-    const claimedId = ((await claimedStart.json()) as { id: string }).id;
-    await db.prepare('UPDATE attachments SET r2_upload_id = NULL WHERE id = ?').bind(claimedId).run();
-    expect.soft((await part('it-up', claimedId, 1, new Uint8Array(5))).status).toBe(404);
-    const second = await call('it-up', `/${id}/complete`, { method: 'POST', body: etags });
-    expect.soft(second.status).toBe(404);
-  });
+      const claimedId = ((await claimedStart.json()) as { id: string }).id;
+      await db.prepare('UPDATE attachments SET r2_upload_id = NULL WHERE id = ?').bind(claimedId).run();
+      expect.soft((await part('it-up', claimedId, 1, new Uint8Array(5))).status).toBe(404);
+      const second = await call('it-up', `/${id}/complete`, { method: 'POST', body: etags });
+      expect.soft(second.status).toBe(404);
+    },
+    JOURNEY_TIMEOUT_MS,
+  );
 
   it('expires a day-old upload never put on a ticket, and keeps one that is', async () => {
     await product('it-up-old');

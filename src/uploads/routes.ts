@@ -263,8 +263,11 @@ export function uploadRoutes(): Hono<UploadEnv> {
         "UPDATE attachments SET mime = ?, duration_ms = ?, state = 'stored' WHERE id = ? AND state = 'pending' RETURNING id",
       ).bind(claimed.mime, checked.durationMs, claimed.id),
     ]);
-    // A clear-out took it meanwhile (it was over an hour old), and has deleted the object.
-    if (kept?.results.length !== 1) return c.json({ error: MESSAGES.uploadFailed }, 422);
+    // A clear-out took it meanwhile (it was over an hour old), perhaps before this finish made the object.
+    if (kept?.results.length !== 1) {
+      await c.env.FILES.delete(claimed.r2_key);
+      return c.json({ error: MESSAGES.uploadFailed }, 422);
+    }
     return c.json({ ok: true });
   });
 
