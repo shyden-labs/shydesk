@@ -154,6 +154,9 @@ const SWIPES = 8;
 /** Android's Back key code, which closes the on-screen keyboard. */
 const ANDROID_BACK = 4;
 
+/** The Done button on the bar iOS shows above the on-screen keyboard; it closes the keyboard. */
+const IOS_KEYBOARD_DONE = "-ios class chain:**/XCUIElementTypeToolbar/**/XCUIElementTypeButton[`label == 'Done'`]";
+
 /**
  * A real touch on a page control in the phone's native layer. The native tree
  * leaves out controls drawn below the screen ("Send" never appeared on the
@@ -192,7 +195,13 @@ export async function tap(label: string): Promise<void> {
     await native(() => nativePageTap(on, label, `the control named "${label}"`));
     return;
   }
-  await native(() => nativeTap(on, nativeFinder(on, label), `the control named "${label}"`));
+  await native(async () => {
+    // The keyboard and the bar above it cover the lower page, so a person closes it before tapping a
+    // control there: Send sat on the keyboard's top edge and the touch never reached it (shyden-labs/shydesk#73).
+    const done = driver().$(IOS_KEYBOARD_DONE);
+    if (await done.isExisting()) await done.click();
+    await nativeTap(on, nativeFinder(on, label), `the control named "${label}"`);
+  });
 }
 
 /** A real finger swipe up Chrome's page view, which scrolls the page down. */

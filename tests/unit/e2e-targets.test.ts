@@ -18,6 +18,11 @@ import {
   type KeySequence,
   scrollKey,
   sameBox,
+  iosNamed,
+  iosPage,
+  largest,
+  inDocument,
+  drawnAt,
   steadyFrom,
   steadyLongEnough,
   STEADY_MS,
@@ -232,6 +237,13 @@ describe('notNamedMessage', () => {
 
   it('says when the page had no candidate elements at all', () => {
     expect(notNamedMessage('Send', [])).toBe('no element named "Send" appeared on the page; it had no named elements at all');
+  });
+
+  // A lookup that throws is retried until the wait ends; its error is the cause, so the failure names it (shyden-labs/shydesk#73).
+  it('names the error the last lookup failed with', () => {
+    expect(notNamedMessage('Email', [], 'Method is not implemented')).toBe(
+      'no element named "Email" appeared on the page; it had no named elements at all; the last lookup failed: Method is not implemented',
+    );
   });
 });
 
@@ -470,5 +482,94 @@ describe('typedMismatch', () => {
     expect(typedMismatch('Device', 'Test phone', '')).toBe(
       '"Device" held "" after typing "Test phone"; the browser lost or changed key presses',
     );
+  });
+});
+
+// iOS Safari has no Get Computed Label (shyden-labs/shydesk#73), so on the
+// iPhone the harness reads the name iOS itself gives each control, in the
+// native tree, and finds the page element drawn in that place.
+describe('iosNamed', () => {
+  it('finds a control named exactly, or named with the role iOS appends after a comma', () => {
+    expect(iosNamed('Support status')).toBe(
+      "-ios predicate string:(label == 'Support status' OR label BEGINSWITH 'Support status, ') AND type != 'XCUIElementTypeStaticText'",
+    );
+  });
+
+  it('refuses a name it cannot quote', () => {
+    expect(() => iosNamed("it's")).toThrow("accessible name cannot hold quotes or backslashes: it's");
+  });
+});
+
+describe('iosPage', () => {
+  it('finds the page area iOS names after the document title', () => {
+    expect(iosPage('Demo support page')).toBe("-ios predicate string:label == 'Demo support page' AND type == 'XCUIElementTypeOther'");
+  });
+});
+
+describe('largest', () => {
+  it('picks the page itself over a heading of the same name', () => {
+    const page = { x: 0, y: 45, width: 420, height: 910 };
+    expect(largest([{ x: 16, y: 82, width: 388, height: 41 }, page])).toEqual(page);
+  });
+
+  it('is undefined when there is nothing to pick', () => {
+    expect(largest([])).toBeUndefined();
+  });
+});
+
+describe('inDocument', () => {
+  // Measured on the iPhone Air, 2026-11-08: the page area at y 68, "Harness field" at native 16,140 and CSS 16,72.
+  it("places a native box in the document, from the page area's corner", () => {
+    expect(inDocument({ x: 16, y: 140, width: 265, height: 60 }, { x: 0, y: 68, width: 420, height: 746 }, 1)).toEqual({
+      x: 16,
+      y: 72,
+      width: 265,
+      height: 60,
+    });
+  });
+
+  it('counts a page scrolled up past the top bar', () => {
+    expect(inDocument({ x: 32, y: 258, width: 356, height: 44 }, { x: 0, y: 45, width: 420, height: 910 }, 1)).toEqual({
+      x: 32,
+      y: 213,
+      width: 356,
+      height: 44,
+    });
+  });
+
+  it('scales a zoomed page back to CSS pixels', () => {
+    expect(inDocument({ x: 20, y: 40, width: 100, height: 50 }, { x: 0, y: 0, width: 420, height: 800 }, 0.5)).toEqual({
+      x: 10,
+      y: 20,
+      width: 50,
+      height: 25,
+    });
+  });
+});
+
+describe('drawnAt', () => {
+  it('matches a native box rounded to whole points', () => {
+    expect(drawnAt({ x: 16, y: 16, width: 91, height: 48 }, { x: 16, y: 16, width: 90.515625, height: 48 })).toBe(true);
+  });
+
+  // Measured on the iPhone Air, 2026-11-08: the focused "Email" field is 44 points tall natively, 42 CSS pixels on the page.
+  it('matches a focused field iOS draws a point bigger on each side', () => {
+    expect(drawnAt({ x: 32, y: 213, width: 356, height: 44 }, { x: 32, y: 213.875, width: 356, height: 42 })).toBe(true);
+  });
+
+  it('does not match the next field down the form', () => {
+    expect(drawnAt({ x: 32, y: 213, width: 356, height: 44 }, { x: 32, y: 291.875, width: 356, height: 42 })).toBe(false);
+  });
+
+  it('does not match the form around the field', () => {
+    expect(drawnAt({ x: 32, y: 213, width: 356, height: 44 }, { x: 16, y: 100, width: 388, height: 600 })).toBe(false);
+  });
+
+  it('does not match a field inside the box', () => {
+    expect(drawnAt({ x: 16, y: 100, width: 388, height: 600 }, { x: 32, y: 213, width: 356, height: 44 })).toBe(false);
+  });
+
+  it('does not match a button beside it', () => {
+    expect(drawnAt({ x: 16, y: 16, width: 91, height: 48 }, { x: 120, y: 16, width: 91, height: 48 })).toBe(false);
   });
 });

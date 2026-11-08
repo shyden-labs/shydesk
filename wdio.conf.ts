@@ -22,7 +22,7 @@ import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { demoPage, seedSql, shydeskOrigin, wranglerDevArgs } from './tests/e2e/harness/local-shydesk.ts';
 import { capabilitiesFor, targetOf, targetsFrom, type Target, type TargetEnv } from './tests/e2e/harness/targets.ts';
-import { supportPieceState } from './tests/e2e/harness/report.ts';
+import { savePhoneScreen, supportPieceState } from './tests/e2e/harness/report.ts';
 
 const RUNS = '.e2e-runs';
 const PAGES = 'tests/e2e/pages';
@@ -105,6 +105,7 @@ export const config: Options.Testrunner & Capabilities.WithRequestedTestrunnerCa
     counts[result.passed ? 'passed' : 'failed'] += 1;
     // A failure prints what the support piece showed, so its cause is in the log.
     if (!result.passed) console.log(`support piece after "${test.title}": ${await supportPieceState()}`);
+    if (!result.passed) await savePhoneScreen(RUNS, test.title);
   },
 
   /** Each worker (one target, one spec file) records what it ran. */
