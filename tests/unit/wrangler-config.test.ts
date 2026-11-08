@@ -61,10 +61,19 @@ describe('the ticket timer in wrangler.jsonc', () => {
   // published always-pass test keys until shyden-labs/shydesk#13 sets real
   // ones; live never carries them, so it answers 503 until its secret is set.
   it('gives dev the Turnstile test keys and live none', () => {
-    expect(config.env.dev.vars).toEqual({
+    expect(config.env.dev.vars).toMatchObject({
       TURNSTILE_SITE_KEY: '1x00000000000000000000AA',
       TURNSTILE_SECRET: '1x0000000000000000000000000000000AA',
     });
     expect(config.vars).toBeUndefined();
+  });
+
+  // Staff sign in through Non-Prod's Cloudflare Access (shyden-labs/shydesk#74). Both values are
+  // public: they appear in every Access login address and token, so they are vars, not secrets.
+  it("gives dev Non-Prod's Access team and audience", () => {
+    expect(config.env.dev.vars).toMatchObject({
+      ACCESS_TEAM_DOMAIN: 'dawn-lab-ed42.cloudflareaccess.com',
+      ACCESS_AUD: 'cecc27a55c169053120557c748cd105f9b4199f3a66d9ef313eaf5700db39973',
+    });
   });
 });
