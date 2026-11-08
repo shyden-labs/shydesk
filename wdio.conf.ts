@@ -1,7 +1,8 @@
 /**
  * The one end-to-end suite, run unchanged on every target (shyden-labs/shydesk#42).
  *
- *   E2E_TARGETS=chromium,firefox,safari npm run test:e2e    (CI, macOS runner)
+ *   E2E_TARGETS=chromium,firefox,safari E2E_DESKTOP_CHROMEDRIVER=<path> E2E_GECKODRIVER=<path> \
+ *     npm run test:e2e    (CI, macOS runner, with the image's own drivers)
  *   E2E_TARGETS=android,ios E2E_ORIGIN=http://<this Mac's LAN address>:8765 \
  *     E2E_IOS_UDID=<udid> E2E_ANDROID_SERIAL=<serial> \
  *     E2E_CHROMEDRIVER=<chromedriver for the phone's Chrome> npm run test:e2e:device   (real phones over USB, Appium on 4723)
@@ -40,6 +41,8 @@ const targets = targetsFrom(process.env.E2E_TARGETS ?? '');
 const targetEnv = Object.fromEntries(
   Object.entries({
     chromedriver: process.env.E2E_CHROMEDRIVER,
+    desktopChromedriver: process.env.E2E_DESKTOP_CHROMEDRIVER,
+    geckodriver: process.env.E2E_GECKODRIVER,
     iosUdid: process.env.E2E_IOS_UDID,
     androidSerial: process.env.E2E_ANDROID_SERIAL,
   }).filter((entry): entry is [string, string] => entry[1] !== undefined),
