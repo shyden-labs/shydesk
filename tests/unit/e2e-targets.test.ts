@@ -14,6 +14,7 @@ import {
   scrollNeeded,
   scrollInput,
   typed,
+  pressMissed,
   type KeySequence,
   scrollKey,
   sameBox,
@@ -268,6 +269,22 @@ describe('scrollNeeded', () => {
 
   it('counts an element whose middle sits on the bottom edge as outside', () => {
     expect(scrollNeeded({ x: 0, y: 580, width: 10, height: 40 }, { width: 800, height: 600 })).toBe(300);
+  });
+});
+
+describe('pressMissed', () => {
+  it('is quiet when the press landed on the control', () => {
+    expect(pressMissed('Send', { x: 400, y: 300 }, { x: 400, y: 300, on: 'button', inside: true })).toBeUndefined();
+  });
+
+  it('names where the press landed when it reached something else', () => {
+    expect(pressMissed('Send', { x: 400, y: 300 }, { x: 400, y: 620, on: 'iframe', inside: false })).toBe(
+      'the press on "Send" at 400, 300 landed on <iframe> at 400, 620 instead',
+    );
+  });
+
+  it('says so when no press reached the page at all', () => {
+    expect(pressMissed('Send', { x: 400, y: 300 }, null)).toBe('the press on "Send" at 400, 300 never reached the page');
   });
 });
 

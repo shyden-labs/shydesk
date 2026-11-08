@@ -191,6 +191,27 @@ export function typedMismatch(label: string, typed: string, held: string): strin
   return `"${label}" held "${held}" after typing "${typed}"; the browser lost or changed key presses`;
 }
 
+/** Where a real press reached the page: its point, the element it landed on, and whether that is the control or inside it. */
+export interface Landed {
+  x: number;
+  y: number;
+  on: string;
+  inside: boolean;
+}
+
+/**
+ * Why a press aimed at `at` on the control named `label` did not reach it, or
+ * undefined when it did. On Safari a press on "Send" left the form unsent
+ * (runs 42440108844 and 42448093505, shyden-labs/shydesk#71), so every press
+ * says where it actually landed.
+ */
+export function pressMissed(label: string, at: { x: number; y: number }, landed: Landed | null): string | undefined {
+  const aimed = `the press on "${label}" at ${String(at.x)}, ${String(at.y)}`;
+  if (landed === null) return `${aimed} never reached the page`;
+  if (landed.inside) return undefined;
+  return `${aimed} landed on <${landed.on}> at ${String(landed.x)}, ${String(landed.y)} instead`;
+}
+
 /** A W3C key action sequence being built: each step presses or lifts one key. */
 export interface KeySequence {
   down(key: string): KeySequence;

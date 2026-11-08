@@ -34,6 +34,8 @@ import {
   type Phone,
   typedMismatch,
   typed,
+  pressMissed,
+  type Landed,
 } from './targets.ts';
 
 const WAIT = 15_000;
@@ -128,13 +130,21 @@ async function clickDrawn(label: string): Promise<void> {
     },
     { timeout: WAIT, timeoutMsg: `"${label}" never stopped moving inside the window` },
   );
+  const at = viewportPoint(box, viewport, label);
+  // Read only: notes where the next real press lands, so a press that misses the control fails naming where it went.
+  await driver().execute(
+    'const control = arguments[0]; window.__e2ePress = null; document.addEventListener("pointerdown", (e) => { const path = e.composedPath(); const hit = path[0]; window.__e2ePress = { x: Math.round(e.clientX), y: Math.round(e.clientY), on: hit instanceof Element ? hit.localName : String(hit), inside: path.includes(control) }; }, { capture: true, once: true });',
+    element,
+  );
   await driver()
     .action('pointer', { parameters: { pointerType: 'mouse' } })
-    .move(viewportPoint(box, viewport, label))
+    .move(at)
     .down()
     .pause(50)
     .up()
     .perform();
+  const missed = pressMissed(label, at, await driver().execute<Landed | null>('return window.__e2ePress;'));
+  if (missed !== undefined) throw new Error(missed);
 }
 
 /** Real finger swipes allowed to bring a page control onto a phone screen: more than any test page is long. */
