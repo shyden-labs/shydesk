@@ -273,13 +273,25 @@ describe('scrollNeeded', () => {
 });
 
 describe('pressMissed', () => {
+  /** A press that met a paragraph because the page scrolled 60 px between aiming and pressing. */
+  const landed = {
+    x: 400,
+    y: 300,
+    on: 'p',
+    inside: false,
+    control: { x: 350, y: 250, width: 100, height: 44 },
+    aimedScroll: 1200,
+    pressedScroll: 1260,
+  };
+
   it('is quiet when the press landed on the control', () => {
-    expect(pressMissed('Send', { x: 400, y: 300 }, { x: 400, y: 300, on: 'button', inside: true })).toBeUndefined();
+    expect(pressMissed('Send', { x: 400, y: 300 }, { ...landed, x: 400, y: 300, on: 'button', inside: true })).toBeUndefined();
   });
 
-  it('names where the press landed when it reached something else', () => {
-    expect(pressMissed('Send', { x: 400, y: 300 }, { x: 400, y: 620, on: 'iframe', inside: false })).toBe(
-      'the press on "Send" at 400, 300 landed on <iframe> at 400, 620 instead',
+  it('names where the press landed, where the control was then drawn and how far the page had scrolled', () => {
+    expect(pressMissed('Send', { x: 400, y: 300 }, landed)).toBe(
+      'the press on "Send" at 400, 300 landed on <p> at 400, 300 instead; "Send" was then drawn at 350, 250 (100 x 44), ' +
+        'page scrolled 1200 px when aimed and 1260 px when pressed',
     );
   });
 

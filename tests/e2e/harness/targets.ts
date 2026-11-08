@@ -197,6 +197,11 @@ export interface Landed {
   y: number;
   on: string;
   inside: boolean;
+  /** Where the control was drawn at the moment of the press. */
+  control: { x: number; y: number; width: number; height: number };
+  /** How far the page had scrolled when the press was aimed, and when it landed. */
+  aimedScroll: number;
+  pressedScroll: number;
 }
 
 /**
@@ -209,7 +214,12 @@ export function pressMissed(label: string, at: { x: number; y: number }, landed:
   const aimed = `the press on "${label}" at ${String(at.x)}, ${String(at.y)}`;
   if (landed === null) return `${aimed} never reached the page`;
   if (landed.inside) return undefined;
-  return `${aimed} landed on <${landed.on}> at ${String(landed.x)}, ${String(landed.y)} instead`;
+  const c = landed.control;
+  return (
+    `${aimed} landed on <${landed.on}> at ${String(landed.x)}, ${String(landed.y)} instead; ` +
+    `"${label}" was then drawn at ${String(Math.round(c.x))}, ${String(Math.round(c.y))} (${String(Math.round(c.width))} x ${String(Math.round(c.height))}), ` +
+    `page scrolled ${String(landed.aimedScroll)} px when aimed and ${String(landed.pressedScroll)} px when pressed`
+  );
 }
 
 /** A W3C key action sequence being built: each step presses or lifts one key. */

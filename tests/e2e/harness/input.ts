@@ -133,7 +133,7 @@ async function clickDrawn(label: string): Promise<void> {
   const at = viewportPoint(box, viewport, label);
   // Read only: notes where the next real press lands, so a press that misses the control fails naming where it went.
   await driver().execute(
-    'const control = arguments[0]; window.__e2ePress = null; document.addEventListener("pointerdown", (e) => { const path = e.composedPath(); const hit = path[0]; window.__e2ePress = { x: Math.round(e.clientX), y: Math.round(e.clientY), on: hit instanceof Element ? hit.localName : String(hit), inside: path.includes(control) }; }, { capture: true, once: true });',
+    'const control = arguments[0]; const aimedScroll = Math.round(window.scrollY); window.__e2ePress = null; document.addEventListener("pointerdown", (e) => { const path = e.composedPath(); const hit = path[0]; const r = control.getBoundingClientRect(); window.__e2ePress = { x: Math.round(e.clientX), y: Math.round(e.clientY), on: hit instanceof Element ? hit.localName : String(hit), inside: path.includes(control), control: { x: r.x, y: r.y, width: r.width, height: r.height }, aimedScroll, pressedScroll: Math.round(window.scrollY) }; }, { capture: true, once: true });',
     element,
   );
   await driver()
