@@ -18,6 +18,9 @@ import {
   type KeySequence,
   scrollKey,
   sameBox,
+  steadyFrom,
+  steadyLongEnough,
+  STEADY_MS,
   swipeUp,
   centreInside,
 } from '../e2e/harness/targets.ts';
@@ -357,6 +360,30 @@ describe('scrollKey', () => {
 
   it('is Page Up to bring a control above the window down into it', () => {
     expect(scrollKey(-680)).toBe('');
+  });
+});
+
+describe('steadyFrom', () => {
+  const box = { x: 1, y: 300, width: 3, height: 4 };
+
+  it('starts timing a control from its first read, so a first read is never steady', () => {
+    const first = steadyFrom(undefined, box, 1000);
+    expect(first).toEqual({ box, since: 1000 });
+    expect(steadyLongEnough(first, 1000)).toBe(false);
+  });
+
+  it('keeps the time a control was first seen while it stays in place', () => {
+    expect(steadyFrom({ box, since: 1000 }, { ...box }, 1100)).toEqual({ box, since: 1000 });
+  });
+
+  it('starts timing again when the control moved (two reads in one frame of a scroll match; the next ones do not)', () => {
+    const moved = { ...box, y: 250 };
+    expect(steadyFrom({ box, since: 1000 }, moved, 1100)).toEqual({ box: moved, since: 1100 });
+  });
+
+  it('counts a control steady once it has stayed put for STEADY_MS, and not a millisecond sooner', () => {
+    expect(steadyLongEnough({ box, since: 1000 }, 1000 + STEADY_MS - 1)).toBe(false);
+    expect(steadyLongEnough({ box, since: 1000 }, 1000 + STEADY_MS)).toBe(true);
   });
 });
 

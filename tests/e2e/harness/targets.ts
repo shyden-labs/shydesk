@@ -285,6 +285,31 @@ export function sameBox(a: Box, b: Box): boolean {
   return a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
 }
 
+/** How long a control must stay in one place before it counts as stopped moving. */
+export const STEADY_MS = 300;
+
+/** A control's last drawn box and when it was first drawn there. */
+export interface Steady {
+  box: Box;
+  since: number;
+}
+
+/**
+ * The control's steadiness after a new read at `now`. Two reads taken one
+ * after the other can fall in the same frame of a scroll and match while the
+ * page is still moving: Safari's press on Send was aimed at a page scrolled
+ * 69 px and landed at 164 px (run 42457748277, shyden-labs/shydesk#71). So a
+ * control counts as still only once it has stayed put for STEADY_MS.
+ */
+export function steadyFrom(previous: Steady | undefined, box: Box, now: number): Steady {
+  return previous !== undefined && sameBox(previous.box, box) ? previous : { box, since: now };
+}
+
+/** Whether the control has stayed in one place for at least STEADY_MS by `now`. */
+export function steadyLongEnough(steady: Steady, now: number): boolean {
+  return now - steady.since >= STEADY_MS;
+}
+
 /**
  * A real finger swipe up the middle of the page area, from 70% to 30% of its
  * height, which scrolls the page down by about 40% of that area. A phone's

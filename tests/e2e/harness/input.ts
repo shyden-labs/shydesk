@@ -22,7 +22,9 @@ import {
   pickerItem,
   screenPoint,
   targetOf,
-  sameBox,
+  steadyFrom,
+  steadyLongEnough,
+  type Steady,
   scrollInput,
   scrollKey,
   scrollNeeded,
@@ -120,13 +122,12 @@ async function clickDrawn(label: string): Promise<void> {
     }
   }
   // A scroll animates: press only once the control has stopped moving, inside the window.
-  let last = box;
+  let steady: Steady | undefined;
   await driver().waitUntil(
     async () => {
       ({ box, viewport } = await drawn());
-      const still = sameBox(last, box);
-      last = box;
-      return still && scrollNeeded(box, viewport) === 0;
+      steady = steadyFrom(steady, box, Date.now());
+      return steadyLongEnough(steady, Date.now()) && scrollNeeded(box, viewport) === 0;
     },
     { timeout: WAIT, timeoutMsg: `"${label}" never stopped moving inside the window` },
   );
@@ -244,13 +245,12 @@ async function touchDrawn(label: string): Promise<void> {
         element,
       );
     let { box, ratio } = await drawn();
-    let last = box;
+    let steady: Steady | undefined;
     await driver().waitUntil(
       async () => {
         ({ box, ratio } = await drawn());
-        const still = sameBox(last, box);
-        last = box;
-        return still;
+        steady = steadyFrom(steady, box, Date.now());
+        return steadyLongEnough(steady, Date.now());
       },
       { timeout: WAIT, timeoutMsg: `android: the field named "${label}" never stopped moving` },
     );
