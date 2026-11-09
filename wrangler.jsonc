@@ -33,6 +33,8 @@
         "TURNSTILE_SECRET": "1x0000000000000000000000000000000AA",
         "ACCESS_TEAM_DOMAIN": "dawn-lab-ed42.cloudflareaccess.com",
         "ACCESS_AUD": "cecc27a55c169053120557c748cd105f9b4199f3a66d9ef313eaf5700db39973",
+        // The API docs let staff try requests that write here only (shyden-labs/shydesk#83).
+        "TRY_WRITES": "true",
       },
     },
   },
