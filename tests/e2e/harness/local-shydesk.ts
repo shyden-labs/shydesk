@@ -6,12 +6,16 @@
  * allowed only elsewhere, and the demo page (demo-host/public/index.html) is
  * served with its piece pointed at this ShyDesk.
  */
+import { createHash } from 'node:crypto';
 
 /** The ShyDesk the demo page loads the piece from when deployed. */
 export const NON_PROD_SHYDESK = 'https://shydesk.shydesk-non-prod.workers.dev';
 export const SHYDESK_PORT = 8787;
 
 /** Cloudflare's published always-pass Turnstile test keys. */
+/** The private link's token of the seeded ticket, whose one attachment has been removed. */
+export const SEEDED_TICKET_TOKEN = 'e2e-seeded-ticket-token';
+
 const TEST_SITE_KEY = '1x00000000000000000000AA';
 const TEST_SECRET = '1x0000000000000000000000000000000AA';
 
@@ -37,6 +41,9 @@ export function seedSql(suiteOrigin: string): string {
     product('demo-elsewhere', 'Elsewhere', 'https://elsewhere.example'),
     `INSERT INTO ticket_types (id, product_id, kind, name, fields_json, reasons_json, enabled) VALUES ('demo:support', 'demo', 'support', 'Support', '${fields}', '[]', 1);`,
     `INSERT INTO ticket_types (id, product_id, kind, name, fields_json, reasons_json, enabled) VALUES ('demo-elsewhere:support', 'demo-elsewhere', 'support', 'Support', '[]', '[]', 1);`,
+    `INSERT INTO tickets (id, product_id, type_id, status, customer_email, subject, category, fields_json, token_hash, created_at, updated_at, seq) VALUES ('seeded', 'demo', 'demo:support', 'closed', 'e2e@example.com', 'Seeded', 'bug', '{}', '${createHash('sha256').update(SEEDED_TICKET_TOKEN).digest('hex')}', 0, 0, 0);`,
+    `INSERT INTO messages (id, ticket_id, author, staff_email, body, created_at) VALUES ('seeded-message', 'seeded', 'customer', NULL, 'See the attached photo.', 0);`,
+    `INSERT INTO attachments (id, product_id, ticket_id, message_id, r2_key, thumb_key, mime, bytes, state, created_at) VALUES ('seeded-photo', 'demo', 'seeded', 'seeded-message', 'gone', 'gone-thumb', 'image/jpeg', 1, 'deleted', 0);`,
   ].join('\n');
 }
 

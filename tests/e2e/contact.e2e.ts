@@ -11,6 +11,7 @@ import { strict as assert } from 'node:assert';
 import { driver } from './harness/driver.ts';
 import { named } from './harness/find.ts';
 import { pickFile, tap, type } from './harness/input.ts';
+import { SEEDED_TICKET_TOKEN } from './harness/local-shydesk.ts';
 
 const WAIT = 20_000;
 
@@ -67,6 +68,31 @@ describe('the contact form', () => {
     await textHolding('Support status', 'The email could not be sent. Keep this link to follow the request.');
     const link = await textHolding('Private link', '#t=');
     assert.match(link, /\/support\/ticket#t=[A-Za-z0-9_-]{43}$/);
+
+    // The private link opens the conversation, and a reply typed there joins it (shyden-labs/shydesk#23).
+    await driver().url(link);
+    await textHolding('Conversation', 'It closes as soon as it starts.');
+    await type('Reply', 'It still closes.');
+    await pickFile('Photos and videos', 'photo.jpg');
+    await textHolding('Attachments', 'attached,');
+    await tap('Send reply');
+    await textHolding('Support status', 'Reply sent.');
+    await textHolding('Conversation', 'It still closes.');
+    await textHolding('Conversation', 'Attachment, ');
+    // The preview of the reply's photo really came, through the token's header: after the first message's video and photo.
+    const preview = await named('Attachment preview 3');
+    await driver().waitUntil(async () => Number(await preview.getProperty('naturalWidth')) > 0, {
+      timeout: WAIT,
+      timeoutMsg: 'the third attachment preview never drew',
+    });
+
+    // An attachment past its keeping time says so (seeded: tests/e2e/harness/local-shydesk.ts).
+    await driver().url(`/support/ticket?seeded#t=${SEEDED_TICKET_TOKEN}`);
+    await textHolding('Conversation', 'Attachment removed after 30 days.');
+
+    // A link nobody holds shows one plain line.
+    await driver().url('/support/ticket?unknown#t=nobody-holds-this');
+    await textHolding('Support status', 'This link is no longer valid.');
   });
 
   it('cannot load on a page whose origin the product does not allow', async () => {
