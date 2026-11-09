@@ -12,7 +12,11 @@ declare module 'vitest' {
   }
 }
 
-export const MIGRATIONS = ['migrations/0001_release_1.sql', 'migrations/0002_upload_received_bytes.sql'];
+export const MIGRATIONS = [
+  'migrations/0001_release_1.sql',
+  'migrations/0002_upload_received_bytes.sql',
+  'migrations/0003_ticket_token_sealed.sql',
+];
 
 export default async function setup(project: TestProject): Promise<() => Promise<void>> {
   // A cancelled run never reaches its teardown; sweep what such runs left, so

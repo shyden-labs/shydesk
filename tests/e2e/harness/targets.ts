@@ -237,7 +237,9 @@ export interface Landed {
  * (runs 42440108844 and 42448093505, shyden-labs/shydesk#71), so every press
  * says where it actually landed.
  */
-export function pressMissed(label: string, at: { x: number; y: number }, landed: Landed | null): string | undefined {
+export function pressMissed(label: string, at: { x: number; y: number }, landed: Landed | null | undefined): string | undefined {
+  // A press that loaded a new page: the note went with the old one.
+  if (landed === undefined) return undefined;
   const aimed = `the press on "${label}" at ${String(at.x)}, ${String(at.y)}`;
   if (landed === null) return `${aimed} never reached the page`;
   if (landed.inside) return undefined;

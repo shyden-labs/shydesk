@@ -10,7 +10,7 @@ import { describe, it } from 'mocha';
 import { strict as assert } from 'node:assert';
 import { driver } from './harness/driver.ts';
 import { named } from './harness/find.ts';
-import { pickFile, tap, type } from './harness/input.ts';
+import { pickFile, tap, tapToNewPage, type } from './harness/input.ts';
 import { SEEDED_TICKET_TOKEN, SHYDESK_PORT } from './harness/local-shydesk.ts';
 
 const WAIT = 20_000;
@@ -100,12 +100,12 @@ describe('the contact form', () => {
       timeout: WAIT,
       timeoutMsg: 'the unread badge never showed a count',
     });
-    await tap('Demo');
-    await tap(subject);
+    await tapToNewPage('Demo');
+    await tapToNewPage(subject);
     await textHolding('Conversation', 'It still closes.');
     await tap('Thanks');
     await type('Your reply', ' We are on it.');
-    await tap('Send reply');
+    await tapToNewPage('Send reply');
     await textHolding('Reply status', 'Reply saved');
     const answer = `Hello e2e@example.com, about ${subject}. We are on it.`;
     await textHolding('Conversation', answer);

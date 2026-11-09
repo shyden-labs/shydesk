@@ -147,8 +147,22 @@ async function clickDrawn(label: string): Promise<void> {
     .pause(50)
     .up()
     .perform();
-  const missed = pressMissed(label, at, await driver().execute<Landed | null>('return window.__e2ePress;'));
+  const missed = pressMissed(label, at, await driver().execute<Landed | null | undefined>('return window.__e2ePress;'));
   if (missed !== undefined) throw new Error(missed);
+}
+
+/**
+ * A real press on a link or a button that loads a new page, waiting until that
+ * page is ready: asking Firefox about an element while its page is being replaced
+ * hangs for good (run 42543992055).
+ */
+export async function tapToNewPage(label: string): Promise<void> {
+  await driver().execute('window.__e2eLeaving = true;');
+  await tap(label);
+  await driver().waitUntil(
+    async () => driver().execute<boolean>("return window.__e2eLeaving === undefined && document.readyState === 'complete';"),
+    { timeout: WAIT, timeoutMsg: `the press on "${label}" never loaded a new page` },
+  );
 }
 
 /** Real finger swipes allowed to bring a page control onto a phone screen: more than any test page is long. */
