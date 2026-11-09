@@ -550,13 +550,14 @@
       }
       const raw = /** @type {unknown} */ (await answer.json());
       const { ticket, messages } = /** @type {Thread} */ (raw);
+      let previews = 0;
       into.replaceChildren(
         make('h2', {}, [ticket.subject]),
         ...messages.map((one) =>
           make('article', {}, [
             make('strong', {}, [one.author === 'staff' ? TEXT.staff : TEXT.customer]),
             make('p', { style: 'white-space: pre-wrap' }, [one.body]),
-            ...one.attachments.map((file) => this.attachmentLine(file)),
+            ...one.attachments.map((file) => this.attachmentLine(file, file.removed ? previews : ++previews)),
           ]),
         ),
       );
@@ -566,11 +567,16 @@
     /**
      * A removed attachment's line, or the preview of a stored one.
      * @param {ThreadAttachment} file
+     * @param {number} number its place among the previews, so each has its own name
      */
-    attachmentLine(file) {
+    attachmentLine(file, number) {
       if (file.removed) return make('p', {}, [TEXT.removed]);
       const name = file.mime.startsWith('video/') ? TEXT.video : TEXT.attachment;
-      const picture = make('img', { alt: TEXT.preview, width: '160', 'aria-label': TEXT.preview });
+      const picture = make('img', {
+        alt: `${TEXT.preview} ${String(number)}`,
+        width: '160',
+        'aria-label': `${TEXT.preview} ${String(number)}`,
+      });
       // A plain image request cannot carry the token, so the preview comes through fetch.
       void fetch(this.endpoint(`files/${encodeURIComponent(file.id)}/thumb`), { headers: this.ticketHeaders() })
         .then((answer) => (answer.ok ? answer.blob() : null))

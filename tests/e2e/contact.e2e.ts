@@ -79,11 +79,11 @@ describe('the contact form', () => {
     await textHolding('Support status', 'Reply sent.');
     await textHolding('Conversation', 'It still closes.');
     await textHolding('Conversation', 'Attachment, ');
-    // The preview really came, through the token's header.
-    const preview = await named('Attachment preview');
+    // The preview of the reply's photo really came, through the token's header: after the first message's video and photo.
+    const preview = await named('Attachment preview 3');
     await driver().waitUntil(async () => Number(await preview.getProperty('naturalWidth')) > 0, {
       timeout: WAIT,
-      timeoutMsg: 'the attachment preview never drew',
+      timeoutMsg: 'the third attachment preview never drew',
     });
 
     // An attachment past its keeping time says so (seeded: tests/e2e/harness/local-shydesk.ts).
