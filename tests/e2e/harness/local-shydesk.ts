@@ -13,6 +13,11 @@ export const NON_PROD_SHYDESK = 'https://shydesk.shydesk-non-prod.workers.dev';
 export const SHYDESK_PORT = 8787;
 
 /** Cloudflare's published always-pass Turnstile test keys. */
+/** The rep the suite signs in as, granted both seeded products. */
+export const E2E_REP = 'e2e-rep@example.com';
+export const E2E_ACCESS_TEAM = 'shydesk-e2e.example';
+export const E2E_ACCESS_AUD = 'shydesk-e2e';
+
 /** The private link's token of the seeded ticket, whose one attachment has been removed. */
 export const SEEDED_TICKET_TOKEN = 'e2e-seeded-ticket-token';
 
@@ -46,6 +51,9 @@ export function seedSql(suiteOrigin: string): string {
     `INSERT INTO tickets (id, product_id, type_id, status, customer_email, subject, category, fields_json, token_hash, created_at, updated_at, seq) VALUES ('seeded', 'demo', 'demo:support', 'closed', 'e2e@example.com', 'Seeded', 'bug', '{}', '${createHash('sha256').update(SEEDED_TICKET_TOKEN).digest('hex')}', 0, 0, 0);`,
     `INSERT INTO messages (id, ticket_id, author, staff_email, body, created_at) VALUES ('seeded-message', 'seeded', 'customer', NULL, 'See the attached photo.', 0);`,
     `INSERT INTO attachments (id, product_id, ticket_id, message_id, r2_key, thumb_key, mime, bytes, state, created_at) VALUES ('seeded-photo', 'demo', 'seeded', 'seeded-message', 'gone', 'gone-thumb', 'image/jpeg', 1, 'deleted', 0);`,
+    `INSERT INTO staff (email, role, created_at) VALUES ('${E2E_REP}', 'rep', 0);`,
+    `INSERT INTO staff_products (email, product_id) VALUES ('${E2E_REP}', 'demo'), ('${E2E_REP}', 'demo-elsewhere');`,
+    `INSERT INTO canned_replies (id, product_id, type_id, name, body) VALUES ('thanks', 'demo', NULL, 'Thanks', 'Hello {{customer_email}}, about {{ticket_subject}}.');`,
   ].join('\n');
 }
 
@@ -59,10 +67,11 @@ export function demoPage(html: string, shydesk: string, product: string): string
 }
 
 /** `npx` arguments for the local ShyDesk, its state kept in `stateDir`. */
-export function wranglerDevArgs(stateDir: string): string[] {
+export function wranglerDevArgs(stateDir: string, accessKeys: string): string[] {
   return [
     'wrangler',
     'dev',
+    'tests/e2e/harness/worker.ts',
     '--local',
     '--ip',
     '0.0.0.0',
@@ -76,5 +85,13 @@ export function wranglerDevArgs(stateDir: string): string[] {
     `TURNSTILE_SECRET:${TEST_SECRET}`,
     '--var',
     `TICKET_TOKEN_KEY:${TEST_TOKEN_KEY}`,
+    '--var',
+    `ACCESS_TEAM_DOMAIN:${E2E_ACCESS_TEAM}`,
+    '--var',
+    `ACCESS_AUD:${E2E_ACCESS_AUD}`,
+    '--var',
+    'FIRST_ADMIN_EMAIL:e2e-admin@example.com',
+    '--var',
+    `E2E_ACCESS_JWKS:${accessKeys}`,
   ];
 }

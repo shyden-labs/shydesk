@@ -11,7 +11,7 @@ import { strict as assert } from 'node:assert';
 import { driver } from './harness/driver.ts';
 import { named } from './harness/find.ts';
 import { pickFile, tap, type } from './harness/input.ts';
-import { SEEDED_TICKET_TOKEN } from './harness/local-shydesk.ts';
+import { SEEDED_TICKET_TOKEN, SHYDESK_PORT } from './harness/local-shydesk.ts';
 
 const WAIT = 20_000;
 
@@ -45,9 +45,11 @@ async function attachedTwo(): Promise<number[]> {
 
 describe('the contact form', () => {
   it('sends a request typed and tapped in, and shows the private link', async () => {
+    // Each browser's ticket is its own: they share one local database, and the desk opens a ticket by its subject.
+    const subject = `The app will not open ${String(Date.now())}`;
     await driver().url('/contact.html?product=demo');
     await type('Email', 'e2e@example.com');
-    await type('Subject', 'The app will not open');
+    await type('Subject', subject);
     await type('Message', 'It closes as soon as it starts.');
     await type('Device', 'Test phone');
     // Too long is refused before any upload; then a video and a photo go straight to ShyDesk.
@@ -85,6 +87,32 @@ describe('the contact form', () => {
       timeout: WAIT,
       timeoutMsg: 'the third attachment preview never drew',
     });
+
+    // A rep signs in, switches product, opens the ticket, sends a canned reply they edited (shyden-labs/shydesk#24).
+    const desk = new URL(link);
+    desk.port = String(SHYDESK_PORT);
+    await driver().url(`${desk.origin}/health`);
+    await driver().setCookies({ name: 'CF_Authorization', value: process.env.E2E_REP_TOKEN ?? '', path: '/' });
+    await driver().url(`${desk.origin}/desk?product=demo-elsewhere`);
+    // The badge counts this run's unanswered tickets, once its first request is back.
+    const badge = await named('Unread tickets');
+    await driver().waitUntil(async () => /^\d+$/.test(await badge.getText()), {
+      timeout: WAIT,
+      timeoutMsg: 'the unread badge never showed a count',
+    });
+    await tap('Demo');
+    await tap(subject);
+    await textHolding('Conversation', 'It still closes.');
+    await tap('Thanks');
+    await type('Your reply', ' We are on it.');
+    await tap('Send reply');
+    await textHolding('Reply status', 'Reply saved');
+    const answer = `Hello e2e@example.com, about ${subject}. We are on it.`;
+    await textHolding('Conversation', answer);
+
+    // The customer's page shows that reply.
+    await driver().url(link);
+    await textHolding('Conversation', answer);
 
     // An attachment past its keeping time says so (seeded: tests/e2e/harness/local-shydesk.ts).
     await driver().url(`/support/ticket?seeded#t=${SEEDED_TICKET_TOKEN}`);

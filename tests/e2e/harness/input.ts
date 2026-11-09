@@ -291,6 +291,8 @@ async function touchDrawn(label: string): Promise<void> {
 /** Real key presses into the field named `label`, after a real tap on it. */
 export async function type(label: string, text: string): Promise<void> {
   const on = phone();
+  // Typing adds to what the field holds, such as a canned reply being edited.
+  const before = String(await (await named(label)).getProperty('value'));
   if (on === 'ios') {
     // The page receives trusted focus, keydown and input from the on-screen keyboard.
     await native(async () => {
@@ -303,8 +305,8 @@ export async function type(label: string, text: string): Promise<void> {
     // W3C key actions, each key pressed and lifted in turn: trusted keydown and input per key, on desktop and Android alike.
     await typed(driver().action('key'), text).perform();
   }
-  // Every target: the field holds exactly the text typed, or the test fails naming what it held.
-  const mismatch = typedMismatch(label, text, String(await (await named(label)).getProperty('value')));
+  // Every target: the field holds exactly what it held plus the text typed, or the test fails naming what it held.
+  const mismatch = typedMismatch(label, before + text, String(await (await named(label)).getProperty('value')));
   if (mismatch !== undefined) throw new Error(mismatch);
 }
 

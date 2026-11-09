@@ -49,6 +49,7 @@ export interface WheelAction {
 export interface Driver {
   capabilities: Record<string, unknown>;
   url(path: string): Promise<void>;
+  setCookies(cookie: { name: string; value: string; path: string }): Promise<void>;
   getContext(): Promise<string | { id: string }>;
   /** In the native layer: the screen's whole accessibility tree, as XML. */
   getPageSource(): Promise<string>;
