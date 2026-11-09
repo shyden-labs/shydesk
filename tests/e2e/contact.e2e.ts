@@ -80,10 +80,6 @@ describe('the contact form', () => {
     await textHolding('Conversation', 'It still closes.');
     await textHolding('Conversation', 'Attachment, ');
     // The preview really came, through the token's header.
-    const TEMP = await driver().execute<string>(
-      "return (async () => { const h = { Authorization: 'Ticket ' + new URLSearchParams(location.hash.slice(1)).get('t') }; const piece = document.querySelector('shydesk-support'); const host = 'http://' + location.hostname + ':8787'; const t = await (await fetch(host + '/support-api/ticket?product=demo', { headers: h })).json(); const id = t.messages.at(-1).attachments[0]?.id; const r = await fetch(host + '/support-api/files/' + id + '/thumb?product=demo', { headers: h }).catch((e) => ({ status: String(e) })); return JSON.stringify({ id, status: r.status, imgs: piece?.shadowRoot?.querySelectorAll('img').length, html: piece?.shadowRoot?.querySelector('[role=log]')?.innerHTML.slice(-300) }); })()",
-    );
-    console.log('TEMPDIAG', TEMP);
     const preview = await named('Attachment preview');
     await driver().waitUntil(async () => Number(await preview.getProperty('naturalWidth')) > 0, {
       timeout: WAIT,

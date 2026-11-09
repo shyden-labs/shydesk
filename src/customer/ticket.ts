@@ -118,8 +118,11 @@ async function streamFile(c: TicketContext, key: string | null, mime?: string): 
   if (object === null) return c.json({ error: MESSAGES.notFound }, 404);
   // A preview is a JPEG or a WebP: the type it was stored with says which.
   const type = mime ?? object.httpMetadata?.contentType ?? 'image/jpeg';
-  return new Response(object.body as unknown as ReadableStream, {
-    headers: { 'Content-Type': type, 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff' },
+  // Through the context, so the origin check's CORS headers stay on the answer.
+  return c.body(object.body as unknown as ReadableStream, 200, {
+    'Content-Type': type,
+    'Cache-Control': 'private, no-store',
+    'X-Content-Type-Options': 'nosniff',
   });
 }
 

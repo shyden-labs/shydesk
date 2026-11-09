@@ -266,6 +266,12 @@ describe('fetching a file', () => {
     expect(response.headers.get('Cache-Control')).toBe('private, no-store');
   });
 
+  it.each(['/support-api/files/a1', '/support-api/files/a1/thumb'])('lets the product page read %s, naming its origin', async (path) => {
+    const response = await (await world()).call(path);
+    expect(response.headers.get('Access-Control-Allow-Origin')).toBe(ORIGIN);
+    expect(response.headers.get('Vary')).toBe('Origin');
+  });
+
   it('streams its thumbnail as a JPEG or WebP preview', async () => {
     const response = await (await world()).call('/support-api/files/a1/thumb');
     expect(response.status).toBe(200);
