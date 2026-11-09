@@ -844,15 +844,19 @@ describe('sending a thumbnail', () => {
   });
 });
 
-/** An MP4 small enough to send whole, with exactly this length in its header. */
+/** An MP4 small enough to send whole: one track whose headers and sample all state exactly this length. */
 function mp4OfMs(ms: number): Uint8Array {
   const u32 = (n: number) => [(n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255];
   const ascii = (s: string) => Array.from(s, (ch) => ch.charCodeAt(0));
   const box = (type: string, payload: number[]) => [...u32(payload.length + 8), ...ascii(type), ...payload];
-  return new Uint8Array([
-    ...box('ftyp', ascii('isom')),
-    ...box('moov', box('mvhd', [0, 0, 0, 0, ...u32(0), ...u32(0), ...u32(1000), ...u32(ms)])),
+  const header = (type: string) => box(type, [0, 0, 0, 0, ...u32(0), ...u32(0), ...u32(1000), ...u32(ms)]);
+  const tkhd = box('tkhd', [0, 0, 0, 0, ...u32(0), ...u32(0), ...u32(1), ...u32(0), ...u32(ms)]);
+  const table = box('stbl', [
+    ...box('stts', [0, 0, 0, 0, ...u32(1), ...u32(1), ...u32(ms)]),
+    ...box('stsz', [0, 0, 0, 0, ...u32(1), ...u32(1)]),
   ]);
+  const track = box('trak', [...tkhd, ...box('mdia', [...header('mdhd'), ...box('minf', table)])]);
+  return new Uint8Array([...box('ftyp', ascii('isom')), ...box('moov', [...header('mvhd'), ...track])]);
 }
 
 function expectRefused(w: ReturnType<typeof world>, id: string): void {
