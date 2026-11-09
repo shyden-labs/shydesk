@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { START, next, prev, rotate, stateLine, zoomBy } from '../../public/embed-viewer.js';
+import { START, next, prev, rotate, stateLine, wheelFactor, zoomBy } from '../../public/embed-viewer.js';
 
 // The media viewer's state (shyden-labs/shydesk#25 AC1): zoom clamped 1-8,
 // rotation cycling in quarter turns, next and previous wrapping round.
@@ -94,5 +94,28 @@ describe('stateLine', () => {
 
   it('rounds the zoom to a whole percent', () => {
     expect(stateLine(zoomBy(START, 1.25 * 1.25, 0, 0), 1, 'Video')).toBe('Video 1 of 1, zoom 156%, rotated 0°');
+  });
+});
+
+// A wheel zooms by how far it turned, not by how many events carried it:
+// Firefox splits one notch into several (CI run 42677193362 reached 381%).
+describe('wheelFactor', () => {
+  it('zooms in by a quarter for one 120 px notch toward the screen, and out by the same away', () => {
+    expect(wheelFactor(-120, 0, 800)).toBeCloseTo(1.25, 10);
+    expect(wheelFactor(120, 0, 800)).toBeCloseTo(0.8, 10);
+  });
+
+  it('gives the same zoom however the notch is split into events', () => {
+    const split = [-20, -20, -20, -20, -20, -20].reduce((zoom, delta) => zoom * wheelFactor(delta, 0, 800), 1);
+    expect(split).toBeCloseTo(1.25, 10);
+  });
+
+  it('counts a line as 16 px and a page as the stage height', () => {
+    expect(wheelFactor(-7.5, 1, 800)).toBeCloseTo(1.25, 10);
+    expect(wheelFactor(-0.15, 2, 800)).toBeCloseTo(1.25, 10);
+  });
+
+  it('leaves the zoom alone for a sideways-only wheel', () => {
+    expect(wheelFactor(0, 0, 800)).toBe(1);
   });
 });

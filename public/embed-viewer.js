@@ -64,6 +64,26 @@ export function prev(s, count) {
   return { ...START, index: (s.index - 1 + count) % count };
 }
 
+/** Wheel travel, in px, that zooms by one step (a usual mouse notch). */
+const NOTCH_PX = 120;
+/** How much one notch zooms. */
+const NOTCH_ZOOM = 1.25;
+/** A line of wheel travel, in px, for a wheel that reports lines. */
+const LINE_PX = 16;
+
+/**
+ * How much a wheel event zooms: in proportion to how far the wheel turned, so
+ * a notch zooms the same whether the browser sends it as one event or several.
+ * Toward the screen (negative) zooms in.
+ * @param {number} deltaY the event's deltaY
+ * @param {number} deltaMode 0 for px, 1 for lines, 2 for pages
+ * @param {number} pageHeight the stage's height, which a page of travel is
+ */
+export function wheelFactor(deltaY, deltaMode, pageHeight) {
+  const px = deltaY * (deltaMode === 1 ? LINE_PX : deltaMode === 2 ? pageHeight : 1);
+  return NOTCH_ZOOM ** (-px / NOTCH_PX);
+}
+
 /**
  * What the viewer shows, in words, for its status line.
  * @param {ViewerState} s
@@ -239,7 +259,7 @@ export function openViewer({ doc, host, items, start, onClose }) {
     (event) => {
       event.preventDefault();
       const at = fromMiddle(event.clientX, event.clientY);
-      apply(zoomBy(state, event.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP, at.x, at.y));
+      apply(zoomBy(state, wheelFactor(event.deltaY, event.deltaMode, stage.clientHeight), at.x, at.y));
     },
     { passive: false },
   );
