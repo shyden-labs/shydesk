@@ -69,7 +69,8 @@ function jpegOf(source, w, h, quality) {
   const canvas = document.createElement('canvas');
   canvas.width = w;
   canvas.height = h;
-  const context = canvas.getContext('2d');
+  // A software canvas: Safari with no usable GPU gives a default canvas no pixels, so no JPEG (measured, shyden-labs/shydesk#21).
+  const context = canvas.getContext('2d', { willReadFrequently: true });
   if (context === null) return Promise.resolve(null);
   context.drawImage(source, 0, 0, w, h);
   return new Promise((resolve) => {
