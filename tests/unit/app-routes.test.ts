@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { D1Database } from '@cloudflare/workers-types';
-import { app, noSmtpYet } from '../../src/index.ts';
+import { app, workerDeliver } from '../../src/index.ts';
+import { connections } from './cloudflare-sockets-stand-in.ts';
 import type { StaffEnv } from '../../src/auth/staff.ts';
 import { standInDb } from './d1-stand-in.ts';
 
@@ -74,12 +75,16 @@ describe('/support-api and /embed.js on the Worker', () => {
   });
 });
 
-// Until shyden-labs/shydesk#68 opens a real SMTP connection, every notice
-// fails by name, so the piece tells the customer to keep the private link.
+// shyden-labs/shydesk#68: the Worker sends mail over a socket from cloudflare:sockets
+// (stood in for the unit suite by tests/unit/cloudflare-sockets-stand-in.ts).
 describe('the Worker mail delivery', () => {
-  it('refuses every send, naming the story that adds the connection', async () => {
-    await expect(noSmtpYet({ user: 'u', pass: 'p' }, { from: 'a@b.co', to: 'c@d.co', subject: 's', text: 't' })).rejects.toThrow(
-      'shyden-labs/shydesk#68',
-    );
+  it('connects to the mail host on 587 with STARTTLS through cloudflare:sockets', async () => {
+    connections.length = 0;
+    await expect(
+      workerDeliver({ user: 'u', pass: 'p' }, { from: 'a@b.co', to: 'c@d.co', subject: 's', text: 't' }, 'mail.example'),
+    ).rejects.toThrow('no sockets in the unit suite');
+    expect(connections).toEqual([
+      { address: { hostname: 'mail.example', port: 587 }, options: { secureTransport: 'starttls', allowHalfOpen: false } },
+    ]);
   });
 });
