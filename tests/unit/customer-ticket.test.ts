@@ -23,7 +23,17 @@ const product = (id: string) => ({
   created_at: 1,
 });
 
-async function world(options: { status?: string; counted?: number; usable?: string[]; objects?: Record<string, string> } = {}) {
+async function world(
+  options: {
+    status?: string;
+    counted?: number;
+    usable?: string[];
+    objects?: Record<string, string>;
+    thumbType?: string;
+    thumbKey?: string | null;
+    usableFails?: boolean;
+  } = {},
+) {
   const hash = await hashKey(TOKEN);
   const ticket = { id: 't1', subject: 'It broke', status: options.status ?? 'waiting', created_at: 5 };
   const inserted: unknown[][] = [];
@@ -56,14 +66,22 @@ async function world(options: { status?: string; counted?: number; usable?: stri
       ];
     }
     if (sql.includes('FROM attachments') && sql.includes('r2_key')) {
-      return v[0] === 'a1' && v[1] === 't1' ? [{ r2_key: 'key-a1', thumb_key: 'thumb-a1', mime: 'image/jpeg' }] : [];
+      return v[0] === 'a1' && v[1] === 't1'
+        ? [{ r2_key: 'key-a1', thumb_key: options.thumbKey === undefined ? 'thumb-a1' : options.thumbKey, mime: 'image/jpeg' }]
+        : [];
     }
-    if (sql.includes('FROM attachments')) return (options.usable ?? []).map((id) => ({ id }));
+    if (sql.includes('FROM attachments')) {
+      if (options.usableFails === true) throw new Error('the database is away');
+      return (options.usable ?? []).map((id) => ({ id }));
+    }
     return [];
   });
   const objects = new Map(Object.entries(options.objects ?? { 'key-a1': 'photo bytes', 'thumb-a1': 'small' }));
   const FILES = {
-    get: (key: string) => Promise.resolve(objects.has(key) ? { body: new Response(objects.get(key)).body } : null),
+    get: (key: string) =>
+      Promise.resolve(
+        objects.has(key) ? { body: new Response(objects.get(key)).body, httpMetadata: { contentType: options.thumbType } } : null,
+      ),
   } as unknown as R2Bucket;
   const TICKET_TIMER = {
     idFromName: (name: string) => name,
@@ -216,6 +234,11 @@ describe('replying', () => {
     expect(response.status).toBe(400);
   });
 
+  it('does not hide a database failure as a missing attachment', async () => {
+    const response = await (await world({ usableFails: true })).reply({ message: 'x', attachmentIds: ['a9'] });
+    expect(response.status).toBe(500);
+  });
+
   it('admits the 20th reply in an hour from one client IP', async () => {
     expect((await (await world({ counted: 20 })).reply({ message: 'x' })).status).toBe(201);
   });
@@ -254,8 +277,22 @@ describe('fetching a file', () => {
     expect(response.status).toBe(404);
   });
 
+  it('gives a preview the type it was stored with', async () => {
+    const response = await (await world({ thumbType: 'image/webp' })).call('/support-api/files/a1/thumb');
+    expect(response.headers.get('Content-Type')).toBe('image/webp');
+  });
+
+  it('is 404 for the preview of an attachment that has none', async () => {
+    const response = await (await world({ thumbKey: null })).call('/support-api/files/a1/thumb');
+    expect(response.status).toBe(404);
+  });
+
   it('is 404 for an attachment not on this ticket', async () => {
     expect((await (await world()).call('/support-api/files/a2')).status).toBe(404);
+  });
+
+  it('is 404 for the preview of an attachment not on this ticket', async () => {
+    expect((await (await world()).call('/support-api/files/a2/thumb')).status).toBe(404);
   });
 
   it('is 404 when the object has gone', async () => {

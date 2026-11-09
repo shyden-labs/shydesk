@@ -124,11 +124,11 @@ async function streamFile(c: TicketContext, key: string | null, mime?: string): 
 }
 
 /** The attachment `:id` when it is stored on the token's own ticket, or null. */
-async function fileOfTicket(c: TicketContext): Promise<FileRow | null> {
+async function fileOfTicket(c: TicketContext, id: string): Promise<FileRow | null> {
   const ticket = await openTicket(c);
   if (ticket === null) return null;
   return c.env.DB.prepare("SELECT r2_key, thumb_key, mime FROM attachments WHERE id = ? AND ticket_id = ? AND state = 'stored'")
-    .bind(c.req.param('id') ?? '', ticket.id)
+    .bind(id, ticket.id)
     .first<FileRow>();
 }
 
@@ -195,13 +195,13 @@ export function ticketRoutes(): Hono<TicketEnv> {
   });
 
   routes.get('/support-api/files/:id', async (c) => {
-    const file = await fileOfTicket(c);
+    const file = await fileOfTicket(c, c.req.param('id'));
     if (file === null) return c.json({ error: MESSAGES.notFound }, 404);
     return streamFile(c, file.r2_key, file.mime);
   });
 
   routes.get('/support-api/files/:id/thumb', async (c) => {
-    const file = await fileOfTicket(c);
+    const file = await fileOfTicket(c, c.req.param('id'));
     if (file === null) return c.json({ error: MESSAGES.notFound }, 404);
     return streamFile(c, file.thumb_key);
   });

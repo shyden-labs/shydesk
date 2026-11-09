@@ -570,7 +570,7 @@
     attachmentLine(file) {
       if (file.removed) return make('p', {}, [TEXT.removed]);
       const name = file.mime.startsWith('video/') ? TEXT.video : TEXT.attachment;
-      const picture = make('img', { alt: '', width: '160', 'aria-label': TEXT.preview });
+      const picture = make('img', { alt: TEXT.preview, width: '160', 'aria-label': TEXT.preview });
       // A plain image request cannot carry the token, so the preview comes through fetch.
       void fetch(this.endpoint(`files/${encodeURIComponent(file.id)}/thumb`), { headers: this.ticketHeaders() })
         .then((answer) => (answer.ok ? answer.blob() : null))
