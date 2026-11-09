@@ -1,5 +1,5 @@
 import type { Fetcher } from '@cloudflare/workers-types';
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 
 /** What /embed.js needs: the static assets (wrangler.jsonc `assets`). */
 export interface EmbedEnv {
@@ -16,7 +16,7 @@ export interface EmbedEnv {
  */
 export function embedRoutes(): Hono<{ Bindings: EmbedEnv }> {
   const routes = new Hono<{ Bindings: EmbedEnv }>();
-  routes.get('/embed.js', async (c) => {
+  const serve = async (c: Context<{ Bindings: EmbedEnv }>): Promise<Response> => {
     const asset = (await c.env.ASSETS.fetch(c.req.raw as never)) as unknown as Response;
     if (!asset.ok) return asset;
     const served = new Response(asset.body, asset);
@@ -24,6 +24,15 @@ export function embedRoutes(): Hono<{ Bindings: EmbedEnv }> {
     served.headers.set('Cross-Origin-Resource-Policy', 'cross-origin');
     served.headers.set('X-Content-Type-Options', 'nosniff');
     return served;
-  });
+  };
+  routes.get('/embed.js', serve);
+  // The piece's media code (shyden-labs/shydesk#21): a cross-origin import needs CORS, and any page may load the piece.
+  const serveImported = async (c: Context<{ Bindings: EmbedEnv }>): Promise<Response> => {
+    const served = await serve(c);
+    if (served.ok) served.headers.set('Access-Control-Allow-Origin', '*');
+    return served;
+  };
+  routes.get('/embed-media.js', serveImported);
+  routes.get('/embed-video.js', serveImported);
   return routes;
 }

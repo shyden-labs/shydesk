@@ -5,6 +5,8 @@
  * only here; the tests themselves never name a target.
  */
 
+import { basename, join } from 'node:path';
+
 export const TARGETS = ['chromium', 'firefox', 'safari', 'android', 'ios'] as const;
 export type Target = (typeof TARGETS)[number];
 export type Phone = 'android' | 'ios';
@@ -406,4 +408,15 @@ export function centreInside(box: Box, area: Box): boolean {
   const x = box.x + box.width / 2;
   const y = box.y + box.height / 2;
   return x >= area.x && x < area.x + area.width && y >= area.y && y < area.y + area.height;
+}
+
+/**
+ * Where a desktop browser takes a test file from through WebDriver. Safari
+ * accepts a file from anywhere but can read its bytes only from a folder of its
+ * own: from the repo, /tmp, ~/Downloads or ~/Public the page gets NotReadableError
+ * (measured on CI's Safari 27.2, shyden-labs/shydesk#21). Its real open panel is
+ * no way round: under WebDriver it is cancelled before it appears.
+ */
+export function desktopFilePath(target: 'chromium' | 'firefox' | 'safari', fixture: string, home: string): string {
+  return target === 'safari' ? join(home, 'Library/Caches/com.apple.Safari', basename(fixture)) : fixture;
 }

@@ -15,10 +15,13 @@
  */
 import { driver } from './driver.ts';
 import { named } from './find.ts';
-import { resolve } from 'node:path';
+import { copyFile, mkdir } from 'node:fs/promises';
+import { homedir } from 'node:os';
+import { dirname, resolve } from 'node:path';
 import {
   ANDROID_PAGE,
   nativeFinder,
+  desktopFilePath,
   pickerItem,
   screenPoint,
   targetOf,
@@ -311,7 +314,15 @@ const MEDIA = resolve(import.meta.dirname, '../../fixtures/media');
 export async function pickFile(label: string, fixture: Fixture): Promise<void> {
   const on = phone();
   if (on === undefined) {
-    await (await named(label)).addValue(resolve(MEDIA, fixture));
+    const target = targetOf(driver().capabilities);
+    if (target !== 'chromium' && target !== 'firefox' && target !== 'safari') throw new Error(`no desktop file route for ${target}`);
+    const from = resolve(MEDIA, fixture);
+    const path = desktopFilePath(target, from, homedir());
+    if (path !== from) {
+      await mkdir(dirname(path), { recursive: true });
+      await copyFile(from, path);
+    }
+    await (await named(label)).addValue(path);
     return;
   }
   await native(async () => {

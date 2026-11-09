@@ -46,10 +46,12 @@ describe('the input helpers', () => {
   it("a photo picked through the target's own picker arrives whole", async () => {
     await pickFile('Harness file', 'photo.jpg');
     await eventsHolding(`file-change:true:${String(size('photo.jpg'))}`);
+    await eventsHolding(`file-read:${String(size('photo.jpg'))}`);
   });
 
   it("a 10-second video picked through the target's own picker arrives whole", async () => {
     await pickFile('Harness file', 'ok-10s.mp4');
     await eventsHolding(`file-change:true:${String(size('ok-10s.mp4'))}`);
+    await eventsHolding(`file-read:${String(size('ok-10s.mp4'))}`);
   });
 });

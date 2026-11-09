@@ -67,7 +67,7 @@ export const config: Options.Testrunner & Capabilities.WithRequestedTestrunnerCa
   // A session that fails to start fails once, naming why: a retry is not a fix (shyden-labs/shydesk#49).
   connectionRetryCount: 0,
   framework: 'mocha',
-  mochaOpts: { ui: 'bdd', timeout: 120_000 },
+  mochaOpts: { ui: 'bdd', timeout: 480_000 },
   reporters: ['spec'],
 
   /** Serves the suite's pages to every target: localhost on desktop, the LAN address for the iPhone, adb reverse for Android. */

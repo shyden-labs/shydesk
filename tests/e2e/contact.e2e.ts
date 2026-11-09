@@ -10,12 +10,12 @@ import { describe, it } from 'mocha';
 import { strict as assert } from 'node:assert';
 import { driver } from './harness/driver.ts';
 import { named } from './harness/find.ts';
-import { tap, type } from './harness/input.ts';
+import { pickFile, tap, type } from './harness/input.ts';
 
 const WAIT = 20_000;
 
 /** The text of the element named `label` once it holds `expected`, or a failure showing what it held. */
-async function textHolding(label: string, expected: string): Promise<string> {
+async function textHolding(label: string, expected: string, timeout = WAIT): Promise<string> {
   const element = await named(label);
   let text = '';
   await driver().waitUntil(
@@ -23,9 +23,23 @@ async function textHolding(label: string, expected: string): Promise<string> {
       text = await element.getText();
       return text.includes(expected);
     },
-    { timeout: WAIT, timeoutMsg: `"${label}" never held "${expected}"; it held "${text}"` },
+    { timeout, timeoutMsg: `"${label}" never held "${expected}"; it held "${text}"` },
   );
   return text;
+}
+
+/** The size in KB of each attached file, once two are attached. */
+async function attachedTwo(): Promise<number[]> {
+  const element = await named('Attachments');
+  let sizes: number[] = [];
+  await driver().waitUntil(
+    async () => {
+      sizes = [...(await element.getText()).matchAll(/attached, (\d+) KB/g)].map((m) => Number(m[1]));
+      return sizes.length === 2;
+    },
+    { timeout: 150_000, timeoutMsg: 'two attachments never finished uploading' },
+  );
+  return sizes;
 }
 
 describe('the contact form', () => {
@@ -35,6 +49,17 @@ describe('the contact form', () => {
     await type('Subject', 'The app will not open');
     await type('Message', 'It closes as soon as it starts.');
     await type('Device', 'Test phone');
+    // Too long is refused before any upload; then a video and a photo go straight to ShyDesk.
+    await pickFile('Photos and videos', 'long-45s.mp4');
+    await textHolding('Attachments', 'Videos can be up to 30 seconds long.');
+    await pickFile('Photos and videos', 'ok-10s.mp4');
+    // The piece gives up on shrinking after two minutes and sends the original.
+    await textHolding('Attachments', 'attached,', 150_000);
+    await pickFile('Photos and videos', 'photo.jpg');
+    const attached = await attachedTwo();
+    // shyden-labs/shydesk#21: each is stored smaller than its fixture, the 10,586 KB video and the 3,011 KB photo.
+    const [video = Infinity, photo = Infinity] = attached;
+    assert.ok(video < 10586 && photo < 3011, `not stored smaller than the originals: ${attached.join(', ')} KB`);
     // The test site key passes by itself; the button is enabled once it has.
     await textHolding('Support status', 'Ready to send');
     await tap('Send');

@@ -1,0 +1,4 @@
+embed-video.js is Mediabunny, unmodified.
+Copyright (c) 2026-present, Vanilagy and contributors.
+Licence: Mozilla Public License 2.0, in embed-video-LICENSE.txt.
+Source code: https://github.com/Vanilagy/mediabunny

@@ -30,7 +30,7 @@ and project tooling.
 | `scripts/branch-rules-setup.ts` | Sets the `develop` (squash only) and `main` (merge commit only) rulesets, head-branch deletion, rebase merging off and the `dev` environment's branch policy, and reads each back. |
 | `scripts/board-*.ts`, `scripts/file-story.ts`, `.github/ISSUE_TEMPLATE/story.yml`, `docs/project-board.md` | The project board: filing stories, Estimate and Priority fields, the next ticket, progress, and orphaned In Progress tickets. |
 | `tests/unit/supply-chain.test.ts` | Actions pinned to SHAs, Dependabot covering every ecosystem and targeting `develop`, Node read from the Dockerfile. |
-| `tests/unit/licences.test.ts`, `tests/unit/licences.ts` | Every package in `package-lock.json` has a licence the global rule accepts: permissive if shipped, LGPL or MPL also allowed for build and test tools, GPL, AGPL, SSPL and unknown refused (shyden-labs/repo-template#169). |
+| `tests/unit/licences.test.ts`, `tests/unit/licences.ts` | Every package in `package-lock.json` has a licence the global rule accepts: permissive, LGPL and MPL pass, GPL, AGPL, SSPL and unknown refused (shyden-labs/repo-template#169). |
 | `tsconfig.json`, `eslint.config.js`, `.prettierrc.json`, `.githooks/pre-push`, `docs/static-checks.md` | Strict typecheck, lint and format, in CI and before every push. |
 | `package.json` `overrides` | `minimatch` held at 11.0.3, past its ReDoS advisory GHSA-g3hv-75wg-m249, until eslint and typescript-eslint accept minimatch 11 themselves; then remove it (shyden-labs/repo-template#154). |
 | `LICENSE`, `NOTICE` | Apache-2.0, the ASF's text verbatim in `LICENSE`; the copyright line in `NOTICE`, as the ASF advises (shyden-labs/repo-template#147). |
