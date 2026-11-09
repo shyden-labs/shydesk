@@ -34,6 +34,9 @@ describe('tables', () => {
       'attachments_keep_days',
       'text_keep_days',
       'created_at',
+      // shyden-labs/shydesk#78 (migration 0004).
+      'privacy_url_en',
+      'privacy_url_id',
     ]);
   });
   it('ticket_types', async () => {
