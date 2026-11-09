@@ -42,7 +42,8 @@ describe('GET /embed.js', () => {
 
 // shyden-labs/shydesk#21: the piece imports its media code on the first file
 // picked. A cross-origin import needs CORS, which a script tag does not.
-describe.each(['/embed-media.js', '/embed-video.js'])('GET %s', (path) => {
+// shyden-labs/shydesk#25: the viewer is imported the same way, on the first preview opened.
+describe.each(['/embed-media.js', '/embed-video.js', '/embed-viewer.js'])('GET %s', (path) => {
   const asset = () => new Response('/* media */', { headers: { 'Content-Type': 'text/javascript', ETag: '"abc"' } });
   const call = (body = asset()) =>
     embedRoutes().request(`https://shydesk.dpdns.org${path}`, {}, { ASSETS: { fetch: () => Promise.resolve(body) } });

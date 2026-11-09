@@ -31,6 +31,13 @@ function boxAt(header: Uint8Array, at: number, limit: number): Box | null {
   return { type, payload: at + headerSize, end };
 }
 
+/**
+ * The only boxes `moov` may hold (shyden-labs/shydesk#106): anything else,
+ * such as a compressed movie (`cmov`) or a fragmented one's `mvex`, is a box
+ * this check does not read, so the file is refused rather than half-read.
+ */
+const MOVIE_BOXES = new Set(['mvhd', 'trak', 'udta', 'meta', 'free', 'skip', 'iods']);
+
 /** Top-level boxes of a fragmented file, whose media lies outside `moov`'s tables: refused. */
 const FRAGMENTS = new Set(['moof', 'mfra']);
 
@@ -97,6 +104,29 @@ function sttsTotal(payload: Uint8Array): { count: number; length: number } | nul
   return { count, length };
 }
 
+/** The largest composition offset in a `ctts` (signed in version 1), in the media's timescale; null if cut short. */
+function largestOffset(payload: Uint8Array): number | null {
+  if (payload.length < 8) return null;
+  const v = view(payload);
+  const signed = payload[0] === 1;
+  const entries = v.getUint32(4);
+  if (payload.length < 8 + entries * 8) return null;
+  let largest = 0;
+  for (let i = 0; i < entries; i += 1) {
+    const at = 12 + i * 8;
+    largest = Math.max(largest, signed ? v.getInt32(at) : v.getUint32(at));
+  }
+  return largest;
+}
+
+/** A track's composition offsets' largest, or 0 with none; null when repeated or cut short. */
+function offsetsLargest(tableParts: (Box & { body: Uint8Array })[]): number | null {
+  const offsets = tableParts.filter((b) => b.type === 'ctts');
+  if (offsets.length === 0) return 0;
+  const one = only(tableParts, 'ctts');
+  return one && largestOffset(one);
+}
+
 /** How many samples a sample size table holds; null if cut short. */
 function stszCount(payload: Uint8Array): number | null {
   return payload.length < 12 ? null : view(payload).getUint32(8);
@@ -154,9 +184,12 @@ function trackLengths(trak: Uint8Array, movieTimescale: number): number[] | null
   const samples = timing && sttsTotal(timing);
   const held = sizes && stszCount(sizes);
   const edits = parts && editsTotal(parts);
+  const shift = tableParts && offsetsLargest(tableParts);
   // The sample table must time exactly the samples the track holds, or a player may time the rest its own way.
   if (headerDuration === null || !mediaLength || !samples || held !== samples.count || edits === null) return null;
   const perMs = 1000 / mediaLength.timescale;
+  // Composition offsets move frames later than the sample table times them: more than a second is refused.
+  if (shift === null || shift * perMs > AGREE_MS) return null;
   const lengths = [(headerDuration * 1000) / movieTimescale, mediaLength.duration * perMs, samples.length * perMs];
   if (edits !== undefined) lengths.push((edits * 1000) / movieTimescale);
   return lengths;
@@ -173,7 +206,9 @@ function inMoov(moov: Uint8Array): number | null {
   const movieHeader = boxes && only(boxes, 'mvhd');
   const movie = movieHeader && scaled(movieHeader);
   // A fragmented movie (mvex) carries media outside these tables, so its length is not proven here.
-  if (!boxes || !movie || boxes.some((b) => b.type === 'mvex')) return null;
+  if (!boxes || !movie || boxes.some((b) => !MOVIE_BOXES.has(b.type))) return null;
+  // A movie with nothing to play proves no length (shyden-labs/shydesk#106).
+  if (!boxes.some((b) => b.type === 'trak')) return null;
   const movieMs = (movie.duration * 1000) / movie.timescale;
   const lengths = [movieMs];
   for (const trak of boxes.filter((b) => b.type === 'trak')) {

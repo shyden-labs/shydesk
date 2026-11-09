@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fillReplyBox, startBadge } from '../../public/desk.js';
+import { fillReplyBox, openFromButton, startBadge } from '../../public/desk.js';
 
 // The desk page's own script (shyden-labs/shydesk#24 AC4, AC5): the unread badge
 // asks every 30 s only while the tab is visible, and a canned reply fills the box.
@@ -120,5 +120,37 @@ describe('fillReplyBox', () => {
     const box = { value: 'typed', focus: () => undefined };
     fillReplyBox({ dataset: {} }, box);
     expect(box.value).toBe('');
+  });
+});
+
+// shyden-labs/shydesk#25: a preview opens the read-only viewer on its file,
+// with every file of the ticket in page order, each read from the desk.
+describe('the viewer buttons', () => {
+  const photo = { dataset: { id: 'a1', mime: 'image/jpeg' } };
+  const video = { dataset: { id: 'a/2', mime: 'video/mp4' } };
+  const buttons = [photo, video];
+  const body = { id: 'body' };
+  const doc = { body };
+
+  function viewer() {
+    const opened: { doc: unknown; host: unknown; start: number; items: { mime: string; load: () => Promise<string> }[] }[] = [];
+    return { opened, module: { openViewer: (options: (typeof opened)[number]) => opened.push(options) } };
+  }
+
+  it('opens the viewer on the pressed file, over the page', () => {
+    const v = viewer();
+    openFromButton(video, buttons, v.module, doc);
+    expect(v.opened).toHaveLength(1);
+    expect(v.opened[0]?.start).toBe(1);
+    expect(v.opened[0]?.host).toBe(body);
+    expect(v.opened[0]?.doc).toBe(doc);
+  });
+
+  it('gives it every file in page order, each read from the desk by its encoded id', async () => {
+    const v = viewer();
+    openFromButton(photo, buttons, v.module, doc);
+    const items = v.opened[0]?.items ?? [];
+    expect(items.map((item) => item.mime)).toEqual(['image/jpeg', 'video/mp4']);
+    expect(await Promise.all(items.map((item) => item.load()))).toEqual(['/desk/files/a1', '/desk/files/a%2F2']);
   });
 });

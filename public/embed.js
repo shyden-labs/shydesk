@@ -33,6 +33,7 @@
     ready: 'Ready to send',
     sending: 'Sending…',
     notSent: 'The request could not be sent. Try again.',
+    cannotOpen: 'The file viewer could not open. Try again.',
     fixFields: 'Check the fields marked below.',
     sent: 'Request sent. Keep this private link to follow it:',
     mailed: 'The same link is on its way by email.',
@@ -89,6 +90,7 @@
     :focus-visible { outline: 3px solid var(--shydesk-accent, #4b3fd8); outline-offset: 2px; }
     button { font: inherit; font-weight: 600; padding: 12px 16px; border: 0; border-radius: 8px; cursor: pointer; background: var(--shydesk-accent, #4b3fd8); color: var(--shydesk-accent-text, #ffffff); }
     button:disabled { opacity: 0.5; cursor: not-allowed; }
+    button.preview { padding: 0; background: none; border-radius: 4px; }
     .error { color: var(--shydesk-error, #b3261e); font-size: 0.9em; }
     .error:empty { display: none; }
     a { color: var(--shydesk-accent, #4b3fd8); overflow-wrap: anywhere; }
@@ -570,13 +572,15 @@
       const raw = /** @type {unknown} */ (await answer.json());
       const { ticket, messages } = /** @type {Thread} */ (raw);
       let previews = 0;
+      // Every stored file of the thread, in the order the previews show them: the viewer moves through these.
+      const stored = messages.flatMap((one) => one.attachments.filter((file) => !file.removed));
       into.replaceChildren(
         make('h2', {}, [ticket.subject]),
         ...messages.map((one) =>
           make('article', {}, [
             make('strong', {}, [one.author === 'staff' ? TEXT.staff : TEXT.customer]),
             make('p', { style: 'white-space: pre-wrap' }, [one.body]),
-            ...one.attachments.map((file) => this.attachmentLine(file, file.removed ? previews : ++previews)),
+            ...one.attachments.map((file) => this.attachmentLine(file, file.removed ? previews : ++previews, stored)),
           ]),
         ),
       );
@@ -587,10 +591,12 @@
      * A removed attachment's line, or the preview of a stored one.
      * @param {ThreadAttachment} file
      * @param {number} number its place among the previews, so each has its own name
+     * @param {ThreadAttachment[]} stored every stored file of the thread, which the viewer moves through
      */
-    attachmentLine(file, number) {
+    attachmentLine(file, number, stored) {
       if (file.removed) return make('p', {}, [TEXT.removed]);
       const name = file.mime.startsWith('video/') ? TEXT.video : TEXT.attachment;
+      const kind = file.mime.startsWith('video/') ? 'video' : 'photo';
       const picture = make('img', {
         alt: `${TEXT.preview} ${String(number)}`,
         width: '160',
@@ -606,7 +612,59 @@
         .catch(() => {
           picture.remove();
         });
-      return make('p', {}, [picture, make('br'), `${name}, ${String(Math.ceil(file.bytes / 1000))} KB`]);
+      // The preview opens the read-only viewer on this file (shyden-labs/shydesk#25).
+      const open = make('button', { type: 'button', class: 'preview', 'aria-label': `Open ${kind} ${String(number)}` }, [picture]);
+      open.addEventListener('click', () => {
+        void this.openViewer(stored, number - 1);
+      });
+      return make('p', {}, [open, make('br'), `${name}, ${String(Math.ceil(file.bytes / 1000))} KB`]);
+    }
+
+    /**
+     * Opens the viewer, loaded from ShyDesk on first use, on `stored[start]`.
+     * Each file is fetched with the ticket's token when it is first shown,
+     * since a plain image or video request cannot carry it, and its copy in
+     * the page is dropped when the viewer closes.
+     * @param {ThreadAttachment[]} stored
+     * @param {number} start
+     */
+    async openViewer(stored, start) {
+      let viewer;
+      try {
+        const loaded = /** @type {unknown} */ (await import(`${HOST}/embed-viewer.js`));
+        viewer = /** @type {typeof import('./embed-viewer.js')} */ (loaded);
+      } catch {
+        this.tell(TEXT.cannotOpen);
+        return;
+      }
+      /** @type {Map<string, Promise<string>>} */
+      const copies = new Map();
+      const load = (/** @type {string} */ id) => {
+        const known = copies.get(id);
+        if (known !== undefined) return known;
+        const copy = fetch(this.endpoint(`files/${encodeURIComponent(id)}`), { headers: this.ticketHeaders() }).then(async (answer) => {
+          if (!answer.ok) throw new Error(`file ${id}: ${String(answer.status)}`);
+          return URL.createObjectURL(await answer.blob());
+        });
+        copies.set(id, copy);
+        return copy;
+      };
+      viewer.openViewer({
+        doc: document,
+        host: this.shadow,
+        start,
+        items: stored.map((file) => ({ mime: file.mime, load: () => load(file.id) })),
+        onClose: () => {
+          for (const copy of copies.values()) {
+            void copy.then(
+              (address) => {
+                URL.revokeObjectURL(address);
+              },
+              () => undefined,
+            );
+          }
+        },
+      });
     }
 
     /**

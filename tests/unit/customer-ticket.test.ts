@@ -264,6 +264,13 @@ describe('fetching a file', () => {
     expect(response.headers.get('Content-Type')).toBe('image/jpeg');
     expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff');
     expect(response.headers.get('Cache-Control')).toBe('private, no-store');
+    // shyden-labs/shydesk#25 AC2: shown in the page, never offered as a download.
+    expect(response.headers.get('Content-Disposition')).toBe('inline');
+  });
+
+  it.each(['POST', 'PUT', 'PATCH', 'DELETE'])('has no %s route: nothing can change a file (shyden-labs/shydesk#25 AC2)', async (method) => {
+    const w = await world();
+    for (const path of ['/support-api/files/a1', '/support-api/files/a1/thumb']) expect((await w.call(path, { method })).status).toBe(404);
   });
 
   it.each(['/support-api/files/a1', '/support-api/files/a1/thumb'])('lets the product page read %s, naming its origin', async (path) => {

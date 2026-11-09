@@ -3,7 +3,7 @@
 // marking read, for staff with a row and for the first admin, who has none.
 import { beforeAll, describe, expect, inject, it } from 'vitest';
 import type { Staff } from '../../src/auth/staff.ts';
-import { getTicket, listTickets, markRead, unreadCount } from '../../src/desk/queries.ts';
+import { getFile, getTicket, listTickets, markRead, unreadCount } from '../../src/desk/queries.ts';
 import { saveProduct, saveStaff, saveTicketType, supportTypeId } from '../../src/products.ts';
 import { restD1 } from './d1.ts';
 
@@ -83,6 +83,39 @@ describe('getTicket', () => {
     expect((await getTicket(db, ['desk-a'], 'd-open-new'))?.ticket.subject).toBe('Subject d-open-new');
     expect(await getTicket(db, ['desk-a'], 'd-theirs')).toBeNull();
     expect(await getTicket(db, [], 'd-theirs')).toBeNull();
+  });
+});
+
+describe('getFile', () => {
+  // shyden-labs/shydesk#25 AC2: staff read a file only when it is stored on a ticket in their scope.
+  beforeAll(async () => {
+    const add = (id: string, productId: string, ticketId: string | null, state: string) =>
+      db
+        .prepare(
+          `INSERT INTO attachments (id, product_id, ticket_id, message_id, r2_key, thumb_key, mime, bytes, state, created_at)
+           VALUES (?, ?, ?, NULL, ?, ?, 'image/jpeg', 10, ?, 1000)`,
+        )
+        .bind(id, productId, ticketId, `key-${id}`, `thumb-${id}`, state)
+        .run();
+    await add('df-stored', 'desk-a', 'd-open-new', 'stored');
+    await add('df-deleted', 'desk-a', 'd-open-new', 'deleted');
+    await add('df-pending', 'desk-a', null, 'pending');
+    await add('df-theirs', 'desk-b', 'd-theirs', 'stored');
+  }, 60_000);
+
+  it('finds a stored file on a ticket in scope, with its keys and type', async () => {
+    expect(await getFile(db, ['desk-a'], 'df-stored')).toEqual({
+      r2_key: 'key-df-stored',
+      thumb_key: 'thumb-df-stored',
+      mime: 'image/jpeg',
+    });
+  });
+
+  it('finds nothing removed, still uploading, or on another product, nor anything for no products', async () => {
+    expect(await getFile(db, ['desk-a'], 'df-deleted')).toBeNull();
+    expect(await getFile(db, ['desk-a'], 'df-pending')).toBeNull();
+    expect(await getFile(db, ['desk-a'], 'df-theirs')).toBeNull();
+    expect(await getFile(db, [], 'df-stored')).toBeNull();
   });
 });
 
