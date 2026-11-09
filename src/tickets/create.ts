@@ -36,9 +36,9 @@ export const newToken = (): string => base64url(crypto.getRandomValues(new Uint8
 /** The customer's private link: the product's ticket page with the token in the fragment, so no server logs it. */
 export const ticketLink = (ticketPageUrl: string, token: string): string => `${ticketPageUrl}#t=${token}`;
 
-const USABLE = "product_id = ? AND state = 'stored' AND ticket_id IS NULL";
+export const USABLE = "product_id = ? AND state = 'stored' AND ticket_id IS NULL";
 
-async function refuseUnusable(db: D1Database, productId: string, ids: string[]): Promise<void> {
+export async function refuseUnusable(db: D1Database, productId: string, ids: string[]): Promise<void> {
   const marks = ids.map(() => '?').join(', ');
   const { results } = await db
     .prepare(`SELECT id FROM attachments WHERE id IN (${marks}) AND ${USABLE}`)

@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { demoPage, seedSql, shydeskOrigin, wranglerDevArgs, NON_PROD_SHYDESK } from '../../tests/e2e/harness/local-shydesk.ts';
+import { hashKey } from '../../src/products.ts';
+import {
+  demoPage,
+  seedSql,
+  shydeskOrigin,
+  wranglerDevArgs,
+  NON_PROD_SHYDESK,
+  SEEDED_TICKET_TOKEN,
+} from '../../tests/e2e/harness/local-shydesk.ts';
 
 // The e2e suite runs this branch's ShyDesk locally (shyden-labs/shydesk#19):
 // a demo product allowed on the suite's own origin, one allowed only
@@ -13,6 +21,12 @@ describe('shydeskOrigin', () => {
 
 describe('seedSql', () => {
   const sql = seedSql('http://localhost:8765');
+
+  it('seeds a ticket found by its token, holding a removed attachment', async () => {
+    expect(sql).toContain(`'${await hashKey(SEEDED_TICKET_TOKEN)}'`);
+    expect(sql).toMatch(/INSERT INTO attachments[^;]*'deleted'/);
+    expect(sql).not.toContain(SEEDED_TICKET_TOKEN);
+  });
 
   it('allows the demo product only on the suite origin, with its ticket page there', () => {
     expect(sql).toContain(`('demo', 'Demo', 'no-reply@example.com', 'http://localhost:8765/support/ticket', '["http://localhost:8765"]'`);

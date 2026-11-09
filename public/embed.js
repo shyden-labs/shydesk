@@ -41,6 +41,18 @@
     pick: 'Choose…',
     privateLink: 'Private link',
     status: 'Support status',
+    conversation: 'Conversation',
+    reply: 'Reply',
+    sendReply: 'Send reply',
+    replySent: 'Reply sent.',
+    notReplied: 'The reply could not be sent. Try again.',
+    linkInvalid: 'This link is no longer valid.',
+    removed: 'Attachment removed after 30 days.',
+    customer: 'You',
+    staff: 'Support',
+    attachment: 'Attachment',
+    video: 'Video',
+    preview: 'Attachment preview',
     attach: 'Photos and videos',
     attachments: 'Attachments',
     uploading: 'uploading…',
@@ -84,6 +96,9 @@
    * @typedef {{ id: string, name: string, fields: SupportField[] }} SupportType
    * @typedef {{ product: { id: string, name: string }, types: SupportType[], categories: string[], maxAttachments: number, maxVideoSeconds: number, turnstileSiteKey: string }} FormConfig
    * @typedef {{ render(target: HTMLElement, options: Record<string, unknown>): string, reset(widget: string): void }} TurnstileApi
+   * @typedef {{ id: string, mime: string, bytes: number, durationMs: number | null, removed: boolean }} ThreadAttachment
+   * @typedef {{ author: 'customer' | 'staff', body: string, createdAt: number, attachments: ThreadAttachment[] }} ThreadMessage
+   * @typedef {{ ticket: { subject: string, status: string, createdAt: number }, messages: ThreadMessage[] }} Thread
    * @typedef {{ ticketLink?: string, emailSent?: boolean, errors?: Record<string, string>, error?: string }} TicketAnswer
    */
 
@@ -147,13 +162,17 @@
       this.statusLine.textContent = line;
     }
 
-    /** @param {'config' | 'tickets'} route */
+    /** @param {string} route */
     endpoint(route) {
       return `${HOST}/support-api/${route}?product=${encodeURIComponent(this.getAttribute('product') ?? '')}`;
     }
 
     async load() {
       this.tell(TEXT.loading);
+      if (this.getAttribute('view') === 'ticket') {
+        await this.loadTicket();
+        return;
+      }
       /** @type {FormConfig} */
       let config;
       try {
@@ -270,12 +289,11 @@
       });
       const checkError = make('span', { class: 'error' });
       errorFor.set('turnstileToken', checkError);
-      const picker = /** @type {HTMLInputElement} */ (
-        make('input', { type: 'file', multiple: '', accept: 'image/*,video/*', slot: 'picker', 'aria-label': TEXT.attach })
-      );
       const pickerError = make('span', { class: 'error' });
       errorFor.set('attachmentIds', pickerError);
-      const attachments = make('div', { class: 'attachments', role: 'status', 'aria-live': 'polite', 'aria-label': TEXT.attachments });
+      const uploads = this.attachmentField(config, () => {
+        updateSend();
+      });
       const send = /** @type {HTMLButtonElement} */ (make('button', { type: 'submit', disabled: '' }, [TEXT.send]));
 
       const form = make('form', { class: 'panel', novalidate: '' }, [
@@ -289,7 +307,7 @@
           make('slot', { name: 'picker' }),
           pickerError,
         ]),
-        attachments,
+        uploads.lines,
         make('slot', { name: 'turnstile' }),
         checkError,
         send,
@@ -297,43 +315,13 @@
       this.shadow.insertBefore(form, this.statusLine);
       this.tell(TEXT.needsCheck);
 
-      /** The ids of the files fully uploaded, and how many are still on their way. */
-      const attachedIds = /** @type {string[]} */ ([]);
-      let uploading = 0;
       const updateSend = () => {
-        send.disabled = this.token === '' || uploading > 0;
+        send.disabled = this.token === '' || uploads.busy();
       };
-      /** One at a time, so a phone is never sending several large files at once. */
-      let queue = Promise.resolve();
-      /** One line per file, in a single text so the status reads the same on every browser. */
-      const lines = /** @type {string[]} */ ([]);
-      picker.addEventListener('change', () => {
-        for (const file of Array.from(picker.files ?? [])) {
-          const at = lines.length;
-          const say = (/** @type {string} */ words) => {
-            lines[at] = `${file.name}: ${words}`;
-            attachments.textContent = lines.join('\n');
-          };
-          say(TEXT.uploading);
-          uploading += 1;
-          updateSend();
-          queue = queue.then(async () => {
-            try {
-              await this.attach(file, config, attachedIds, say);
-            } catch (error) {
-              say(error instanceof Error ? error.message : TEXT.notUploaded);
-            }
-            uploading -= 1;
-            updateSend();
-            // Only once nothing still reads a picked file, so the same file can be picked again.
-            if (uploading === 0) picker.value = '';
-          });
-        }
-      });
 
       const holder = make('div', { slot: 'turnstile' });
       // In the light DOM too: WebDriver file input does not reach inside a shadow root on Safari (shyden-labs/shydesk#21).
-      this.append(holder, picker);
+      this.append(holder, uploads.picker);
       /** @type {string | undefined} */
       let widget;
       useTurnstile().then(
@@ -375,7 +363,7 @@
                 category: category.value,
                 message: message.value,
                 fields: Object.fromEntries(extras.map((x) => [x.label, x.control.value])),
-                attachmentIds: attachedIds,
+                attachmentIds: uploads.ids,
                 turnstileToken: this.token,
               }),
             });
@@ -387,7 +375,7 @@
           const raw = /** @type {unknown} */ (await answer.json().catch(() => ({})));
           const body = /** @type {TicketAnswer} */ (raw);
           if (answer.status === 201 && typeof body.ticketLink === 'string') {
-            picker.remove();
+            uploads.picker.remove();
             this.showLink(form, holder, body.ticketLink, body.emailSent === true);
             return;
           }
@@ -406,6 +394,194 @@
           }
         })();
       });
+    }
+
+    /**
+     * The file picker and the lines saying how each file is going. Files go one at a
+     * time, so a phone is never sending several large files at once.
+     * @param {FormConfig} config
+     * @param {() => void} changed called when an upload starts or ends
+     */
+    attachmentField(config, changed) {
+      const picker = /** @type {HTMLInputElement} */ (
+        make('input', { type: 'file', multiple: '', accept: 'image/*,video/*', slot: 'picker', 'aria-label': TEXT.attach })
+      );
+      const lines = make('div', { class: 'attachments', role: 'status', 'aria-live': 'polite', 'aria-label': TEXT.attachments });
+      /** The ids of the files fully uploaded. */
+      const ids = /** @type {string[]} */ ([]);
+      /** One line per file, in a single text so the status reads the same on every browser. */
+      const said = /** @type {string[]} */ ([]);
+      let uploading = 0;
+      let queue = Promise.resolve();
+      picker.addEventListener('change', () => {
+        for (const file of Array.from(picker.files ?? [])) {
+          const at = said.length;
+          const say = (/** @type {string} */ words) => {
+            said[at] = `${file.name}: ${words}`;
+            lines.textContent = said.join('\n');
+          };
+          say(TEXT.uploading);
+          uploading += 1;
+          changed();
+          queue = queue.then(async () => {
+            try {
+              await this.attach(file, config, ids, say);
+            } catch (error) {
+              say(error instanceof Error ? error.message : TEXT.notUploaded);
+            }
+            uploading -= 1;
+            changed();
+            // Only once nothing still reads a picked file, so the same file can be picked again.
+            if (uploading === 0) picker.value = '';
+          });
+        }
+      });
+      return {
+        picker,
+        lines,
+        ids,
+        busy: () => uploading > 0,
+        clear: () => {
+          ids.length = 0;
+          said.length = 0;
+          lines.textContent = '';
+        },
+      };
+    }
+
+    /** The header carrying the link's token: it goes in no URL, so no server log holds it. */
+    ticketHeaders() {
+      return { Authorization: `Ticket ${new URLSearchParams(location.hash.slice(1)).get('t') ?? ''}` };
+    }
+
+    /** The private link's conversation, with the box to answer in. */
+    async loadTicket() {
+      const thread = make('div', { class: 'panel', role: 'log', 'aria-label': TEXT.conversation });
+      if (!(await this.showThread(thread))) return;
+      /** @type {FormConfig} */
+      let config;
+      try {
+        const answer = await fetch(this.endpoint('config'));
+        if (!answer.ok) throw new Error(`config answered ${String(answer.status)}`);
+        const raw = /** @type {unknown} */ (await answer.json());
+        config = /** @type {FormConfig} */ (raw);
+      } catch {
+        this.tell(TEXT.cannotLoad);
+        return;
+      }
+      const box = make('textarea', { 'aria-label': TEXT.reply, required: '' });
+      const message = /** @type {HTMLTextAreaElement} */ (box);
+      const send = /** @type {HTMLButtonElement} */ (make('button', { type: 'submit' }, [TEXT.sendReply]));
+      const uploads = this.attachmentField(config, () => {
+        send.disabled = uploads.busy();
+      });
+      const form = make('form', { class: 'panel' }, [
+        box,
+        make('div', { class: 'field' }, [make('span', { class: 'picker-name' }, [TEXT.attach]), make('slot', { name: 'picker' })]),
+        uploads.lines,
+        send,
+      ]);
+      form.addEventListener('submit', (event) => {
+        event.preventDefault();
+        void (async () => {
+          send.disabled = true;
+          this.tell(TEXT.sending);
+          const said = await this.sendReply(message.value, uploads.ids);
+          send.disabled = false;
+          if (said !== null) {
+            this.tell(said);
+            return;
+          }
+          message.value = '';
+          uploads.clear();
+          await this.showThread(thread);
+          this.tell(TEXT.replySent);
+        })();
+      });
+      // In the light DOM, as on the contact form: WebDriver file input does not reach inside a shadow root on Safari.
+      this.append(uploads.picker);
+      this.shadow.insertBefore(thread, this.statusLine);
+      this.shadow.insertBefore(form, this.statusLine);
+      this.tell('');
+    }
+
+    /**
+     * Sends one reply; null when it went, or the line saying why it did not.
+     * @param {string} words
+     * @param {string[]} attachmentIds
+     * @returns {Promise<string | null>}
+     */
+    async sendReply(words, attachmentIds) {
+      try {
+        const answer = await fetch(this.endpoint('ticket/reply'), {
+          method: 'POST',
+          headers: { ...this.ticketHeaders(), 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: words, attachmentIds }),
+        });
+        if (answer.status === 201) return null;
+        const raw = /** @type {unknown} */ (await answer.json().catch(() => ({})));
+        return /** @type {{ error?: string }} */ (raw).error ?? TEXT.notReplied;
+      } catch {
+        return TEXT.notReplied;
+      }
+    }
+
+    /**
+     * Draws the thread into `into`; false, having said why, if it cannot be read.
+     * @param {HTMLElement} into
+     * @returns {Promise<boolean>}
+     */
+    async showThread(into) {
+      /** @type {Response} */
+      let answer;
+      try {
+        answer = await fetch(this.endpoint('ticket'), { headers: this.ticketHeaders() });
+      } catch {
+        this.tell(TEXT.cannotLoad);
+        return false;
+      }
+      if (answer.status === 404) {
+        this.tell(TEXT.linkInvalid);
+        return false;
+      }
+      if (!answer.ok) {
+        this.tell(TEXT.cannotLoad);
+        return false;
+      }
+      const raw = /** @type {unknown} */ (await answer.json());
+      const { ticket, messages } = /** @type {Thread} */ (raw);
+      into.replaceChildren(
+        make('h2', {}, [ticket.subject]),
+        ...messages.map((one) =>
+          make('article', {}, [
+            make('strong', {}, [one.author === 'staff' ? TEXT.staff : TEXT.customer]),
+            make('p', { style: 'white-space: pre-wrap' }, [one.body]),
+            ...one.attachments.map((file) => this.attachmentLine(file)),
+          ]),
+        ),
+      );
+      return true;
+    }
+
+    /**
+     * A removed attachment's line, or the preview of a stored one.
+     * @param {ThreadAttachment} file
+     */
+    attachmentLine(file) {
+      if (file.removed) return make('p', {}, [TEXT.removed]);
+      const name = file.mime.startsWith('video/') ? TEXT.video : TEXT.attachment;
+      const picture = make('img', { alt: '', width: '160', 'aria-label': TEXT.preview });
+      // A plain image request cannot carry the token, so the preview comes through fetch.
+      void fetch(this.endpoint(`files/${encodeURIComponent(file.id)}/thumb`), { headers: this.ticketHeaders() })
+        .then((answer) => (answer.ok ? answer.blob() : null))
+        .then((blob) => {
+          if (blob === null) picture.remove();
+          else picture.setAttribute('src', URL.createObjectURL(blob));
+        })
+        .catch(() => {
+          picture.remove();
+        });
+      return make('p', {}, [picture, make('br'), `${name}, ${String(Math.ceil(file.bytes / 1000))} KB`]);
     }
 
     /**

@@ -4,6 +4,7 @@ import { docsRoutes, type DocsEnv } from './api/docs.ts';
 import { apiRoutes } from './api/routes.ts';
 import { contactRoutes, type ContactBindings } from './customer/contact.ts';
 import { embedRoutes, type EmbedEnv } from './customer/embed.ts';
+import { ticketRoutes } from './customer/ticket.ts';
 import type { Deliver } from './mail/notify.ts';
 import { uploadRoutes, type UploadBindings } from './uploads/routes.ts';
 
@@ -33,6 +34,7 @@ app.route('/', apiRoutes());
 app.route('/', docsRoutes());
 // Before contact: its origin check covers all of /support-api, and this answers first with its own.
 app.route('/', uploadRoutes());
+app.route('/', ticketRoutes());
 app.route('/', contactRoutes({ fetcher: fetch.bind(globalThis), deliver: noSmtpYet }));
 app.route('/', embedRoutes());
 

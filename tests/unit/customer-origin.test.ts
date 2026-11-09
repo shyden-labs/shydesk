@@ -53,7 +53,7 @@ describe('requireProductOrigin', () => {
     expect(response.status).toBe(204);
     expect(response.headers.get('Access-Control-Allow-Origin')).toBe('https://shytalk.app');
     expect(response.headers.get('Access-Control-Allow-Methods')).toBe('GET, POST, PUT');
-    expect(response.headers.get('Access-Control-Allow-Headers')).toBe('Content-Type');
+    expect(response.headers.get('Access-Control-Allow-Headers')).toBe('Content-Type, Authorization');
     expect(response.headers.get('Vary')).toBe('Origin');
   });
 

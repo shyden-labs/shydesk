@@ -6,6 +6,7 @@
 export const MESSAGES = {
   badRequest: 'The request could not be read. Reload the page and try again.',
   notFound: 'Not found.',
+  linkInvalid: 'This link is no longer valid.',
   emailInvalid: 'Enter a valid email address.',
   subjectRequired: 'Enter a subject.',
   subjectTooLong: 'Keep the subject to 150 characters.',

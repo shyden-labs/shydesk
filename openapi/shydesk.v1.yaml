@@ -160,6 +160,88 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /support-api/ticket:
+    get:
+      operationId: readSupportTicket
+      summary: The conversation on a private link.
+      description: >-
+        Opened by the token in the link's fragment, sent only in the
+        `Authorization` header as `Ticket <token>`. Names no staff member.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/ProductQuery'
+      responses:
+        '200':
+          description: The ticket and its messages, with attachments marked when removed.
+        '404':
+          description: The link is no longer valid, or belongs to another product.
+  /support-api/ticket/reply:
+    post:
+      operationId: replyToSupportTicket
+      summary: A reply from the private link, which leaves the ticket open.
+      description: At most 20 replies per network address per hour.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/ProductQuery'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [message]
+              properties:
+                message:
+                  type: string
+                  maxLength: 10000
+                attachmentIds:
+                  type: array
+                  maxItems: 10
+                  items:
+                    type: string
+      responses:
+        '201':
+          description: The reply was saved.
+        '400':
+          description: The reply could not be used; the answer says why.
+        '404':
+          description: The link is no longer valid, or belongs to another product.
+        '429':
+          description: Too many replies for now.
+  /support-api/files/{id}:
+    get:
+      operationId: readSupportFile
+      summary: A stored attachment of the link's own ticket.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/ProductQuery'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The file, private and never cached.
+        '404':
+          description: No such stored attachment on this ticket.
+  /support-api/files/{id}/thumb:
+    get:
+      operationId: readSupportFileThumbnail
+      summary: The preview of a stored attachment of the link's own ticket.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/ProductQuery'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The preview, private and never cached.
+        '404':
+          description: No such preview on this ticket.
   /support-api/uploads:
     post:
       operationId: startUpload
