@@ -68,6 +68,12 @@ describe('the shared piece', () => {
     expect(readFileSync(join(dir, 'embed-media.js')).equals(readFileSync(join(ROOT, 'public/embed-media.js')))).toBe(true);
   });
 
+  it('copies the viewer unchanged to <out>/embed-viewer.js (shyden-labs/shydesk#25)', () => {
+    const dir = out();
+    buildApiDocs(ROOT, dir);
+    expect(readFileSync(join(dir, 'embed-viewer.js')).equals(readFileSync(join(ROOT, 'public/embed-viewer.js')))).toBe(true);
+  });
+
   it('is copied unchanged to <out>/embed.js', () => {
     const dir = out();
     buildApiDocs(ROOT, dir);

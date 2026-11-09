@@ -6,6 +6,7 @@
  */
 
 const EVERY_MS = 30_000;
+const VIEWER = '/embed-viewer.js';
 
 /**
  * @param {{ textContent: string | null }} badge
@@ -53,6 +54,26 @@ export function fillReplyBox(button, box) {
   box.focus();
 }
 
+/**
+ * Opens the read-only viewer (shyden-labs/shydesk#25) on the pressed preview's
+ * file, with every file of the ticket in page order, each read from the desk.
+ * @param {{ dataset: Record<string, string | undefined> }} button
+ * @param {{ dataset: Record<string, string | undefined> }[]} buttons
+ * @param {{ openViewer: (options: { doc: never, host: never, start: number, items: { mime: string, load: () => Promise<string> }[] }) => unknown }} viewer
+ * @param {{ body: unknown }} doc
+ */
+export function openFromButton(button, buttons, viewer, doc) {
+  viewer.openViewer({
+    doc: /** @type {never} */ (doc),
+    host: /** @type {never} */ (doc.body),
+    start: buttons.indexOf(button),
+    items: buttons.map((one) => ({
+      mime: one.dataset.mime ?? '',
+      load: () => Promise.resolve(`/desk/files/${encodeURIComponent(one.dataset.id ?? '')}`),
+    })),
+  });
+}
+
 if (typeof document !== 'undefined') {
   const badge = document.querySelector('[data-unread]');
   if (badge !== null)
@@ -64,5 +85,17 @@ if (typeof document !== 'undefined') {
         fillReplyBox(/** @type {HTMLButtonElement} */ (button), box);
       });
     }
+  }
+  const previews = /** @type {HTMLButtonElement[]} */ ([...document.querySelectorAll('button[data-view]')]);
+  for (const button of previews) {
+    button.addEventListener('click', () => {
+      // The same file the piece imports, fetched by the browser from this origin when first needed. Nothing
+      // bundles this script (it ships as written), so the unit runner is told not to follow the path.
+      void (
+        /** @type {Promise<unknown>} */ (import(/* @vite-ignore */ VIEWER)).then((viewer) => {
+          openFromButton(button, previews, /** @type {never} */ (viewer), document);
+        })
+      );
+    });
   }
 }

@@ -1,4 +1,4 @@
-import type { Fetcher } from '@cloudflare/workers-types';
+import type { Fetcher, R2Bucket } from '@cloudflare/workers-types';
 import { Hono, type Context } from 'hono';
 import { csrf } from 'hono/csrf';
 import type { JWTVerifyGetKey } from 'jose';
@@ -8,7 +8,8 @@ import { getProduct, listCanned, listProducts, type Canned } from '../products.t
 import { ticketLink } from '../tickets/create.ts';
 import { openToken } from '../tickets/seal.ts';
 import { changeStatus, type TimerEnv } from '../tickets/status.ts';
-import { getTicket, listTickets, markRead, unreadCount, type DeskTicket } from './queries.ts';
+import { streamFile } from '../uploads/serve.ts';
+import { getFile, getTicket, listTickets, markRead, unreadCount, type DeskTicket } from './queries.ts';
 import { listPage, ticketPage } from './views.ts';
 
 /**
@@ -20,6 +21,7 @@ import { listPage, ticketPage } from './views.ts';
 
 export interface DeskBindings extends StaffEnv, TimerEnv, MailEnv {
   ASSETS: Fetcher;
+  FILES: R2Bucket;
   TICKET_TOKEN_KEY?: string;
 }
 
@@ -127,6 +129,19 @@ export function deskRoutes(deps: DeskDeps, jwks?: JWTVerifyGetKey): Hono<DeskEnv
     await changeStatus(c.env, ticket.id, 'waiting', now);
     const mail = await notifyCustomer(c, deps.deliver, ticket, now);
     return c.redirect(`/desk/tickets/${ticket.id}?mail=${mail}`, 303);
+  });
+
+  // Read only (shyden-labs/shydesk#25 AC2): no route here or anywhere changes a stored file.
+  app.get('/desk/files/:id', async (c) => {
+    const file = await getFile(c.env.DB, c.var.staff.products, c.req.param('id'));
+    const served = file === null ? null : await streamFile(c, c.env.FILES, file.r2_key, file.mime);
+    return served ?? c.notFound();
+  });
+
+  app.get('/desk/files/:id/thumb', async (c) => {
+    const file = await getFile(c.env.DB, c.var.staff.products, c.req.param('id'));
+    const served = file === null ? null : await streamFile(c, c.env.FILES, file.thumb_key);
+    return served ?? c.notFound();
   });
 
   app.post('/desk/tickets/:id/close', async (c) => {

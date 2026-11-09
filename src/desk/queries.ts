@@ -1,5 +1,6 @@
 import type { D1Database } from '@cloudflare/workers-types';
 import type { Staff } from '../auth/staff.ts';
+import type { StoredFile } from '../uploads/serve.ts';
 
 /**
  * What the staff desk reads and marks (shyden-labs/shydesk#24; plan Task 10).
@@ -97,6 +98,18 @@ export async function getTicket(
     .bind(id)
     .all<DeskAttachment>();
   return { ticket, messages, attachments };
+}
+
+/** A stored attachment on a ticket in scope, or null (shyden-labs/shydesk#25). */
+export async function getFile(db: D1Database, products: string[], id: string): Promise<StoredFile | null> {
+  if (products.length === 0) return null;
+  return db
+    .prepare(
+      `SELECT a.r2_key, a.thumb_key, a.mime FROM attachments a JOIN tickets t ON t.id = a.ticket_id
+       WHERE a.id = ? AND a.state = 'stored' AND t.product_id IN (${marks(products)})`,
+    )
+    .bind(id, ...products)
+    .first<StoredFile>();
 }
 
 /** Tickets waiting on staff, in scope, that changed since this person last opened them. */

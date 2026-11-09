@@ -5,6 +5,7 @@ import { hit } from '../limits.ts';
 import { hashKey } from '../products.ts';
 import { AttachmentError, refuseUnusable, USABLE } from '../tickets/create.ts';
 import { changeStatus, type TimerEnv } from '../tickets/status.ts';
+import { streamFile, type StoredFile } from '../uploads/serve.ts';
 import type { Product } from '../products.ts';
 import { MESSAGES } from './messages.ts';
 import { requireProductOrigin } from './origin.ts';
@@ -49,12 +50,6 @@ interface AttachmentRow {
   bytes: number;
   duration_ms: number | null;
   state: string;
-}
-
-interface FileRow {
-  r2_key: string;
-  thumb_key: string | null;
-  mime: string;
 }
 
 interface Reply {
@@ -112,27 +107,13 @@ async function saveReply(c: TicketContext, ticketId: string, reply: Reply, now: 
   await db.batch(statements);
 }
 
-/** Streams the object at `key`, private to this page and never sniffed; 404 if it has gone. */
-async function streamFile(c: TicketContext, key: string | null, mime?: string): Promise<Response> {
-  const object = key === null ? null : await c.env.FILES.get(key);
-  if (object === null) return c.json({ error: MESSAGES.notFound }, 404);
-  // A preview is a JPEG or a WebP: the type it was stored with says which.
-  const type = mime ?? object.httpMetadata?.contentType ?? 'image/jpeg';
-  // Through the context, so the origin check's CORS headers stay on the answer.
-  return c.body(object.body as unknown as ReadableStream, 200, {
-    'Content-Type': type,
-    'Cache-Control': 'private, no-store',
-    'X-Content-Type-Options': 'nosniff',
-  });
-}
-
 /** The attachment `:id` when it is stored on the token's own ticket, or null. */
-async function fileOfTicket(c: TicketContext, id: string): Promise<FileRow | null> {
+async function fileOfTicket(c: TicketContext, id: string): Promise<StoredFile | null> {
   const ticket = await openTicket(c);
   if (ticket === null) return null;
   return c.env.DB.prepare("SELECT r2_key, thumb_key, mime FROM attachments WHERE id = ? AND ticket_id = ? AND state = 'stored'")
     .bind(id, ticket.id)
-    .first<FileRow>();
+    .first<StoredFile>();
 }
 
 export function ticketRoutes(): Hono<TicketEnv> {
@@ -199,14 +180,14 @@ export function ticketRoutes(): Hono<TicketEnv> {
 
   routes.get('/support-api/files/:id', async (c) => {
     const file = await fileOfTicket(c, c.req.param('id'));
-    if (file === null) return c.json({ error: MESSAGES.notFound }, 404);
-    return streamFile(c, file.r2_key, file.mime);
+    const served = file === null ? null : await streamFile(c, c.env.FILES, file.r2_key, file.mime);
+    return served ?? c.json({ error: MESSAGES.notFound }, 404);
   });
 
   routes.get('/support-api/files/:id/thumb', async (c) => {
     const file = await fileOfTicket(c, c.req.param('id'));
-    if (file === null) return c.json({ error: MESSAGES.notFound }, 404);
-    return streamFile(c, file.thumb_key);
+    const served = file === null ? null : await streamFile(c, c.env.FILES, file.thumb_key);
+    return served ?? c.json({ error: MESSAGES.notFound }, 404);
   });
 
   return routes;

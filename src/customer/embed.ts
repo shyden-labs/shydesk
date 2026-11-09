@@ -34,5 +34,7 @@ export function embedRoutes(): Hono<{ Bindings: EmbedEnv }> {
   };
   routes.get('/embed-media.js', serveImported);
   routes.get('/embed-video.js', serveImported);
+  // The read-only media viewer (shyden-labs/shydesk#25), imported on the first preview opened.
+  routes.get('/embed-viewer.js', serveImported);
   return routes;
 }

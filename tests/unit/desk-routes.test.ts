@@ -66,6 +66,11 @@ interface World {
   mailShareUsed?: boolean;
   noTokenKey?: boolean;
   productGone?: boolean;
+  /** Rows the scoped file lookup answers; none means out of scope or not stored. */
+  files?: Record<string, unknown>[];
+  /** The stored bytes by key, with the type each was stored with. */
+  objects?: Record<string, { body: string; type?: string }>;
+  attachments?: Record<string, unknown>[];
 }
 
 function setup(w: World = {}) {
@@ -105,8 +110,9 @@ function setup(w: World = {}) {
         { id: 'm2', author: 'staff', staff_email: REP, body: 'On it', created_at: 6 },
       ];
     }
+    if (/FROM attachments a JOIN tickets/.test(sql)) return w.files ?? [{ r2_key: 'key-a2', thumb_key: 'thumb-a2', mime: 'video/mp4' }];
     if (/FROM attachments/.test(sql))
-      return [{ id: 'a1', message_id: 'm1', mime: 'image/jpeg', bytes: 2000, duration_ms: null, state: 'deleted' }];
+      return w.attachments ?? [{ id: 'a1', message_id: 'm1', mime: 'image/jpeg', bytes: 2000, duration_ms: null, state: 'deleted' }];
     if (/FROM tickets/.test(sql)) return tickets;
     return [];
   });
@@ -127,6 +133,14 @@ function setup(w: World = {}) {
     TICKET_TIMER,
     SMTP_LOGINS: JSON.stringify({ 'no-reply@shytalk.example': { user: 'u', pass: 'p' } }),
     ...(w.noTokenKey === true ? {} : { TICKET_TOKEN_KEY: KEY }),
+    FILES: {
+      get: (key: string) => {
+        const object = (w.objects ?? { 'key-a2': { body: 'video bytes' }, 'thumb-a2': { body: 'small', type: 'image/webp' } })[key];
+        return Promise.resolve(
+          object === undefined ? null : { body: new Response(object.body).body, httpMetadata: { contentType: object.type } },
+        );
+      },
+    },
     ASSETS: { fetch: () => Promise.resolve(new Response('/* desk */', { headers: { 'Content-Type': 'text/javascript' } })) },
   } as unknown as DeskBindings;
   const app = deskRoutes(
@@ -139,7 +153,8 @@ function setup(w: World = {}) {
     },
     jwks,
   );
-  const get = async (path: string, who = REP) => app.request(path, { headers: { 'Cf-Access-Jwt-Assertion': await sign(who) } }, env);
+  const get = async (path: string, who = REP, method = 'GET') =>
+    app.request(path, { method, headers: { 'Cf-Access-Jwt-Assertion': await sign(who), Origin: ORIGIN } }, env);
   const post = async (path: string, form: Record<string, string> = {}, who = REP, origin = ORIGIN) =>
     app.request(
       path,
@@ -278,6 +293,99 @@ describe('the ticket view', () => {
 
   it('says when a reply was empty', async () => {
     expect(await (await setup().get('/desk/tickets/t1?error=empty')).text()).toContain('Enter a reply.');
+  });
+});
+
+describe('the ticket view, attachments', () => {
+  const stored = [
+    { id: 'a1', message_id: 'm1', mime: 'image/jpeg', bytes: 2000, duration_ms: null, state: 'stored' },
+    { id: 'a2', message_id: 'm1', mime: 'video/mp4', bytes: 9000, duration_ms: 65_000, state: 'stored' },
+    { id: 'a3', message_id: 'm2', mime: 'image/png', bytes: 1000, duration_ms: null, state: 'deleted' },
+  ];
+
+  it('shows each stored attachment as a preview that opens the viewer, numbered across the ticket', async () => {
+    const page = await (await setup({ attachments: stored }).get('/desk/tickets/t1')).text();
+    expect(page).toContain('<button type="button" data-view data-id="a1" data-mime="image/jpeg" aria-label="Open photo 1">');
+    expect(page).toContain('<img src="/desk/files/a1/thumb" alt="Photo 1 preview"');
+    expect(page).toContain('<button type="button" data-view data-id="a2" data-mime="video/mp4" aria-label="Open video 2">');
+    expect(page).toContain('<img src="/desk/files/a2/thumb" alt="Video 2 preview"');
+  });
+
+  it('gives a video its length as m:ss', async () => {
+    const page = await (await setup({ attachments: stored }).get('/desk/tickets/t1')).text();
+    expect(page).toContain('Video 2, 1:05, 9 KB');
+    expect(page).toContain('Photo 1, 2 KB');
+  });
+
+  it('shows a removed attachment as a line, not a preview', async () => {
+    const page = await (await setup({ attachments: stored }).get('/desk/tickets/t1')).text();
+    expect(page).toContain('<li>Attachment removed</li>');
+    expect(page).not.toContain('a3');
+  });
+});
+
+describe('opening a file', () => {
+  it('streams a stored attachment of a ticket in scope inline, with its type, private and never sniffed', async () => {
+    const response = await setup().get('/desk/files/a2');
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe('video bytes');
+    expect(response.headers.get('Content-Type')).toBe('video/mp4');
+    expect(response.headers.get('Content-Disposition')).toBe('inline');
+    expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff');
+    expect(response.headers.get('Cache-Control')).toBe('private, no-store');
+    // Opened on its own, the file runs nothing and reaches nothing (defence in depth: uploads take JPEG, WebP and MP4 only).
+    expect(response.headers.get('Content-Security-Policy')).toBe("default-src 'none'; sandbox");
+  });
+
+  it('never shows inline a type outside JPEG, WebP and MP4: it downloads as plain bytes', async () => {
+    const w = setup({ files: [{ r2_key: 'key-a2', thumb_key: 'thumb-a2', mime: 'text/html' }] });
+    const response = await w.get('/desk/files/a2');
+    expect(response.headers.get('Content-Type')).toBe('application/octet-stream');
+    expect(response.headers.get('Content-Disposition')).toBe('attachment');
+  });
+
+  it('never shows inline a preview stored as another type', async () => {
+    const w = setup({ objects: { 'thumb-a2': { body: '<svg/>', type: 'image/svg+xml' } } });
+    const response = await w.get('/desk/files/a2/thumb');
+    expect(response.headers.get('Content-Type')).toBe('application/octet-stream');
+    expect(response.headers.get('Content-Disposition')).toBe('attachment');
+  });
+
+  it('streams its preview with the type it was stored with, inline', async () => {
+    const response = await setup().get('/desk/files/a2/thumb');
+    expect(await response.text()).toBe('small');
+    expect(response.headers.get('Content-Type')).toBe('image/webp');
+    expect(response.headers.get('Content-Disposition')).toBe('inline');
+  });
+
+  it("asks for the file among the rep's own products only", async () => {
+    const w = setup();
+    await w.get('/desk/files/a2');
+    const [lookup] = named(w.statements, 'FROM attachments a JOIN tickets');
+    expect(lookup?.values).toEqual(['a2', 'shytalk']);
+  });
+
+  it.each(['/desk/files/a2', '/desk/files/a2/thumb'])('is 404 at %s for a file out of scope or not stored', async (path) => {
+    expect((await setup({ files: [] }).get(path)).status).toBe(404);
+  });
+
+  it('is 404 when the stored bytes have gone', async () => {
+    expect((await setup({ objects: {} }).get('/desk/files/a2')).status).toBe(404);
+  });
+
+  it('is 404 for the preview of an attachment that has none', async () => {
+    const w = setup({ files: [{ r2_key: 'key-a2', thumb_key: null, mime: 'video/mp4' }] });
+    expect((await w.get('/desk/files/a2/thumb')).status).toBe(404);
+  });
+
+  it('is 401 with no Access token', async () => {
+    const w = setup();
+    expect((await w.app.request('/desk/files/a2', {}, w.env)).status).toBe(401);
+  });
+
+  it.each(['POST', 'PUT', 'PATCH', 'DELETE'])('has no %s route: nothing can change a file', async (method) => {
+    const w = setup();
+    for (const path of ['/desk/files/a2', '/desk/files/a2/thumb']) expect((await w.get(path, ADMIN, method)).status).toBe(404);
   });
 });
 
