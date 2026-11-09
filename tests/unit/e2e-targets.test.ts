@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  desktopFilePath,
   capabilitiesFor,
   nativeFinder,
   pickerItem,
@@ -597,5 +598,17 @@ describe('drawnAt', () => {
 
   it('does not match a button beside it', () => {
     expect(drawnAt({ x: 16, y: 16, width: 91, height: 48 }, { x: 120, y: 16, width: 91, height: 48 })).toBe(false);
+  });
+});
+
+describe('desktopFilePath', () => {
+  const fixture = '/repo/tests/fixtures/media/photo.jpg';
+
+  it.each(['chromium', 'firefox'] as const)('gives %s the fixture where it is', (target) => {
+    expect(desktopFilePath(target, fixture, '/Users/runner')).toBe(fixture);
+  });
+
+  it('gives Safari a copy in its own cache folder, the only kind of place it can read a WebDriver file from (measured, shyden-labs/shydesk#21)', () => {
+    expect(desktopFilePath('safari', fixture, '/Users/runner')).toBe('/Users/runner/Library/Caches/com.apple.Safari/photo.jpg');
   });
 });

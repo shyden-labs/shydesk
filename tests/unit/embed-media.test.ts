@@ -213,11 +213,13 @@ describe('shrinkVideo', () => {
   function videoTools({
     isValid = true,
     discardedTracks = [],
+    discardedOnce = [],
     track = bigTrack,
     execute = () => Promise.resolve(),
   }: {
     isValid?: boolean;
     discardedTracks?: { reason: string }[];
+    discardedOnce?: { reason: string }[];
     track?: typeof bigTrack | null;
     execute?: () => Promise<void>;
   } = {}) {
@@ -242,7 +244,12 @@ describe('shrinkVideo', () => {
       Conversion: {
         init: (options: Options) => {
           asked.push(options);
-          return Promise.resolve({ isValid, discardedTracks, execute, cancel });
+          return Promise.resolve({
+            isValid,
+            discardedTracks: asked.length === 1 ? [...discardedOnce, ...discardedTracks] : discardedTracks,
+            execute,
+            cancel,
+          });
         },
       },
     };
@@ -292,7 +299,16 @@ describe('shrinkVideo', () => {
     expect(execute).not.toHaveBeenCalled();
   });
 
-  it('gives nothing rather than lose the sound when this browser cannot encode it', async () => {
+  it('keeps the original sound and still shrinks the picture when this browser cannot encode AAC, as Firefox cannot', async () => {
+    const execute = vi.fn(() => Promise.resolve());
+    const { asked, load } = videoTools({ discardedOnce: [{ reason: 'no_encodable_target_codec' }], execute });
+    const shrunk = await shrinkVideo(file, load);
+    expect(asked.map((options) => options.audio)).toEqual([{ codec: 'aac', bitrate: 128_000 }, { codec: 'aac' }]);
+    expect(execute).toHaveBeenCalledOnce();
+    expect(shrunk?.type).toBe('video/mp4');
+  });
+
+  it('gives nothing rather than lose the sound when this browser can neither encode nor keep it', async () => {
     const execute = vi.fn(() => Promise.resolve());
     const { load } = videoTools({ discardedTracks: [{ reason: 'no_encodable_target_codec' }], execute });
     expect(await shrinkVideo(file, load)).toBeNull();

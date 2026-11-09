@@ -131,36 +131,39 @@ export async function shrinkVideo(file, load = loadVideoTools) {
   let timer;
   try {
     const { ALL_FORMATS, BlobSource, BufferTarget, Conversion, Input, Mp4OutputFormat, Output } = await load();
-    const input = new Input({ source: new BlobSource(file), formats: ALL_FORMATS });
-    const track = await input.getPrimaryVideoTrack();
+    const track = await new Input({ source: new BlobSource(file), formats: ALL_FORMATS }).getPrimaryVideoTrack();
     if (track === null) return null;
     const { averagePacketRate } = await track.computePacketStats(PACKETS_TO_MEASURE);
     const plan = planVideo(await track.getDisplayWidth(), await track.getDisplayHeight(), averagePacketRate);
-    const target = new BufferTarget();
-    const conversion = await Conversion.init({
-      input,
-      output: new Output({ format: new Mp4OutputFormat(), target }),
-      video: {
-        width: plan.w,
-        height: plan.h,
-        fit: 'contain',
-        frameRate: plan.fps,
-        codec: 'avc',
-        bitrate: plan.bitrate,
-        forceTranscode: true,
-      },
-      audio: { codec: 'aac', bitrate: AUDIO_BITRATE },
-      showWarnings: false,
-    });
-    if (!conversion.isValid || conversion.discardedTracks.length > 0) return null;
-    const stopped = new Promise((_, reject) => {
-      timer = setTimeout(() => {
-        void conversion.cancel();
-        reject(new Error('the video took too long to shrink'));
-      }, VIDEO_WAIT_MS);
-    });
-    await Promise.race([conversion.execute(), stopped]);
-    return target.buffer === null ? null : new Blob([target.buffer], { type: 'video/mp4' });
+    // AAC at the planned rate, or the sound as it is where this browser cannot encode AAC (Firefox).
+    for (const audio of [{ codec: 'aac', bitrate: AUDIO_BITRATE }, { codec: 'aac' }]) {
+      const target = new BufferTarget();
+      const conversion = await Conversion.init({
+        input: new Input({ source: new BlobSource(file), formats: ALL_FORMATS }),
+        output: new Output({ format: new Mp4OutputFormat(), target }),
+        video: {
+          width: plan.w,
+          height: plan.h,
+          fit: 'contain',
+          frameRate: plan.fps,
+          codec: 'avc',
+          bitrate: plan.bitrate,
+          forceTranscode: true,
+        },
+        audio,
+        showWarnings: false,
+      });
+      if (!conversion.isValid || conversion.discardedTracks.length > 0) continue;
+      const stopped = new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          void conversion.cancel();
+          reject(new Error('the video took too long to shrink'));
+        }, VIDEO_WAIT_MS);
+      });
+      await Promise.race([conversion.execute(), stopped]);
+      return target.buffer === null ? null : new Blob([target.buffer], { type: 'video/mp4' });
+    }
+    return null;
   } catch {
     return null;
   } finally {
