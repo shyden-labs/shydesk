@@ -10,7 +10,7 @@ import { describe, it } from 'mocha';
 import { strict as assert } from 'node:assert';
 import { driver } from './harness/driver.ts';
 import { named } from './harness/find.ts';
-import { pickFile, tap, tapToNewPage, type } from './harness/input.ts';
+import { pickFile, press, swipeLeft, tap, tapToNewPage, type, zoomIn } from './harness/input.ts';
 import { SEEDED_TICKET_TOKEN, SHYDESK_PORT } from './harness/local-shydesk.ts';
 
 const WAIT = 20_000;
@@ -27,6 +27,26 @@ async function textHolding(label: string, expected: string, timeout = WAIT): Pro
     { timeout, timeoutMsg: `"${label}" never held "${expected}"; it held "${text}"` },
   );
   return text;
+}
+
+/** Waits until the page, shadow roots included, holds no media viewer: it closed. */
+async function viewerClosed(): Promise<void> {
+  await driver().waitUntil(
+    () =>
+      driver().execute<boolean>(
+        'const walk = (root) => [...root.querySelectorAll("*")].some((e) => e.matches(\'[aria-label="Attachment viewer"]\') || (e.shadowRoot !== null && walk(e.shadowRoot))); return !walk(document);',
+      ),
+    { timeout: WAIT, timeoutMsg: 'the media viewer never closed' },
+  );
+}
+
+/** Waits until the full-size picture named `label` has drawn. */
+async function pictureDrew(label: string): Promise<void> {
+  const picture = await named(label);
+  await driver().waitUntil(async () => Number(await picture.getProperty('naturalWidth')) > 0, {
+    timeout: WAIT,
+    timeoutMsg: `"${label}" never drew`,
+  });
 }
 
 /** The size in KB of each attached file, once two are attached. */
@@ -88,6 +108,29 @@ describe('the contact form', () => {
       timeoutMsg: 'the third attachment preview never drew',
     });
 
+    // The read-only viewer (shyden-labs/shydesk#25 AC3): a real wheel zooms, keys rotate and move on, a sideways drag
+    // moves on again, the buttons zoom and rotate, and Esc closes it. Its three files: the video, the photo, the reply's photo.
+    await tap('Open photo 3');
+    await textHolding('Viewer status', 'Photo 3 of 3, zoom 100%, rotated 0°');
+    await pictureDrew('Photo 3 full size');
+    await zoomIn('Viewer stage');
+    await textHolding('Viewer status', 'Photo 3 of 3, zoom 125%, rotated 0°');
+    await press('r');
+    await press('r');
+    await textHolding('Viewer status', 'Photo 3 of 3, zoom 125%, rotated 180°');
+    await press('ArrowRight');
+    await textHolding('Viewer status', 'Video 1 of 3, zoom 100%, rotated 0°');
+    await swipeLeft('Viewer stage');
+    await textHolding('Viewer status', 'Photo 2 of 3, zoom 100%, rotated 0°');
+    await pictureDrew('Photo 2 full size');
+    await tap('Zoom in');
+    await tap('Rotate left');
+    await textHolding('Viewer status', 'Photo 2 of 3, zoom 125%, rotated 270°');
+    await press('ArrowLeft');
+    await textHolding('Viewer status', 'Video 1 of 3, zoom 100%, rotated 0°');
+    await press('Escape');
+    await viewerClosed();
+
     // A rep signs in, switches product, opens the ticket, sends a canned reply they edited (shyden-labs/shydesk#24).
     const desk = new URL(link);
     desk.port = String(SHYDESK_PORT);
@@ -103,6 +146,12 @@ describe('the contact form', () => {
     await tapToNewPage('Demo');
     await tapToNewPage(subject);
     await textHolding('Conversation', 'It still closes.');
+    // The rep views the same files read-only, streamed from the desk (shyden-labs/shydesk#25 AC2).
+    await tap('Open photo 3');
+    await textHolding('Viewer status', 'Photo 3 of 3, zoom 100%, rotated 0°');
+    await pictureDrew('Photo 3 full size');
+    await press('Escape');
+    await viewerClosed();
     await tap('Thanks');
     await type('Your reply', ' We are on it.');
     await tapToNewPage('Send reply');

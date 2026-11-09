@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getTicket, listTickets, markRead, unreadCount, type DeskTicket } from '../../src/desk/queries.ts';
+import { getFile, getTicket, listTickets, markRead, unreadCount, type DeskTicket } from '../../src/desk/queries.ts';
 import { listPage, ticketPage, type ListData, type TicketData } from '../../src/desk/views.ts';
 import { standInDb } from './d1-stand-in.ts';
 
@@ -88,9 +88,25 @@ describe('ticketPage', () => {
         }),
       ),
     );
-    expect(page).toContain('Photo, 2 KB');
-    expect(page).toContain('Video, 2 KB');
+    expect(page).toContain('Photo 1, 2 KB');
+    expect(page).toContain('Video 2, 2 KB');
     expect(page.match(/KB/g)).toHaveLength(2);
+  });
+
+  it('numbers the stored files only, so a removed one before them takes no number', async () => {
+    const page = await render(
+      ticketPage(
+        view({
+          messages: [message],
+          attachments: [
+            { ...attachment, id: 'a0', state: 'deleted' },
+            { ...attachment, id: 'a1' },
+          ],
+        }),
+      ),
+    );
+    expect(page).toContain('aria-label="Open photo 1"');
+    expect(page).not.toContain('photo 2');
   });
 
   it('names a staff message by its author, or plainly if none is recorded', async () => {
@@ -136,6 +152,7 @@ describe('the queries', () => {
     const { db, statements } = standInDb();
     expect(await listTickets(db, [], {})).toEqual([]);
     expect(await getTicket(db, [], 't1')).toBeNull();
+    expect(await getFile(db, [], 'a1')).toBeNull();
     expect(await unreadCount(db, 'a@b.c', [])).toBe(0);
     expect(statements).toEqual([]);
   });

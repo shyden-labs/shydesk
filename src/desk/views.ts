@@ -180,10 +180,32 @@ export const listPage = (d: ListData): Page =>
 
 const fieldsOf = (json: string): [string, string][] => Object.entries(JSON.parse(json) as Record<string, string>);
 
-const attachmentLine = (a: DeskAttachment): Page =>
-  a.state === 'deleted'
-    ? html`<li>Attachment removed</li>`
-    : html`<li>${a.mime.startsWith('video/') ? 'Video' : 'Photo'}, ${String(Math.ceil(a.bytes / 1000))} KB</li>`;
+/** A length in ms as m:ss. */
+const minutes = (ms: number): string => {
+  const seconds = Math.round(ms / 1000);
+  return `${String(Math.floor(seconds / 60))}:${String(seconds % 60).padStart(2, '0')}`;
+};
+
+/**
+ * A removed attachment's line, or a stored one's preview, which opens the
+ * read-only viewer (shyden-labs/shydesk#25; public/desk.js). `number` is its
+ * place among the ticket's stored files, so each control has its own name.
+ */
+const attachmentLine = (a: DeskAttachment, number: number): Page => {
+  if (a.state === 'deleted') return html`<li>Attachment removed</li>`;
+  const kind = a.mime.startsWith('video/') ? 'Video' : 'Photo';
+  const length = a.duration_ms === null ? '' : `, ${minutes(a.duration_ms)}`;
+  return html`<li>
+    <button type="button" data-view data-id="${a.id}" data-mime="${a.mime}" aria-label="Open ${kind.toLowerCase()} ${String(number)}">
+      <img src="/desk/files/${a.id}/thumb" alt="${kind} ${String(number)} preview" width="160" />
+    </button>
+    ${kind} ${String(number)}${length}, ${String(Math.ceil(a.bytes / 1000))} KB
+  </li>`;
+};
+
+/** The ticket's stored files in the order the page shows them, so each is numbered by its place. */
+const shownOrder = (messages: DeskMessage[], attachments: DeskAttachment[]): DeskAttachment[] =>
+  messages.flatMap((m) => attachments.filter((a) => a.message_id === m.id && a.state !== 'deleted'));
 
 export interface TicketData {
   ticket: DeskTicket;
@@ -197,6 +219,7 @@ export interface TicketData {
 export const ticketPage = (d: TicketData): Page => {
   const line = d.error === 'empty' ? 'Enter a reply.' : d.mail === undefined ? undefined : MAIL_LINES[d.mail];
   const values = { customer_email: d.ticket.customer_email, ticket_subject: d.ticket.subject };
+  const order = shownOrder(d.messages, d.attachments);
   return layout(
     d.ticket.subject,
     html`<h1>${d.ticket.subject}</h1>
@@ -216,7 +239,7 @@ export const ticketPage = (d: TicketData): Page => {
               <strong>${m.author === 'staff' ? (m.staff_email ?? 'Staff') : 'Customer'}</strong> · ${when(m.created_at)}
               <p class="body">${m.body}</p>
               <ul>
-                ${d.attachments.filter((a) => a.message_id === m.id).map(attachmentLine)}
+                ${d.attachments.filter((a) => a.message_id === m.id).map((a) => attachmentLine(a, order.indexOf(a) + 1))}
               </ul>
             </article>`,
         )}

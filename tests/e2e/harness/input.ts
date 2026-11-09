@@ -368,3 +368,51 @@ export async function pickFile(label: string, fixture: Fixture): Promise<void> {
     await nativeTap(on, 'android=new UiSelector().text("Done")', "the picker's Done button");
   });
 }
+
+/** WebDriver's codes for the keys the viewer answers to (shyden-labs/shydesk#25). */
+const KEY_CODES = { Escape: '', ArrowLeft: '', ArrowRight: '', r: 'r' } as const;
+export type ViewerKey = keyof typeof KEY_CODES;
+
+/** Where the element named `label` is drawn in the window, once it is in view. */
+async function drawnCentre(label: string): Promise<{ x: number; y: number }> {
+  const element = await named(label);
+  const { box, viewport } = await driver().execute<{ box: Box; viewport: { width: number; height: number } }>(
+    'const r = arguments[0].getBoundingClientRect(); return { box: { x: r.x, y: r.y, width: r.width, height: r.height }, viewport: { width: window.innerWidth, height: window.innerHeight } };',
+    element,
+  );
+  return viewportPoint(box, viewport, label);
+}
+
+/** The phone gestures are measured on the real phones before they are written (shyden-labs/shydesk#99). */
+function notOnPhonesYet(on: Phone, what: string): never {
+  throw new Error(`${on}: ${what} is not written for phones yet; it waits on a measured run on the real phone (shyden-labs/shydesk#99)`);
+}
+
+/** A real zoom in over the element named `label`: one wheel notch toward the screen. */
+export async function zoomIn(label: string): Promise<void> {
+  const on = phone();
+  if (on !== undefined) notOnPhonesYet(on, 'pinch zoom');
+  const at = await drawnCentre(label);
+  await driver().action('wheel').scroll({ x: at.x, y: at.y, deltaX: 0, deltaY: -120, duration: 100 }).perform();
+}
+
+/** A real sideways move across the element named `label`, right to left: a mouse drag on a desktop. */
+export async function swipeLeft(label: string): Promise<void> {
+  const on = phone();
+  if (on !== undefined) notOnPhonesYet(on, 'a finger swipe');
+  const at = await drawnCentre(label);
+  await driver()
+    .action('pointer', { parameters: { pointerType: 'mouse' } })
+    .move({ x: at.x + 80, y: at.y })
+    .down()
+    .move({ x: at.x - 80, y: at.y, duration: 300 })
+    .up()
+    .perform();
+}
+
+/** A real key press, sent to whatever has focus. */
+export async function press(key: ViewerKey): Promise<void> {
+  const on = phone();
+  if (on !== undefined) notOnPhonesYet(on, `the ${key} key`);
+  await driver().keys([KEY_CODES[key]]);
+}
