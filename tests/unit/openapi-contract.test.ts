@@ -146,6 +146,7 @@ async function customer(method: 'GET' | 'POST', url: string, body?: unknown, cou
   const env = {
     DB: standInDb(answer).db,
     ...(secret === null ? {} : { TURNSTILE_SECRET: secret }),
+    TICKET_TOKEN_KEY: btoa(String.fromCharCode(...new Uint8Array(32).fill(7))),
     TURNSTILE_SITE_KEY: 'k',
     SMTP_LOGINS: '{"no-reply@shytalk.app":{"user":"u","pass":"p"}}',
   };

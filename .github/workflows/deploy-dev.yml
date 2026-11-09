@@ -99,6 +99,7 @@ jobs:
           # dev environment secret, put on the Worker as a Worker secret
           # (shyden-labs/shydesk#81).
           FIRST_ADMIN_EMAIL: ${{ secrets.FIRST_ADMIN_EMAIL }}
+          TICKET_TOKEN_KEY: ${{ secrets.TICKET_TOKEN_KEY }}
           WRANGLER_SEND_METRICS: false
         run: |
           node scripts/npm-ci.ts
@@ -107,7 +108,7 @@ jobs:
             npx wrangler deploy --config demo-host/wrangler.jsonc --dry-run --outdir dist/demo
             exit 0
           fi
-          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID FIRST_ADMIN_EMAIL; do
+          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID FIRST_ADMIN_EMAIL TICKET_TOKEN_KEY; do
             if [ -z "${!name}" ]; then
               echo "::error title=No $name in the dev environment::Add it to the dev environment before the Worker can deploy."
               exit 1
@@ -116,5 +117,6 @@ jobs:
           npx wrangler d1 migrations apply shydesk --env dev --remote
           npx wrangler deploy --env dev
           printf '%s' "$FIRST_ADMIN_EMAIL" | npx wrangler secret put FIRST_ADMIN_EMAIL --env dev
+          printf '%s' "$TICKET_TOKEN_KEY" | npx wrangler secret put TICKET_TOKEN_KEY --env dev
           npx wrangler d1 execute shydesk --env dev --remote --file demo-host/seed.sql
           npx wrangler deploy --config demo-host/wrangler.jsonc

@@ -16,6 +16,8 @@ export const SHYDESK_PORT = 8787;
 /** The private link's token of the seeded ticket, whose one attachment has been removed. */
 export const SEEDED_TICKET_TOKEN = 'e2e-seeded-ticket-token';
 
+/** Encrypts only the local throwaway tickets of a test run. */
+const TEST_TOKEN_KEY = btoa(String.fromCharCode(...new Uint8Array(32).fill(7)));
 const TEST_SITE_KEY = '1x00000000000000000000AA';
 const TEST_SECRET = '1x0000000000000000000000000000000AA';
 
@@ -72,5 +74,7 @@ export function wranglerDevArgs(stateDir: string): string[] {
     `TURNSTILE_SITE_KEY:${TEST_SITE_KEY}`,
     '--var',
     `TURNSTILE_SECRET:${TEST_SECRET}`,
+    '--var',
+    `TICKET_TOKEN_KEY:${TEST_TOKEN_KEY}`,
   ];
 }

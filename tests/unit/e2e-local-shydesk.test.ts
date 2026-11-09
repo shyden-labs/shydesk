@@ -81,6 +81,8 @@ describe('wranglerDevArgs', () => {
       'TURNSTILE_SITE_KEY:1x00000000000000000000AA',
       '--var',
       'TURNSTILE_SECRET:1x0000000000000000000000000000000AA',
+      '--var',
+      `TICKET_TOKEN_KEY:${btoa(String.fromCharCode(...new Uint8Array(32).fill(7)))}`,
     ]);
   });
 });

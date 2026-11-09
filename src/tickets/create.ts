@@ -1,4 +1,5 @@
 import type { D1Database } from '@cloudflare/workers-types';
+import { sealToken } from './seal.ts';
 import { hashKey } from '../products.ts';
 
 /**
@@ -18,6 +19,8 @@ export interface NewTicket {
   fields: Record<string, string>;
   attachmentIds: string[];
   now: number;
+  /** TICKET_TOKEN_KEY, which seals the copy of the token that reply emails link with. */
+  tokenKey: string;
 }
 
 /** An attachment that is not this product's, not finished uploading, or already on a ticket. */
@@ -57,8 +60,8 @@ export async function createTicket(db: D1Database, t: NewTicket): Promise<{ id: 
     db.prepare(`INSERT INTO counters (key, value) VALUES ('feed_seq', 1) ON CONFLICT (key) DO UPDATE SET value = value + 1`),
     db
       .prepare(
-        `INSERT INTO tickets (id, product_id, type_id, status, customer_email, subject, category, fields_json, token_hash, created_at, updated_at, seq)
-         VALUES (?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, (SELECT value FROM counters WHERE key = 'feed_seq'))`,
+        `INSERT INTO tickets (id, product_id, type_id, status, customer_email, subject, category, fields_json, token_hash, token_sealed, created_at, updated_at, seq)
+         VALUES (?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?, (SELECT value FROM counters WHERE key = 'feed_seq'))`,
       )
       .bind(
         id,
@@ -69,6 +72,7 @@ export async function createTicket(db: D1Database, t: NewTicket): Promise<{ id: 
         t.category,
         JSON.stringify(t.fields),
         await hashKey(token),
+        await sealToken(t.tokenKey, token),
         t.now,
         t.now,
       ),
