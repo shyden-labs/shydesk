@@ -68,6 +68,12 @@ describe('the ticket timer in wrangler.jsonc', () => {
     expect(config.vars).toBeUndefined();
   });
 
+  // shyden-labs/shydesk#83: staff may try requests that write from the docs on Non-Prod only; live has no vars at all.
+  it('lets the docs try writes on dev only', () => {
+    expect(config.env.dev.vars).toMatchObject({ TRY_WRITES: 'true' });
+    expect(config.vars).toBeUndefined();
+  });
+
   // Staff sign in through Non-Prod's Cloudflare Access (shyden-labs/shydesk#74). Both values are
   // public: they appear in every Access login address and token, so they are vars, not secrets.
   it("gives dev Non-Prod's Access team and audience", () => {
