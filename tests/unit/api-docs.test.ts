@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { SignJWT, createLocalJWKSet, exportJWK, generateKeyPair, type JWTVerifyGetKey } from 'jose';
 import { docsRoutes, type DocsEnv } from '../../src/api/docs.ts';
@@ -25,7 +26,11 @@ beforeAll(async () => {
       .sign(pair.privateKey);
 });
 
-function docs() {
+const SPEC = readFileSync(new URL('../../openapi/shydesk.v1.yaml', import.meta.url), 'utf8');
+const NON_PROD = 'https://shydesk.shydesk-non-prod.workers.dev';
+const LIVE = 'https://shydesk.dpdns.org';
+
+function docs(options: { tryWrites?: string; spec?: string } = {}) {
   const answer: Answer = (sql, values) => (sql.includes('FROM staff ') && values[0] === REP ? [{ role: 'rep' }] : []);
   const fetched: string[] = [];
   const env: DocsEnv = {
@@ -36,9 +41,11 @@ function docs() {
     ASSETS: {
       fetch: (request: Request) => {
         fetched.push(new URL(request.url).pathname);
+        if (new URL(request.url).pathname.endsWith('.yaml')) return Promise.resolve(new Response(options.spec ?? SPEC));
         return Promise.resolve(new Response('asset body', { headers: { 'Content-Type': 'text/html' } }));
       },
     } as unknown as DocsEnv['ASSETS'],
+    ...(options.tryWrites === undefined ? {} : { TRY_WRITES: options.tryWrites }),
   };
   const app = docsRoutes(jwks);
   const get = async (path: string, email?: string) =>
@@ -94,5 +101,50 @@ describe('/api/docs', () => {
     const { get, fetched } = docs();
     expect((await get('/api/docs/', 'stranger@example.com')).status).toBe(403);
     expect(fetched).toEqual([]);
+  });
+});
+
+// shyden-labs/shydesk#83: each host's docs offer that host as their server, and
+// only the Non-Prod host lets staff try requests that write.
+describe('the server the docs offer', () => {
+  it('is the Non-Prod host on Non-Prod, never live', async () => {
+    const spec = await (await docs().get(`${NON_PROD}/api/docs/shydesk.v1.yaml`, REP)).text();
+    expect(spec).toContain(`servers:\n  - url: ${NON_PROD}\n    description: This host\n`);
+    expect(spec).not.toContain(LIVE);
+  });
+
+  it('is the live host on live', async () => {
+    const spec = await (await docs().get(`${LIVE}/api/docs/shydesk.v1.yaml`, REP)).text();
+    expect(spec).toContain(`servers:\n  - url: ${LIVE}\n    description: This host\n`);
+    expect(spec.match(/^servers:/gm)).toHaveLength(1);
+  });
+
+  it('leaves the rest of the spec as it is', async () => {
+    const spec = await (await docs().get(`${NON_PROD}/api/docs/shydesk.v1.yaml`, REP)).text();
+    const outside = (text: string) => text.replace(/^servers:\n(?: {2}.*\n)+/m, '');
+    expect(outside(spec)).toBe(outside(SPEC));
+  });
+
+  it('fails naming the cause when the spec has no server list to replace', async () => {
+    const response = await docs({ spec: 'openapi: 3.1.0\npaths: {}\n' }).get(`${NON_PROD}/api/docs/shydesk.v1.yaml`, REP);
+    expect(response.status).toBe(500);
+    expect(await response.text()).toContain('no servers block');
+  });
+});
+
+describe('which requests the docs let staff try', () => {
+  it('every method where the deploy allows writes (Non-Prod)', async () => {
+    const response = await docs({ tryWrites: 'true' }).get(`${NON_PROD}/api/docs/try.json`, REP);
+    expect(await response.json()).toEqual({ methods: ['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace'] });
+    expect(response.headers.get('Cache-Control')).toBe('private, no-store');
+  });
+
+  it.each([undefined, 'false', 'TRUE', ''])('reads only, never posting a ticket, when the setting is %s (live)', async (tryWrites) => {
+    const response = await docs(tryWrites === undefined ? {} : { tryWrites }).get(`${LIVE}/api/docs/try.json`, REP);
+    expect(await response.json()).toEqual({ methods: ['get'] });
+  });
+
+  it('is for staff only', async () => {
+    expect((await docs({ tryWrites: 'true' }).get(`${NON_PROD}/api/docs/try.json`)).status).toBe(401);
   });
 });
