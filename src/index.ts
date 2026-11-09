@@ -6,7 +6,9 @@ import { apiRoutes } from './api/routes.ts';
 import { contactRoutes, type ContactBindings } from './customer/contact.ts';
 import { embedRoutes, type EmbedEnv } from './customer/embed.ts';
 import { ticketRoutes } from './customer/ticket.ts';
+import { connect } from 'cloudflare:sockets';
 import type { Deliver } from './mail/notify.ts';
+import { socketDeliver, type SmtpSocket } from './mail/socket.ts';
 import { deskRoutes, type DeskBindings } from './desk/routes.ts';
 import { uploadRoutes, type UploadBindings } from './uploads/routes.ts';
 
@@ -22,11 +24,14 @@ export { TicketTimer } from './timers/ticket-timer.ts';
 type AppBindings = DocsEnv & ContactBindings & EmbedEnv & UploadBindings & DeskBindings;
 
 /**
- * Mail delivery for the Worker. Nothing opens an SMTP connection yet
- * (shyden-labs/shydesk#68), so each send fails by name: the customer is told
- * the email could not be sent and to keep the private link.
+ * Mail delivery for the Worker (shyden-labs/shydesk#68): each mail goes over a
+ * fresh STARTTLS socket to the SMTP_HOST setting on port 587. Without it, or
+ * without the sender's login, a send fails by name and the customer is told
+ * to keep the private link.
  */
-export const noSmtpYet: Deliver = () => Promise.reject(new Error('the Worker has no SMTP connection yet (shyden-labs/shydesk#68)'));
+// The runtime's Socket streams are the web streams SmtpSocket names; only their declared types differ
+// (@cloudflare/workers-types marks a finished read's value optional).
+export const workerDeliver: Deliver = socketDeliver((address, options) => connect(address, options) as unknown as SmtpSocket);
 
 /** The Worker's routes. `jwks` stands in Access's keys, for the local e2e entry only. */
 export function createApp(jwks?: JWTVerifyGetKey): Hono<{ Bindings: AppBindings }> {
@@ -37,11 +42,11 @@ export function createApp(jwks?: JWTVerifyGetKey): Hono<{ Bindings: AppBindings 
   app.route('/', adminRoutes(jwks));
   app.route('/', apiRoutes());
   app.route('/', docsRoutes(jwks));
-  app.route('/', deskRoutes({ deliver: noSmtpYet }, jwks));
+  app.route('/', deskRoutes({ deliver: workerDeliver }, jwks));
   // Before contact: its origin check covers all of /support-api, and this answers first with its own.
   app.route('/', uploadRoutes());
   app.route('/', ticketRoutes());
-  app.route('/', contactRoutes({ fetcher: fetch.bind(globalThis), deliver: noSmtpYet }));
+  app.route('/', contactRoutes({ fetcher: fetch.bind(globalThis), deliver: workerDeliver }));
   app.route('/', embedRoutes());
   return app;
 }

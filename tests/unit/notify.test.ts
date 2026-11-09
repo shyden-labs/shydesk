@@ -31,7 +31,7 @@ const shytalk = (share = 500): Product => ({
 /** A database whose counter statement returns a row while the share lasts, and a delivery that records each mail. */
 function world(opts: { shareLeft: boolean; logins?: string | undefined }) {
   const { db, statements } = standInDb((sql) => (sql.startsWith('INSERT INTO counters') && opts.shareLeft ? [{ value: 1 }] : []));
-  const env: MailEnv = 'logins' in opts ? { DB: db, SMTP_LOGINS: opts.logins } : { DB: db, SMTP_LOGINS: LOGINS };
+  const env: MailEnv = { DB: db, SMTP_LOGINS: 'logins' in opts ? opts.logins : LOGINS, SMTP_HOST: 'mail.example' };
   const deliver = vi.fn<Deliver>(() => Promise.resolve());
   return { env, statements, deliver };
 }
@@ -55,6 +55,8 @@ describe('the notice', () => {
           subject: 'Your support request: something new',
           text: `ShyTalk support\r\n\r\nThere is a new update on your support request. Open it here: ${LINK}`,
         },
+        // The Worker's mail host (shyden-labs/shydesk#68).
+        'mail.example',
       ],
     ]);
     expect(NOTICE_SUBJECT).toBe('Your support request: something new');
