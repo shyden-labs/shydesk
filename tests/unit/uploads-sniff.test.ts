@@ -30,7 +30,17 @@ const mdhd0 = (timescale: number, duration: number): number[] =>
   box('mdhd', [0, 0, 0, 0, ...u32(0), ...u32(0), ...u32(timescale), ...u32(duration)]);
 const mdhd1 = (timescale: number, hi: number, lo: number): number[] =>
   box('mdhd', [1, 0, 0, 0, ...u32(0), ...u32(0), ...u32(0), ...u32(0), ...u32(timescale), ...u32(hi), ...u32(lo)]);
-const trak = (header: number[], media: number[]): number[] => box('trak', [...header, ...box('mdia', media)]);
+/** A sample table: each entry is [sample count, sample length in the media's timescale]. */
+const stts = (...entries: [number, number][]): number[] =>
+  box('stts', [0, 0, 0, 0, ...u32(entries.length), ...entries.flatMap(([count, delta]) => [...u32(count), ...u32(delta)])]);
+/** The duration an `mdhd` built above states (version 0, or version 1's low half). */
+const statedBy = (mdhd: number[]): number => {
+  const at = mdhd[8] === 1 ? 36 : 24;
+  return new DataView(new Uint8Array(mdhd).buffer).getUint32(at);
+};
+/** A track: header, then media with its sample table, which by default adds up to what the `mdhd` states. */
+const trak = (header: number[], media: number[], samples: number[] = stts([1, statedBy(media)])): number[] =>
+  box('trak', [...header, ...box('mdia', [...media, ...box('minf', box('stbl', samples))])]);
 const file = (...boxes: number[][]): Uint8Array => new Uint8Array(boxes.flat());
 const duration = (bytes: Uint8Array): Promise<number | null> => mp4DurationMs(reader(bytes), bytes.length);
 
@@ -209,6 +219,68 @@ describe('mp4DurationMs', () => {
   it('refuses a second moov, whatever it says', async () => {
     const one = box('moov', mvhd0(1000, 10_000));
     expect(await duration(file(ftyp, one, box('mdat', [1, 2, 3]), one))).toBeNull();
+  });
+
+  it('refuses a moov too big to read whole, even when its first MiB ends on a box boundary', async () => {
+    const head = new Uint8Array([...ftyp, 0, 0, 0, 0, ...ascii('moov'), ...mvhd0(1000, 10_000)]);
+    const track = new Uint8Array(trak(tkhd0(45_000), mdhd0(1000, 45_000)));
+    // Padding that ends exactly at 1 MiB into moov, then a 45 s track that a cut-off read would never see.
+    const moovStart = ftyp.length;
+    const padStart = head.length;
+    const padEnd = moovStart + 8 + 1024 * 1024;
+    const bytes = new Uint8Array(padEnd + track.length);
+    bytes.set(head);
+    bytes.set(track, padEnd);
+    const v = new DataView(bytes.buffer);
+    v.setUint32(moovStart, bytes.length - moovStart);
+    v.setUint32(padStart, padEnd - padStart);
+    bytes.set(ascii('free'), padStart + 4);
+    expect(await duration(bytes)).toBeNull();
+  });
+
+  // Security review of shyden-labs/shydesk#86: players time a track by its samples, a repeated header box could
+  // hide the real one, and a fragmented file carries media outside moov's tables.
+  it('reads a sample table of several entries, in the media timescale', async () => {
+    const moov = box('moov', [...mvhd0(1000, 10_000), ...trak(tkhd0(10_000), mdhd0(30, 300), stts([299, 1], [1, 400]))]);
+    expect(await duration(file(ftyp, moov))).toBeNull();
+    const fine = box('moov', [...mvhd0(1000, 10_000), ...trak(tkhd0(10_000), mdhd0(30, 300), stts([150, 1], [50, 3]))]);
+    expect(await duration(file(ftyp, fine))).toBe(10_000);
+  });
+
+  it('refuses samples that run over a second past the media header', async () => {
+    const moov = box('moov', [...mvhd0(1000, 10_000), ...trak(tkhd0(10_000), mdhd0(1000, 10_000), stts([45, 1000]))]);
+    expect(await duration(file(ftyp, moov))).toBeNull();
+  });
+
+  it('refuses a track with no sample table, or one cut short', async () => {
+    const none = box('moov', [...mvhd0(1000, 10_000), ...trak(tkhd0(10_000), mdhd0(1000, 10_000), box('stsz', []))]);
+    expect(await duration(file(ftyp, none))).toBeNull();
+    const cut = box('stts', [0, 0, 0, 0, ...u32(2), ...u32(10), ...u32(1000)]);
+    const short = box('moov', [...mvhd0(1000, 10_000), ...trak(tkhd0(10_000), mdhd0(1000, 10_000), cut)]);
+    expect(await duration(file(ftyp, short))).toBeNull();
+    const stub = box('moov', [...mvhd0(1000, 10_000), ...trak(tkhd0(10_000), mdhd0(1000, 10_000), box('stts', [0, 0, 0, 0]))]);
+    expect(await duration(file(ftyp, stub))).toBeNull();
+  });
+
+  it.each(['mvhd', 'tkhd', 'mdhd', 'stts'])('refuses a repeated %s, whichever copy tells the truth', async (type) => {
+    const header = { mvhd: mvhd0(1000, 10_000), tkhd: tkhd0(10_000), mdhd: mdhd0(1000, 10_000), stts: stts([1, 10_000]) }[type] ?? [];
+    const twice = (bytes: number[]): number[] => [...bytes, ...header];
+    const moovOf = (t: string): number[] => {
+      const head = t === 'mvhd' ? twice(mvhd0(1000, 10_000)) : mvhd0(1000, 10_000);
+      const track = t === 'tkhd' ? twice(tkhd0(10_000)) : tkhd0(10_000);
+      const media = t === 'mdhd' ? twice(mdhd0(1000, 10_000)) : mdhd0(1000, 10_000);
+      const samples = t === 'stts' ? twice(stts([1, 10_000])) : stts([1, 10_000]);
+      return box('moov', [...head, ...trak(track, media, samples)]);
+    };
+    expect(await duration(file(ftyp, moovOf('none')))).toBe(10_000);
+    expect(await duration(file(ftyp, moovOf(type)))).toBeNull();
+  });
+
+  it('refuses a fragmented file: movie extends in moov, or fragments beside it', async () => {
+    const plain = [...mvhd0(1000, 10_000), ...trak(tkhd0(10_000), mdhd0(1000, 10_000))];
+    expect(await duration(file(ftyp, box('moov', [...plain, ...box('mvex', [])])))).toBeNull();
+    expect(await duration(file(ftyp, box('moov', plain), box('moof', [])))).toBeNull();
+    expect(await duration(file(ftyp, box('moov', plain), box('mfra', [])))).toBeNull();
   });
 
   it('refuses a file with too many boxes after moov to see whether a second one follows', async () => {
