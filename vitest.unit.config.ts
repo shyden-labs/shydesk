@@ -8,8 +8,13 @@ import { failOnWarnings } from './tests/setup/warnings.ts';
 // overall threshold (shyden-labs/repo-template#149). A type-only import: `defineConfig` only types the object.
 export default {
   plugins: [failOnWarnings],
-  // The Workers runtime module, which only exists on Cloudflare: a stand-in base class.
-  resolve: { alias: { 'cloudflare:workers': new URL('./tests/unit/cloudflare-workers-stand-in.ts', import.meta.url).pathname } },
+  // The Workers runtime modules, which only exist on Cloudflare: a stand-in base class and a refusing connect.
+  resolve: {
+    alias: {
+      'cloudflare:workers': new URL('./tests/unit/cloudflare-workers-stand-in.ts', import.meta.url).pathname,
+      'cloudflare:sockets': new URL('./tests/unit/cloudflare-sockets-stand-in.ts', import.meta.url).pathname,
+    },
+  },
   test: {
     include: ['tests/unit/**/*.test.ts'],
     setupFiles: UNIT_SETUP,

@@ -13,12 +13,15 @@ import type { SmtpLogin, SmtpMail } from './smtp.ts';
 export const NOTICE_SUBJECT = 'Your support request: something new';
 
 /** Hands one mail to the SMTP server under the sender's login. In the Worker: `sendSmtp` over a socket. */
-export type Deliver = (login: SmtpLogin, mail: SmtpMail) => Promise<void>;
+/** `host` is the Worker's SMTP_HOST setting, which may be unset; a Deliver refuses to send without it. */
+export type Deliver = (login: SmtpLogin, mail: SmtpMail, host: string | undefined) => Promise<void>;
 
 export interface MailEnv {
   DB: D1Database;
   /** JSON object mapping each product sender address to its `{ user, pass }`. */
   SMTP_LOGINS?: string | undefined;
+  /** The mail host every product sends through (Sparked Host), on port 587 (shyden-labs/shydesk#68). */
+  SMTP_HOST?: string | undefined;
 }
 
 export type NoticeResult = 'sent' | 'share-used-up' | 'failed';
@@ -59,12 +62,16 @@ export async function sendNoReply(
   if (!(await countSend(env.DB, product, now))) return 'share-used-up';
   try {
     const login = senderLogin(env.SMTP_LOGINS, product.senderAddress);
-    await deliver(login, {
-      from: product.senderAddress,
-      to,
-      subject: NOTICE_SUBJECT,
-      text: `${product.name} support\r\n\r\nThere is a new update on your support request. Open it here: ${link}`,
-    });
+    await deliver(
+      login,
+      {
+        from: product.senderAddress,
+        to,
+        subject: NOTICE_SUBJECT,
+        text: `${product.name} support\r\n\r\nThere is a new update on your support request. Open it here: ${link}`,
+      },
+      env.SMTP_HOST,
+    );
     return 'sent';
   } catch (error) {
     console.error(`mail for ${product.id} failed: ${(error as Error).message}`);
