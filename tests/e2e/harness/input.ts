@@ -147,7 +147,11 @@ async function clickDrawn(label: string): Promise<void> {
     .pause(50)
     .up()
     .perform();
-  const missed = pressMissed(label, at, await driver().execute<Landed | null | undefined>('return window.__e2ePress;'));
+  // A new page has no note at all, which browsers answer differently: asked outright, so each says the same.
+  const note = await driver().execute<{ stayed: boolean; landed: Landed | null }>(
+    "return { stayed: '__e2ePress' in window, landed: window.__e2ePress ?? null };",
+  );
+  const missed = pressMissed(label, at, note.stayed ? note.landed : undefined);
   if (missed !== undefined) throw new Error(missed);
 }
 
