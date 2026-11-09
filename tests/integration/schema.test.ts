@@ -99,11 +99,12 @@ describe('tables', () => {
 });
 
 describe('indexes', () => {
-  it('lists tickets by product, status and last change', async () => {
-    expect(await indexColumns('tickets')).toContainEqual(['product_id', 'status', 'updated_at']);
-  });
-  it('feeds tickets by product and sequence', async () => {
-    expect(await indexColumns('tickets')).toContainEqual(['product_id', 'seq']);
+  // One read of the tickets' indexes, both checked (shyden-labs/shydesk#84): listing by product, status and last
+  // change, and the feed by product and sequence.
+  it('lists tickets by product, status and last change, and feeds them by product and sequence', async () => {
+    const indexes = await indexColumns('tickets');
+    expect.soft(indexes).toContainEqual(['product_id', 'status', 'updated_at']);
+    expect.soft(indexes).toContainEqual(['product_id', 'seq']);
   });
 });
 
