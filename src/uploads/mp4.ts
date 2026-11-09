@@ -3,7 +3,7 @@ export type ReadRange = (offset: number, length: number) => Promise<Uint8Array>;
 
 /** More top-level boxes than any real MP4 has; a file with more is refused, not walked. */
 const MAX_BOXES = 32;
-/** How much of `moov` is searched for `mvhd`, which real files put at or near its start. */
+/** The biggest `moov` read; far beyond the sample tables of any 30 s phone video. */
 const MOOV_SEARCH_BYTES = 1024 * 1024;
 
 interface Box {
@@ -31,42 +31,183 @@ function boxAt(header: Uint8Array, at: number, limit: number): Box | null {
   return { type, payload: at + headerSize, end };
 }
 
-/** Length from an `mvhd` payload, version 0 and 1; null if it is cut short or proves no length. */
-function fromMvhd(payload: Uint8Array): number | null {
+/** Top-level boxes of a fragmented file, whose media lies outside `moov`'s tables: refused. */
+const FRAGMENTS = new Set(['moof', 'mfra']);
+
+/** More tracks than any phone video has; a `moov` with more boxes is refused, not walked. */
+const MAX_CHILDREN = 32;
+/** How far a track may run from the movie's own length before the file is said to disagree with itself. */
+const AGREE_MS = 1000;
+
+/**
+ * Timescale and duration from an `mvhd` or `mdhd` payload (the two share
+ * their layout), version 0 and 1; null if it is cut short or proves no length.
+ */
+function scaled(payload: Uint8Array): { timescale: number; duration: number } | null {
   const version = payload[0];
   if (payload.length < (version === 1 ? 32 : 20)) return null;
   const v = view(payload);
   const timescale = v.getUint32(version === 1 ? 20 : 12);
   const duration = version === 1 ? v.getUint32(24) * 2 ** 32 + v.getUint32(28) : v.getUint32(16);
   if (timescale === 0 || duration === 0) return null;
-  return Math.round((duration * 1000) / timescale);
+  return { timescale, duration };
 }
 
-function inMoov(moov: Uint8Array): number | null {
+/** A `tkhd` payload's duration, in the movie's timescale, version 0 and 1; null if cut short. */
+function tkhdDuration(payload: Uint8Array): number | null {
+  const version = payload[0];
+  if (payload.length < (version === 1 ? 36 : 24)) return null;
+  const v = view(payload);
+  return version === 1 ? v.getUint32(28) * 2 ** 32 + v.getUint32(32) : v.getUint32(20);
+}
+
+/** The boxes directly inside `bytes`, or null if any is cut short or there are too many. */
+function children(bytes: Uint8Array): (Box & { body: Uint8Array })[] | null {
+  const found: (Box & { body: Uint8Array })[] = [];
   let at = 0;
-  for (let n = 0; n < MAX_BOXES; n += 1) {
-    const box = boxAt(moov.subarray(at, at + 16), at, moov.length);
+  while (at < bytes.length) {
+    if (found.length === MAX_CHILDREN) return null;
+    const box = boxAt(bytes.subarray(at, at + 16), at, bytes.length);
     if (!box) return null;
-    if (box.type === 'mvhd') return fromMvhd(moov.subarray(box.payload, box.end));
+    found.push({ ...box, body: bytes.subarray(box.payload, box.end) });
     at = box.end;
   }
-  return null;
+  return found;
+}
+
+/** The one box of `type`; null when there is none or more than one, so a decoy copy can never hide the real one. */
+function only(boxes: (Box & { body: Uint8Array })[], type: string): Uint8Array | null {
+  const [one, ...more] = boxes.filter((b) => b.type === type);
+  return one !== undefined && more.length === 0 ? one.body : null;
+}
+
+/** A sample table's sample count and total length (in the media's timescale); null if cut short. */
+function sttsTotal(payload: Uint8Array): { count: number; length: number } | null {
+  if (payload.length < 8) return null;
+  const v = view(payload);
+  const entries = v.getUint32(4);
+  if (payload.length < 8 + entries * 8) return null;
+  let count = 0;
+  let length = 0;
+  for (let i = 0; i < entries; i += 1) {
+    const samples = v.getUint32(8 + i * 8);
+    count += samples;
+    length += samples * v.getUint32(12 + i * 8);
+  }
+  return { count, length };
+}
+
+/** How many samples a sample size table holds; null if cut short. */
+function stszCount(payload: Uint8Array): number | null {
+  return payload.length < 12 ? null : view(payload).getUint32(8);
+}
+
+/** An edit list's total length, in the movie's timescale, version 0 and 1; null if cut short. */
+function elstTotal(payload: Uint8Array): number | null {
+  if (payload.length < 8) return null;
+  const v = view(payload);
+  const wide = payload[0] === 1;
+  const size = wide ? 20 : 12;
+  const entries = v.getUint32(4);
+  if (payload.length < 8 + entries * size) return null;
+  let total = 0;
+  for (let i = 0; i < entries; i += 1) {
+    const at = 8 + i * size;
+    total += wide ? v.getUint32(at) * 2 ** 32 + v.getUint32(at + 4) : v.getUint32(at);
+  }
+  return total;
 }
 
 /**
- * A video's length in milliseconds, from its container's `moov/mvhd`
- * (shyden-labs/shydesk#20). It walks the top-level boxes by their sizes, so
- * `moov` is found wherever it sits and the media data is never read. Null when
- * the length cannot be proven: no `moov`, a cut-short box or a zero duration.
+ * A track's edits' total length in the movie's timescale: undefined when it
+ * has none, null when they are repeated, missing or cut short.
+ */
+function editsTotal(parts: (Box & { body: Uint8Array })[]): number | null | undefined {
+  const lists = parts.filter((b) => b.type === 'edts');
+  if (lists.length === 0) return undefined;
+  const editParts = only(parts, 'edts');
+  const inside = editParts && children(editParts);
+  const list = inside && only(inside, 'elst');
+  return list && elstTotal(list);
+}
+
+/**
+ * A track's lengths in ms: its header's (in the movie's timescale), its
+ * media's, its samples' (players time a track by these) and its edits'; null
+ * if any is missing, repeated or cut short, or the samples timed are not the
+ * samples held.
+ */
+function trackLengths(trak: Uint8Array, movieTimescale: number): number[] | null {
+  const parts = children(trak);
+  const header = parts && only(parts, 'tkhd');
+  const media = parts && only(parts, 'mdia');
+  const mediaParts = media && children(media);
+  const mediaHeader = mediaParts && only(mediaParts, 'mdhd');
+  const info = mediaParts && only(mediaParts, 'minf');
+  const infoParts = info && children(info);
+  const table = infoParts && only(infoParts, 'stbl');
+  const tableParts = table && children(table);
+  const timing = tableParts && only(tableParts, 'stts');
+  const sizes = tableParts && only(tableParts, 'stsz');
+  const headerDuration = header && tkhdDuration(header);
+  const mediaLength = mediaHeader && scaled(mediaHeader);
+  const samples = timing && sttsTotal(timing);
+  const held = sizes && stszCount(sizes);
+  const edits = parts && editsTotal(parts);
+  // The sample table must time exactly the samples the track holds, or a player may time the rest its own way.
+  if (headerDuration === null || !mediaLength || !samples || held !== samples.count || edits === null) return null;
+  const perMs = 1000 / mediaLength.timescale;
+  const lengths = [(headerDuration * 1000) / movieTimescale, mediaLength.duration * perMs, samples.length * perMs];
+  if (edits !== undefined) lengths.push((edits * 1000) / movieTimescale);
+  return lengths;
+}
+
+/**
+ * The movie's length from `moov/mvhd`, checked against every track's own
+ * lengths (shyden-labs/shydesk#86): a file whose tracks run more than a
+ * second from the movie, or whose track headers are missing or cut short,
+ * proves no length. Otherwise the longest of them all.
+ */
+function inMoov(moov: Uint8Array): number | null {
+  const boxes = children(moov);
+  const movieHeader = boxes && only(boxes, 'mvhd');
+  const movie = movieHeader && scaled(movieHeader);
+  // A fragmented movie (mvex) carries media outside these tables, so its length is not proven here.
+  if (!boxes || !movie || boxes.some((b) => b.type === 'mvex')) return null;
+  const movieMs = (movie.duration * 1000) / movie.timescale;
+  const lengths = [movieMs];
+  for (const trak of boxes.filter((b) => b.type === 'trak')) {
+    const track = trackLengths(trak.body, movie.timescale);
+    if (track === null) return null;
+    lengths.push(...track);
+  }
+  if (lengths.some((ms) => Math.abs(ms - movieMs) > AGREE_MS)) return null;
+  return Math.round(Math.max(...lengths));
+}
+
+/**
+ * A video's length in milliseconds, from its container's `moov`
+ * (shyden-labs/shydesk#20, shyden-labs/shydesk#86). It walks the top-level
+ * boxes by their sizes to the end of the file, so `moov` is found wherever it
+ * sits and the media data is never read. Null when the length cannot be
+ * proven: no `moov` or a second one, a cut-short box, a zero duration, or
+ * tracks that disagree with the movie.
  */
 export async function mp4DurationMs(read: ReadRange, size: number): Promise<number | null> {
   let at = 0;
-  for (let n = 0; n < MAX_BOXES; n += 1) {
+  let found: number | null = null;
+  let moovs = 0;
+  for (let n = 0; n < MAX_BOXES && at < size; n += 1) {
     const box = boxAt(await read(at, Math.min(16, size - at)), at, size);
-    if (!box) return null;
-    if (box.type === 'moov') return inMoov(await read(box.payload, Math.min(box.end - box.payload, MOOV_SEARCH_BYTES)));
+    if (!box || FRAGMENTS.has(box.type)) return null;
+    if (box.type === 'moov') {
+      moovs += 1;
+      // A moov too big to read whole could hide a track past what is read, so it proves no length.
+      if (moovs > 1 || box.end - box.payload > MOOV_SEARCH_BYTES) return null;
+      found = inMoov(await read(box.payload, box.end - box.payload));
+      if (found === null) return null;
+    }
     at = box.end;
-    if (at >= size) return null;
   }
-  return null;
+  return at < size ? null : found;
 }
