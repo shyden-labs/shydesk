@@ -38,9 +38,34 @@ const statedBy = (mdhd: number[]): number => {
   const at = mdhd[8] === 1 ? 36 : 24;
   return new DataView(new Uint8Array(mdhd).buffer).getUint32(at);
 };
-/** A track: header, then media with its sample table, which by default adds up to what the `mdhd` states. */
-const trak = (header: number[], media: number[], samples: number[] = stts([1, statedBy(media)])): number[] =>
-  box('trak', [...header, ...box('mdia', [...media, ...box('minf', box('stbl', samples))])]);
+/** A sample size table holding `count` samples of one size. */
+const stsz = (count: number): number[] => box('stsz', [0, 0, 0, 0, ...u32(1), ...u32(count)]);
+/** How many samples an `stts` built above lists. */
+const sampleCount = (table: number[]): number => {
+  const v = new DataView(new Uint8Array(table).buffer);
+  let total = 0;
+  // A deliberately cut-short table counts only the entries it holds.
+  for (let at = 16; table.length >= 16 && at + 4 <= table.length; at += 8) total += v.getUint32(at);
+  return total;
+};
+/** An edit list (version 0): each entry is [length in the movie's timescale, media time]; rate 1. */
+const elst = (...edits: [number, number][]): number[] =>
+  box('elst', [0, 0, 0, 0, ...u32(edits.length), ...edits.flatMap(([length, from]) => [...u32(length), ...u32(from >>> 0), 0, 1, 0, 0])]);
+/**
+ * A track: header, any edit list, then media with its sample table, which by default adds up to what the `mdhd`
+ * states, and a size table listing as many samples as the sample table does.
+ */
+const trak = (
+  header: number[],
+  media: number[],
+  samples: number[] = stts([1, statedBy(media)]),
+  options: { sizes?: number[]; edits?: number[] } = {},
+): number[] =>
+  box('trak', [
+    ...header,
+    ...(options.edits === undefined ? [] : box('edts', options.edits)),
+    ...box('mdia', [...media, ...box('minf', box('stbl', [...samples, ...(options.sizes ?? stsz(sampleCount(samples)))]))]),
+  ]);
 const file = (...boxes: number[][]): Uint8Array => new Uint8Array(boxes.flat());
 const duration = (bytes: Uint8Array): Promise<number | null> => mp4DurationMs(reader(bytes), bytes.length);
 
@@ -274,6 +299,55 @@ describe('mp4DurationMs', () => {
     };
     expect(await duration(file(ftyp, moovOf('none')))).toBe(10_000);
     expect(await duration(file(ftyp, moovOf(type)))).toBeNull();
+  });
+
+  it('refuses a sample table that times fewer or more samples than the track holds', async () => {
+    const plain = (sizes: number[]): Uint8Array =>
+      file(ftyp, box('moov', [...mvhd0(1000, 10_000), ...trak(tkhd0(10_000), mdhd0(1000, 10_000), stts([10, 1000]), { sizes })]));
+    expect(await duration(plain(stsz(10)))).toBe(10_000);
+    expect(await duration(plain(stsz(450)))).toBeNull();
+    expect(await duration(plain(stsz(9)))).toBeNull();
+    expect(await duration(plain(box('stsz', [0, 0, 0, 0, ...u32(1)])))).toBeNull();
+    expect(await duration(plain([...stsz(10), ...stsz(10)]))).toBeNull();
+    expect(await duration(plain([]))).toBeNull();
+  });
+
+  it('counts an edit list, whose edits can hold or repeat frames, among the lengths that must agree', async () => {
+    const edited = (edits: number[]): Uint8Array =>
+      file(ftyp, box('moov', [...mvhd0(1000, 10_000), ...trak(tkhd0(10_000), mdhd0(1000, 10_000), undefined, { edits })]));
+    expect(await duration(edited(elst([10_000, 0])))).toBe(10_000);
+    expect(await duration(edited(elst([2_000, -1], [8_000, 0])))).toBe(10_000);
+    expect(await duration(edited(elst([10_000, 0], [35_000, 0])))).toBeNull();
+    expect(await duration(edited(box('elst', [0, 0, 0, 0, ...u32(2), ...u32(10_000)])))).toBeNull();
+    expect(await duration(edited([...elst([10_000, 0]), ...elst([10_000, 0])]))).toBeNull();
+    expect(await duration(edited([]))).toBeNull();
+  });
+
+  it('reads a version 1 edit list, high halves kept', async () => {
+    const v1 = (hi: number, lo: number): number[] =>
+      box('elst', [1, 0, 0, 0, ...u32(1), ...u32(hi), ...u32(lo), ...u32(0), ...u32(0), 0, 1, 0, 0]);
+    const edited = (edits: number[]): Uint8Array =>
+      file(ftyp, box('moov', [...mvhd0(1000, 10_000), ...trak(tkhd0(10_000), mdhd0(1000, 10_000), undefined, { edits })]));
+    expect(await duration(edited(v1(0, 10_000)))).toBe(10_000);
+    expect(await duration(edited(v1(1, 10_000)))).toBeNull();
+    const two = box('elst', [
+      1,
+      0,
+      0,
+      0,
+      ...u32(2),
+      ...[4_000, 6_000].flatMap((lo) => [...u32(0), ...u32(lo), ...u32(0), ...u32(0), 0, 1, 0, 0]),
+    ]);
+    expect(await duration(edited(two))).toBe(10_000);
+  });
+
+  it('refuses a cut-short edit list even on a video shorter than a second', async () => {
+    const cut = box('elst', [0, 0, 0, 0, ...u32(2), ...u32(500)]);
+    const moov = box('moov', [...mvhd0(1000, 500), ...trak(tkhd0(500), mdhd0(1000, 500), undefined, { edits: cut })]);
+    expect(await duration(file(ftyp, moov))).toBeNull();
+    const stub = box('elst', [0, 0, 0, 0]);
+    const tiny = box('moov', [...mvhd0(1000, 500), ...trak(tkhd0(500), mdhd0(1000, 500), undefined, { edits: stub })]);
+    expect(await duration(file(ftyp, tiny))).toBeNull();
   });
 
   it('refuses a fragmented file: movie extends in moov, or fragments beside it', async () => {

@@ -81,21 +81,61 @@ function only(boxes: (Box & { body: Uint8Array })[], type: string): Uint8Array |
   return one !== undefined && more.length === 0 ? one.body : null;
 }
 
-/** A sample table's total length, in the media's timescale; null if cut short. */
-function sttsTotal(payload: Uint8Array): number | null {
+/** A sample table's sample count and total length (in the media's timescale); null if cut short. */
+function sttsTotal(payload: Uint8Array): { count: number; length: number } | null {
   if (payload.length < 8) return null;
   const v = view(payload);
   const entries = v.getUint32(4);
   if (payload.length < 8 + entries * 8) return null;
+  let count = 0;
+  let length = 0;
+  for (let i = 0; i < entries; i += 1) {
+    const samples = v.getUint32(8 + i * 8);
+    count += samples;
+    length += samples * v.getUint32(12 + i * 8);
+  }
+  return { count, length };
+}
+
+/** How many samples a sample size table holds; null if cut short. */
+function stszCount(payload: Uint8Array): number | null {
+  return payload.length < 12 ? null : view(payload).getUint32(8);
+}
+
+/** An edit list's total length, in the movie's timescale, version 0 and 1; null if cut short. */
+function elstTotal(payload: Uint8Array): number | null {
+  if (payload.length < 8) return null;
+  const v = view(payload);
+  const wide = payload[0] === 1;
+  const size = wide ? 20 : 12;
+  const entries = v.getUint32(4);
+  if (payload.length < 8 + entries * size) return null;
   let total = 0;
-  for (let i = 0; i < entries; i += 1) total += v.getUint32(8 + i * 8) * v.getUint32(12 + i * 8);
+  for (let i = 0; i < entries; i += 1) {
+    const at = 8 + i * size;
+    total += wide ? v.getUint32(at) * 2 ** 32 + v.getUint32(at + 4) : v.getUint32(at);
+  }
   return total;
 }
 
 /**
+ * A track's edits' total length in the movie's timescale: undefined when it
+ * has none, null when they are repeated, missing or cut short.
+ */
+function editsTotal(parts: (Box & { body: Uint8Array })[]): number | null | undefined {
+  const lists = parts.filter((b) => b.type === 'edts');
+  if (lists.length === 0) return undefined;
+  const editParts = only(parts, 'edts');
+  const inside = editParts && children(editParts);
+  const list = inside && only(inside, 'elst');
+  return list && elstTotal(list);
+}
+
+/**
  * A track's lengths in ms: its header's (in the movie's timescale), its
- * media's, and its samples' (players time a track by these); null if any is
- * missing, repeated or cut short.
+ * media's, its samples' (players time a track by these) and its edits'; null
+ * if any is missing, repeated or cut short, or the samples timed are not the
+ * samples held.
  */
 function trackLengths(trak: Uint8Array, movieTimescale: number): number[] | null {
   const parts = children(trak);
@@ -108,12 +148,18 @@ function trackLengths(trak: Uint8Array, movieTimescale: number): number[] | null
   const table = infoParts && only(infoParts, 'stbl');
   const tableParts = table && children(table);
   const timing = tableParts && only(tableParts, 'stts');
+  const sizes = tableParts && only(tableParts, 'stsz');
   const headerDuration = header && tkhdDuration(header);
   const mediaLength = mediaHeader && scaled(mediaHeader);
   const samples = timing && sttsTotal(timing);
-  if (headerDuration === null || !mediaLength || samples === null) return null;
+  const held = sizes && stszCount(sizes);
+  const edits = parts && editsTotal(parts);
+  // The sample table must time exactly the samples the track holds, or a player may time the rest its own way.
+  if (headerDuration === null || !mediaLength || !samples || held !== samples.count || edits === null) return null;
   const perMs = 1000 / mediaLength.timescale;
-  return [(headerDuration * 1000) / movieTimescale, mediaLength.duration * perMs, samples * perMs];
+  const lengths = [(headerDuration * 1000) / movieTimescale, mediaLength.duration * perMs, samples.length * perMs];
+  if (edits !== undefined) lengths.push((edits * 1000) / movieTimescale);
+  return lengths;
 }
 
 /**
