@@ -25,6 +25,10 @@
   const TEXT = {
     loading: 'Loading the support form…',
     cannotLoad: 'The support form could not load here.',
+    // shyden-labs/shydesk#78: DRAFT wording, waiting on Shyden's approval; the Indonesian line follows it.
+    kept: 'Messages are kept for {text} days, and photos and videos for {attachments} days, after the request is closed.',
+    privacyNotice: 'Privacy notice',
+    privacyPolicy: 'Privacy policy',
     needsCheck: 'Complete the check below to send.',
     ready: 'Ready to send',
     sending: 'Sending…',
@@ -94,7 +98,7 @@
   /**
    * @typedef {{ label: string, kind: 'text' | 'select', required: boolean, options?: string[] }} SupportField
    * @typedef {{ id: string, name: string, fields: SupportField[] }} SupportType
-   * @typedef {{ product: { id: string, name: string }, types: SupportType[], categories: string[], maxAttachments: number, maxVideoSeconds: number, turnstileSiteKey: string }} FormConfig
+   * @typedef {{ product: { id: string, name: string }, types: SupportType[], categories: string[], maxAttachments: number, maxVideoSeconds: number, turnstileSiteKey: string, privacy: { en: string, id: string }, keepDays: { attachments: number, text: number } }} FormConfig
    * @typedef {{ render(target: HTMLElement, options: Record<string, unknown>): string, reset(widget: string): void }} TurnstileApi
    * @typedef {{ id: string, mime: string, bytes: number, durationMs: number | null, removed: boolean }} ThreadAttachment
    * @typedef {{ author: 'customer' | 'staff', body: string, createdAt: number, attachments: ThreadAttachment[] }} ThreadMessage
@@ -177,6 +181,13 @@
       let config;
       try {
         const answer = await fetch(this.endpoint('config'));
+        if (answer.status === 503) {
+          // A product not set up yet says which, so its owner knows what to fix (shyden-labs/shydesk#78).
+          const body = /** @type {unknown} */ (await answer.json());
+          const error = typeof body === 'object' && body !== null && 'error' in body ? body.error : undefined;
+          this.tell(typeof error === 'string' ? error : TEXT.cannotLoad);
+          return;
+        }
         if (!answer.ok) throw new Error(`config answered ${String(answer.status)}`);
         const raw = /** @type {unknown} */ (await answer.json());
         config = /** @type {FormConfig} */ (raw);
@@ -295,6 +306,13 @@
         updateSend();
       });
       const send = /** @type {HTMLButtonElement} */ (make('button', { type: 'submit', disabled: '' }, [TEXT.send]));
+      // Above Send: what is kept and for how long, and the policy in the visitor's language (shyden-labs/shydesk#78).
+      const policyUrl = (this.getAttribute('lang') ?? '').toLowerCase().startsWith('id') ? config.privacy.id : config.privacy.en;
+      const kept = TEXT.kept.replace('{text}', String(config.keepDays.text)).replace('{attachments}', String(config.keepDays.attachments));
+      const notice = make('p', { class: 'notice', 'aria-label': TEXT.privacyNotice }, [
+        `${kept} `,
+        make('a', { href: policyUrl, target: '_blank', rel: 'noopener', 'aria-label': TEXT.privacyPolicy }, [TEXT.privacyPolicy]),
+      ]);
 
       const form = make('form', { class: 'panel', novalidate: '' }, [
         field('email', TEXT.email, email),
@@ -310,6 +328,7 @@
         uploads.lines,
         make('slot', { name: 'turnstile' }),
         checkError,
+        notice,
         send,
       ]);
       this.shadow.insertBefore(form, this.statusLine);
