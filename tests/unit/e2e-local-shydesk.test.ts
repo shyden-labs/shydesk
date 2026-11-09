@@ -38,6 +38,12 @@ describe('seedSql', () => {
     expect(sql).toContain(`('demo', 'Demo', 'no-reply@example.com', 'http://localhost:8765/support/ticket', '["http://localhost:8765"]'`);
   });
 
+  // shyden-labs/shydesk#78: the contact form only shows once both privacy policy links are set.
+  it('gives each product its English and Indonesian privacy policy links', () => {
+    expect(sql).toContain("100, 'http://localhost:8765/privacy-en.html', 'http://localhost:8765/privacy-id.html', 0);");
+    expect(sql).toContain("100, 'https://elsewhere.example/privacy-en.html', 'https://elsewhere.example/privacy-id.html', 0);");
+  });
+
   it('allows the second product only somewhere else', () => {
     expect(sql).toContain(
       `('demo-elsewhere', 'Elsewhere', 'no-reply@example.com', 'https://elsewhere.example/support/ticket', '["https://elsewhere.example"]'`,

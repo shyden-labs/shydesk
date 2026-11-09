@@ -65,6 +65,12 @@ describe('the contact form', () => {
     assert.ok(video < 10586 && photo < 3011, `not stored smaller than the originals: ${attached.join(', ')} KB`);
     // The test site key passes by itself; the button is enabled once it has.
     await textHolding('Support status', 'Ready to send');
+    // Above Send, what is kept and for how long, and the product's English privacy policy for an English page
+    // (shyden-labs/shydesk#78 AC2, AC4; seeded: tests/e2e/harness/local-shydesk.ts).
+    await textHolding('Privacy notice', 'Messages are kept for 365 days, and photos and videos for 30 days, after the request is closed.');
+    const policy = await named('Privacy policy');
+    const pageOrigin = await driver().execute<string>('return location.origin;');
+    assert.equal(await policy.getAttribute('href'), `${pageOrigin}/privacy-en.html`);
     await tap('Send');
     // The status first: if the request fails, its failure shows what the status line said.
     await textHolding('Support status', 'The email could not be sent. Keep this link to follow the request.');

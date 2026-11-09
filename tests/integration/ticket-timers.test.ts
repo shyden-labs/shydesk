@@ -26,6 +26,8 @@ async function product(id: string, attachmentsKeepDays = 30, textKeepDays = 365)
       monthlyEmailShare: 100,
       attachmentsKeepDays,
       textKeepDays,
+      privacyPolicyUrlEn: 'https://example.com/privacy',
+      privacyPolicyUrlId: 'https://example.com/id/privacy',
     },
     1000,
   );

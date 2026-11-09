@@ -40,8 +40,8 @@ export function shydeskOrigin(suiteOrigin: string): string {
 export function seedSql(suiteOrigin: string): string {
   if (!PLAIN_ORIGIN.test(suiteOrigin)) throw new Error(`${suiteOrigin} is not a plain origin`);
   const product = (id: string, name: string, origin: string) =>
-    `INSERT INTO products (id, name, sender_address, ticket_page_url, allowed_origins_json, monthly_email_share, created_at) VALUES ` +
-    `('${id}', '${name}', 'no-reply@example.com', '${origin}/support/ticket', '["${origin}"]', 100, 0);`;
+    `INSERT INTO products (id, name, sender_address, ticket_page_url, allowed_origins_json, monthly_email_share, privacy_url_en, privacy_url_id, created_at) VALUES ` +
+    `('${id}', '${name}', 'no-reply@example.com', '${origin}/support/ticket', '["${origin}"]', 100, '${origin}/privacy-en.html', '${origin}/privacy-id.html', 0);`;
   const fields = JSON.stringify([{ label: 'Device', kind: 'text', required: true }]);
   return [
     product('demo', 'Demo', suiteOrigin),

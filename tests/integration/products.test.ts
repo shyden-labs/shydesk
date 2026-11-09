@@ -33,6 +33,8 @@ const product = (id: string): ProductInput => ({
   monthlyEmailShare: 100,
   attachmentsKeepDays: 30,
   textKeepDays: 365,
+  privacyPolicyUrlEn: 'https://example.com/privacy',
+  privacyPolicyUrlId: 'https://example.com/id/privacy',
 });
 
 describe('products', () => {

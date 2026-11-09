@@ -36,6 +36,8 @@ const PRODUCT: ProductInput = {
   monthlyEmailShare: 500,
   attachmentsKeepDays: 30,
   textKeepDays: 365,
+  privacyPolicyUrlEn: 'https://example.com/privacy',
+  privacyPolicyUrlId: 'https://example.com/id/privacy',
 };
 
 const PRODUCT_ROW = {
@@ -47,6 +49,8 @@ const PRODUCT_ROW = {
   monthly_email_share: 500,
   attachments_keep_days: 30,
   text_keep_days: 365,
+  privacy_url_en: 'https://example.com/privacy',
+  privacy_url_id: 'https://example.com/id/privacy',
   created_at: NOW,
 };
 
@@ -71,6 +75,8 @@ describe('saveProduct', () => {
       500,
       30,
       365,
+      'https://example.com/privacy',
+      'https://example.com/id/privacy',
       NOW,
     ]);
   });

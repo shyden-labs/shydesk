@@ -19,6 +19,8 @@ const PRODUCT = {
   monthly_email_share: 100,
   attachments_keep_days: 30,
   text_keep_days: 365,
+  privacy_url_en: 'https://shytalk.app/privacy',
+  privacy_url_id: 'https://shytalk.app/id/privacy',
   created_at: 1,
 };
 const TYPE = {
@@ -31,6 +33,7 @@ const TYPE = {
 };
 
 interface World {
+  product?: Record<string, unknown>;
   type?: typeof TYPE | null;
   counts?: { email?: number; ip?: number };
   attachments?: string[];
@@ -44,7 +47,7 @@ interface World {
 function appWith(world: World = {}) {
   const { db, statements } = standInDb((sql, values) => {
     if (world.ticketWriteFails && sql.includes('INSERT INTO tickets')) throw new Error('D1 is down');
-    if (sql.includes('FROM products')) return values[0] === 'shytalk' ? [PRODUCT] : [];
+    if (sql.includes('FROM products')) return values[0] === 'shytalk' ? [world.product ?? PRODUCT] : [];
     if (sql.includes('FROM ticket_types')) return world.type === null ? [] : [world.type ?? TYPE];
     if (sql.includes('INSERT INTO counters') && String(values[0]).startsWith('contact:email:'))
       return [{ value: world.counts?.email ?? 1 }];
@@ -111,6 +114,18 @@ describe('GET /support-api/config', () => {
       turnstileSiteKey: 'site-key',
       maxAttachments: 10,
       maxVideoSeconds: 30,
+      // shyden-labs/shydesk#78: what the notice above Send says, and where it links.
+      privacy: { en: 'https://shytalk.app/privacy', id: 'https://shytalk.app/id/privacy' },
+      keepDays: { attachments: 30, text: 365 },
+    });
+  });
+
+  it.each(['privacy_url_en', 'privacy_url_id'])('refuses to set up the form, naming the product, while %s is missing', async (column) => {
+    const { config } = appWith({ product: { ...PRODUCT, [column]: null } });
+    const response = await config();
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({
+      error: 'The support form for ShyTalk is not set up yet: its English and Indonesian privacy policy links are missing.',
     });
   });
 

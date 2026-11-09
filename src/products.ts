@@ -21,6 +21,9 @@ export interface ProductInput {
   monthlyEmailShare: number;
   attachmentsKeepDays: number;
   textKeepDays: number;
+  /** The product's privacy policy in English and in Indonesian, linked above Send (shyden-labs/shydesk#78). */
+  privacyPolicyUrlEn: string;
+  privacyPolicyUrlId: string;
 }
 
 const PRODUCT_ID = /^[a-z0-9-]{2,40}$/;
@@ -48,6 +51,8 @@ export function isExactOrigin(origin: string): boolean {
 
 const isWhole = (n: number, min: number): boolean => Number.isInteger(n) && n >= min;
 
+const isHttps = (url: string): boolean => parse(url)?.protocol === 'https:';
+
 /** Every rule the product breaks, in form order; empty when it is valid. */
 export function validateProduct(p: ProductInput): string[] {
   const errors: string[] = [];
@@ -67,6 +72,8 @@ export function validateProduct(p: ProductInput): string[] {
   if (!isWhole(p.monthlyEmailShare, 0)) errors.push('Monthly email share must be a whole number of 0 or more.');
   if (!isWhole(p.attachmentsKeepDays, 1)) errors.push('Attachment keep-days must be a whole number of 1 or more.');
   if (!isWhole(p.textKeepDays, 1)) errors.push('Text keep-days must be a whole number of 1 or more.');
+  if (!isHttps(p.privacyPolicyUrlEn)) errors.push('English privacy policy URL must be an https address.');
+  if (!isHttps(p.privacyPolicyUrlId)) errors.push('Indonesian privacy policy URL must be an https address.');
   return errors;
 }
 
@@ -98,6 +105,9 @@ interface ProductRow {
   monthly_email_share: number;
   attachments_keep_days: number;
   text_keep_days: number;
+  /** Null for a product saved before shyden-labs/shydesk#78. */
+  privacy_url_en: string | null;
+  privacy_url_id: string | null;
   created_at: number;
 }
 
@@ -110,22 +120,26 @@ const fromRow = (r: ProductRow): Product => ({
   monthlyEmailShare: r.monthly_email_share,
   attachmentsKeepDays: r.attachments_keep_days,
   textKeepDays: r.text_keep_days,
+  // A product saved before the links existed has none: its contact form says it is not set up.
+  privacyPolicyUrlEn: r.privacy_url_en ?? '',
+  privacyPolicyUrlId: r.privacy_url_id ?? '',
   createdAt: r.created_at,
 });
 
 const PRODUCT_COLUMNS =
-  'id, name, sender_address, ticket_page_url, allowed_origins_json, monthly_email_share, attachments_keep_days, text_keep_days, created_at';
+  'id, name, sender_address, ticket_page_url, allowed_origins_json, monthly_email_share, attachments_keep_days, text_keep_days, privacy_url_en, privacy_url_id, created_at';
 
 /** Adds a product, or updates it in place keeping when it was created. Throws SettingsError. */
 export async function saveProduct(db: D1Database, p: ProductInput, now = Date.now()): Promise<void> {
   refuseIfAny(validateProduct(p));
   await db
     .prepare(
-      `INSERT INTO products (${PRODUCT_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO products (${PRODUCT_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (id) DO UPDATE SET name = excluded.name, sender_address = excluded.sender_address,
          ticket_page_url = excluded.ticket_page_url, allowed_origins_json = excluded.allowed_origins_json,
          monthly_email_share = excluded.monthly_email_share, attachments_keep_days = excluded.attachments_keep_days,
-         text_keep_days = excluded.text_keep_days`,
+         text_keep_days = excluded.text_keep_days, privacy_url_en = excluded.privacy_url_en,
+         privacy_url_id = excluded.privacy_url_id`,
     )
     .bind(
       p.id,
@@ -136,6 +150,8 @@ export async function saveProduct(db: D1Database, p: ProductInput, now = Date.no
       p.monthlyEmailShare,
       p.attachmentsKeepDays,
       p.textKeepDays,
+      p.privacyPolicyUrlEn,
+      p.privacyPolicyUrlId,
       now,
     )
     .run();

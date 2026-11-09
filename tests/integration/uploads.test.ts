@@ -25,6 +25,8 @@ async function product(id: string): Promise<void> {
       monthlyEmailShare: 0,
       attachmentsKeepDays: 30,
       textKeepDays: 365,
+      privacyPolicyUrlEn: 'https://example.com/privacy',
+      privacyPolicyUrlId: 'https://example.com/id/privacy',
     },
     Date.now(),
   );

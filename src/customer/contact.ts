@@ -118,6 +118,10 @@ export function contactRoutes(deps: ContactDeps): Hono<ContactEnv> {
 
   app.get('/support-api/config', async (c) => {
     const product = c.var.product;
+    // The notice above Send links both policies (shyden-labs/shydesk#78): without them the form is not shown.
+    if (!product.privacyPolicyUrlEn || !product.privacyPolicyUrlId) {
+      return c.json({ error: MESSAGES.notSetUp.replace('{product}', product.name) }, 503);
+    }
     const type = await getTicketType(c.env.DB, product.id);
     return c.json({
       product: { id: product.id, name: product.name },
@@ -126,6 +130,8 @@ export function contactRoutes(deps: ContactDeps): Hono<ContactEnv> {
       turnstileSiteKey: c.env.TURNSTILE_SITE_KEY ?? '',
       maxAttachments: MAX_ATTACHMENTS,
       maxVideoSeconds: MAX_VIDEO_SECONDS,
+      privacy: { en: product.privacyPolicyUrlEn, id: product.privacyPolicyUrlId },
+      keepDays: { attachments: product.attachmentsKeepDays, text: product.textKeepDays },
     });
   });
 

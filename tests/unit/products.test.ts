@@ -15,6 +15,8 @@ const GOOD: ProductInput = {
   monthlyEmailShare: 500,
   attachmentsKeepDays: 30,
   textKeepDays: 365,
+  privacyPolicyUrlEn: 'https://shytalk.app/privacy',
+  privacyPolicyUrlId: 'https://shytalk.app/id/privacy',
 };
 
 const errorsFor = (change: Partial<ProductInput>): string[] => validateProduct({ ...GOOD, ...change });
@@ -64,6 +66,16 @@ describe('validateProduct', () => {
   it('refuses a sender address with spaces or two @ signs', () => {
     expect(errorsFor({ senderAddress: 'no reply@shytalk.app' })).toHaveLength(1);
     expect(errorsFor({ senderAddress: 'a@b@shytalk.app' })).toHaveLength(1);
+  });
+
+  // shyden-labs/shydesk#78 AC1: every product links its English and Indonesian privacy policies.
+  it.each([
+    ['privacyPolicyUrlEn', 'English privacy policy URL must be an https address.'],
+    ['privacyPolicyUrlId', 'Indonesian privacy policy URL must be an https address.'],
+  ] as const)('refuses a missing or non-https %s', (field, message) => {
+    expect(errorsFor({ [field]: '' })).toEqual([message]);
+    expect(errorsFor({ [field]: 'http://shytalk.app/privacy' })).toEqual([message]);
+    expect(errorsFor({ [field]: 'not a url' })).toEqual([message]);
   });
 
   it('refuses a ticket page URL that is not https', () => {

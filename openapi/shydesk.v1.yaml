@@ -100,6 +100,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SupportConfig'
+        '503':
+          description: The product has no English or no Indonesian privacy policy link yet; the error names the product.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: An unknown product, or an origin not on its list. No CORS header.
           content:
@@ -414,7 +420,7 @@ components:
     SupportConfig:
       type: object
       additionalProperties: false
-      required: [product, types, categories, turnstileSiteKey, maxAttachments, maxVideoSeconds]
+      required: [product, types, categories, turnstileSiteKey, maxAttachments, maxVideoSeconds, privacy, keepDays]
       properties:
         product:
           type: object
@@ -455,6 +461,30 @@ components:
         maxVideoSeconds:
           type: integer
           const: 30
+        privacy:
+          type: object
+          description: The product's privacy policy, linked above Send; Indonesian for `id` visitors, English for every other locale.
+          additionalProperties: false
+          required: [en, id]
+          properties:
+            en:
+              type: string
+              pattern: '^https://'
+            id:
+              type: string
+              pattern: '^https://'
+        keepDays:
+          type: object
+          description: How long a closed request's photos and videos, and its text, are kept, as the notice above Send says.
+          additionalProperties: false
+          required: [attachments, text]
+          properties:
+            attachments:
+              type: integer
+              minimum: 1
+            text:
+              type: integer
+              minimum: 1
     SupportField:
       type: object
       additionalProperties: false
