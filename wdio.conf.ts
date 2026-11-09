@@ -16,12 +16,21 @@
  * page with its piece loaded from it (shyden-labs/shydesk#19).
  */
 import type { Capabilities, Options } from '@wdio/types';
+import { SignJWT, exportJWK, generateKeyPair } from 'jose';
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
-import { demoPage, seedSql, shydeskOrigin, wranglerDevArgs } from './tests/e2e/harness/local-shydesk.ts';
+import {
+  E2E_ACCESS_AUD,
+  E2E_ACCESS_TEAM,
+  E2E_REP,
+  demoPage,
+  seedSql,
+  shydeskOrigin,
+  wranglerDevArgs,
+} from './tests/e2e/harness/local-shydesk.ts';
 import { capabilitiesFor, targetOf, targetsFrom, type Target, type TargetEnv } from './tests/e2e/harness/targets.ts';
 import { savePhoneScreen, supportPieceState } from './tests/e2e/harness/report.ts';
 
@@ -130,6 +139,21 @@ export const config: Options.Testrunner & Capabilities.WithRequestedTestrunnerCa
  * (migrations, then the seed) and waits until /health answers, failing at
  * SHYDESK_START_MS naming the log.
  */
+/**
+ * A sign-in key for this run alone: the public half for the local ShyDesk, and a
+ * signed token for the rep, handed to the test workers in their environment.
+ */
+async function accessStandIn(): Promise<string> {
+  const pair = await generateKeyPair('RS256');
+  process.env.E2E_REP_TOKEN = await new SignJWT({ email: E2E_REP })
+    .setProtectedHeader({ alg: 'RS256', kid: 'e2e' })
+    .setAudience(E2E_ACCESS_AUD)
+    .setIssuer(`https://${E2E_ACCESS_TEAM}`)
+    .setExpirationTime('6h')
+    .sign(pair.privateKey);
+  return JSON.stringify({ keys: [{ ...(await exportJWK(pair.publicKey)), kid: 'e2e', alg: 'RS256' }] });
+}
+
 async function startShydesk(): Promise<void> {
   const seed = join(RUNS, 'seed.sql');
   writeFileSync(seed, seedSql(BASE));
@@ -138,7 +162,7 @@ async function startShydesk(): Promise<void> {
   execFileSync('npx', ['wrangler', 'd1', 'execute', 'DB', ...local, '--file', seed], { stdio: 'inherit' });
   const log = join(RUNS, 'shydesk.log');
   writeFileSync(log, '');
-  shydesk = spawn('npx', wranglerDevArgs(STATE), { stdio: ['ignore', 'pipe', 'pipe'] });
+  shydesk = spawn('npx', wranglerDevArgs(STATE, await accessStandIn()), { stdio: ['ignore', 'pipe', 'pipe'] });
   const append = (chunk: Buffer) => {
     writeFileSync(log, chunk, { flag: 'a' });
   };

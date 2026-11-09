@@ -39,6 +39,8 @@ export function buildApiDocs(root: string, out: string): void {
   copyFileSync(join(root, 'public/embed.js'), join(out, 'embed.js'));
   // Its media code, imported on the first file picked (shyden-labs/shydesk#21).
   copyFileSync(join(root, 'public/embed-media.js'), join(out, 'embed-media.js'));
+  // The staff desk page's script (shyden-labs/shydesk#24).
+  copyFileSync(join(root, 'public/desk.js'), join(out, 'desk.js'));
   // The video library it loads on the first video, unchanged, with what MPL-2.0 asks for.
   copyFileSync(join(root, 'node_modules/mediabunny/dist/bundles/mediabunny.min.mjs'), join(out, 'embed-video.js'));
   copyFileSync(join(root, 'node_modules/mediabunny/LICENSE'), join(out, 'embed-video-LICENSE.txt'));

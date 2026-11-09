@@ -22,6 +22,12 @@ describe('shydeskOrigin', () => {
 describe('seedSql', () => {
   const sql = seedSql('http://localhost:8765');
 
+  it('seeds a rep on both products and a canned reply with placeholders', () => {
+    expect(sql).toContain("INSERT INTO staff (email, role, created_at) VALUES ('e2e-rep@example.com', 'rep', 0)");
+    expect(sql).toContain("('e2e-rep@example.com', 'demo'), ('e2e-rep@example.com', 'demo-elsewhere')");
+    expect(sql).toContain('Hello {{customer_email}}, about {{ticket_subject}}.');
+  });
+
   it('seeds a ticket found by its token, holding a removed attachment', async () => {
     expect(sql).toContain(`'${await hashKey(SEEDED_TICKET_TOKEN)}'`);
     expect(sql).toMatch(/INSERT INTO attachments[^;]*'deleted'/);
@@ -67,9 +73,10 @@ describe('demoPage', () => {
 
 describe('wranglerDevArgs', () => {
   it('runs locally on every address on 8787 with the Turnstile always-pass test keys and its own state folder', () => {
-    expect(wranglerDevArgs('/runs/state')).toEqual([
+    expect(wranglerDevArgs('/runs/state', '{"keys":[]}')).toEqual([
       'wrangler',
       'dev',
+      'tests/e2e/harness/worker.ts',
       '--local',
       '--ip',
       '0.0.0.0',
@@ -81,6 +88,16 @@ describe('wranglerDevArgs', () => {
       'TURNSTILE_SITE_KEY:1x00000000000000000000AA',
       '--var',
       'TURNSTILE_SECRET:1x0000000000000000000000000000000AA',
+      '--var',
+      `TICKET_TOKEN_KEY:${btoa(String.fromCharCode(...new Uint8Array(32).fill(7)))}`,
+      '--var',
+      'ACCESS_TEAM_DOMAIN:shydesk-e2e.example',
+      '--var',
+      'ACCESS_AUD:shydesk-e2e',
+      '--var',
+      'FIRST_ADMIN_EMAIL:e2e-admin@example.com',
+      '--var',
+      'E2E_ACCESS_JWKS:{"keys":[]}',
     ]);
   });
 });

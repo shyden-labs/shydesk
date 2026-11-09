@@ -60,6 +60,7 @@ describe('tables', () => {
       'updated_at',
       'closed_at',
       'seq',
+      'token_sealed',
     ]);
   });
   it('messages', async () => {

@@ -37,6 +37,7 @@ interface World {
   turnstile?: { success: boolean; hostname?: string; metadata?: { result_with_testing_key: boolean } };
   mailFails?: boolean;
   noSecret?: boolean;
+  noTokenKey?: boolean;
   ticketWriteFails?: boolean;
 }
 
@@ -69,6 +70,7 @@ function appWith(world: World = {}) {
   const env = {
     DB: db,
     ...(world.noSecret ? {} : { TURNSTILE_SECRET: 'secret' }),
+    ...(world.noTokenKey ? {} : { TICKET_TOKEN_KEY: btoa(String.fromCharCode(...new Uint8Array(32).fill(7))) }),
     TURNSTILE_SITE_KEY: 'site-key',
     SMTP_LOGINS: JSON.stringify({ 'no-reply@shytalk.app': { user: 'u', pass: 'p' } }),
   };
@@ -293,6 +295,22 @@ describe('POST /support-api/tickets', () => {
     }
     expect(logged).toEqual(['TURNSTILE_SECRET is not set: no support request can be checked']);
     expect(siteverify).toHaveLength(0);
+    expect(ticketInserts(statements)).toHaveLength(0);
+  });
+
+  it('answers 503 and names the missing setting when the token key is not set, writing nothing', async () => {
+    const { post, statements } = appWith({ noTokenKey: true });
+    const logged: unknown[] = [];
+    const original = console.error;
+    console.error = (...args: unknown[]) => logged.push(args.join(' '));
+    try {
+      const response = await post(good());
+      expect(response.status).toBe(503);
+      expect(await response.json()).toEqual({ error: MESSAGES.unavailable });
+    } finally {
+      console.error = original;
+    }
+    expect(logged).toEqual(['TICKET_TOKEN_KEY is not set: no support request can be saved']);
     expect(ticketInserts(statements)).toHaveLength(0);
   });
 

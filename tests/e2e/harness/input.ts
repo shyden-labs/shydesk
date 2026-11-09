@@ -147,8 +147,26 @@ async function clickDrawn(label: string): Promise<void> {
     .pause(50)
     .up()
     .perform();
-  const missed = pressMissed(label, at, await driver().execute<Landed | null>('return window.__e2ePress;'));
+  // A new page has no note at all, which browsers answer differently: asked outright, so each says the same.
+  const note = await driver().execute<{ stayed: boolean; landed: Landed | null }>(
+    "return { stayed: '__e2ePress' in window, landed: window.__e2ePress ?? null };",
+  );
+  const missed = pressMissed(label, at, note.stayed ? note.landed : undefined);
   if (missed !== undefined) throw new Error(missed);
+}
+
+/**
+ * A real press on a link or a button that loads a new page, waiting until that
+ * page is ready: asking Firefox about an element while its page is being replaced
+ * hangs for good (run 42543992055).
+ */
+export async function tapToNewPage(label: string): Promise<void> {
+  await driver().execute('window.__e2eLeaving = true;');
+  await tap(label);
+  await driver().waitUntil(
+    async () => driver().execute<boolean>("return window.__e2eLeaving === undefined && document.readyState === 'complete';"),
+    { timeout: WAIT, timeoutMsg: `the press on "${label}" never loaded a new page` },
+  );
 }
 
 /** Real finger swipes allowed to bring a page control onto a phone screen: more than any test page is long. */
@@ -291,6 +309,8 @@ async function touchDrawn(label: string): Promise<void> {
 /** Real key presses into the field named `label`, after a real tap on it. */
 export async function type(label: string, text: string): Promise<void> {
   const on = phone();
+  // Typing adds to what the field holds, such as a canned reply being edited.
+  const before = String(await (await named(label)).getProperty('value'));
   if (on === 'ios') {
     // The page receives trusted focus, keydown and input from the on-screen keyboard.
     await native(async () => {
@@ -303,8 +323,8 @@ export async function type(label: string, text: string): Promise<void> {
     // W3C key actions, each key pressed and lifted in turn: trusted keydown and input per key, on desktop and Android alike.
     await typed(driver().action('key'), text).perform();
   }
-  // Every target: the field holds exactly the text typed, or the test fails naming what it held.
-  const mismatch = typedMismatch(label, text, String(await (await named(label)).getProperty('value')));
+  // Every target: the field holds exactly what it held plus the text typed, or the test fails naming what it held.
+  const mismatch = typedMismatch(label, before + text, String(await (await named(label)).getProperty('value')));
   if (mismatch !== undefined) throw new Error(mismatch);
 }
 

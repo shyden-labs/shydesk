@@ -33,6 +33,7 @@ const HOUR = 3600;
 
 export interface ContactBindings extends Env {
   TURNSTILE_SECRET?: string;
+  TICKET_TOKEN_KEY?: string;
   TURNSTILE_SITE_KEY?: string;
   SMTP_LOGINS?: string;
 }
@@ -149,6 +150,11 @@ export function contactRoutes(deps: ContactDeps): Hono<ContactEnv> {
       console.error('TURNSTILE_SECRET is not set: no support request can be checked');
       return c.json({ error: MESSAGES.unavailable }, 503);
     }
+    const tokenKey = c.env.TICKET_TOKEN_KEY;
+    if (!tokenKey) {
+      console.error('TICKET_TOKEN_KEY is not set: no support request can be saved');
+      return c.json({ error: MESSAGES.unavailable }, 503);
+    }
     const turnstile = await verifyTurnstile(secret, request.turnstileToken, c.var.clientIp, deps.fetcher);
     if (!turnstile.ok || !(turnstile.testing || productHosts(product).includes(turnstile.hostname))) {
       return c.json({ errors: { turnstileToken: MESSAGES.turnstile } }, 400);
@@ -160,7 +166,7 @@ export function contactRoutes(deps: ContactDeps): Hono<ContactEnv> {
 
     let token: string;
     try {
-      ({ token } = await createTicket(c.env.DB, { productId: product.id, typeId: type.id, ...request, now }));
+      ({ token } = await createTicket(c.env.DB, { productId: product.id, typeId: type.id, ...request, now, tokenKey }));
     } catch (error) {
       if (error instanceof AttachmentError) return c.json({ errors: { attachmentIds: MESSAGES.attachmentMissing } }, 400);
       throw error;

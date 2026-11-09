@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { AttachmentError, createTicket, newToken, ticketLink, type NewTicket } from '../../src/tickets/create.ts';
+import { openToken } from '../../src/tickets/seal.ts';
 import { hashKey } from '../../src/products.ts';
 import { standInDb, type Answer } from './d1-stand-in.ts';
 
@@ -8,6 +9,7 @@ import { standInDb, type Answer } from './d1-stand-in.ts';
 // first message and its attachments are written in one batch, and only
 // attachments this product finished uploading and no ticket has yet are taken.
 const NOW = 1_800_000_000_000;
+const TOKEN_KEY = btoa(String.fromCharCode(...new Uint8Array(32).fill(7)));
 
 const input = (over: Partial<NewTicket> = {}): NewTicket => ({
   productId: 'shytalk',
@@ -19,6 +21,7 @@ const input = (over: Partial<NewTicket> = {}): NewTicket => ({
   fields: { Device: 'Pixel 9' },
   attachmentIds: [],
   now: NOW,
+  tokenKey: TOKEN_KEY,
   ...over,
 });
 
@@ -53,6 +56,17 @@ describe('createTicket', () => {
     expect(statements.flatMap((s) => s.values)).not.toContain(token);
   });
 
+  it('stores a sealed copy of the token that opens with the key', async () => {
+    const { db, statements } = standInDb();
+    const { token } = await createTicket(db, input());
+    const insert = statements.find((s) => s.sql.includes('INSERT INTO tickets'));
+    expect(insert?.sql).toContain('token_sealed');
+    const opened = await Promise.all(
+      (insert?.values ?? []).filter((v): v is string => typeof v === 'string').map((v) => openToken(TOKEN_KEY, v).catch(() => null)),
+    );
+    expect(opened).toContain(token);
+  });
+
   it('writes the ticket open, on the next feed seq, with the email lower-cased', async () => {
     const { db, statements } = standInDb();
     const { id } = await createTicket(db, input());
@@ -69,6 +83,7 @@ describe('createTicket', () => {
       'account',
       JSON.stringify({ Device: 'Pixel 9' }),
       expect.stringMatching(/^[0-9a-f]{64}$/),
+      expect.any(String),
       NOW,
       NOW,
     ]);

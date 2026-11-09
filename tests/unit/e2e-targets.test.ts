@@ -612,3 +612,13 @@ describe('desktopFilePath', () => {
     expect(desktopFilePath('safari', fixture, '/Users/runner')).toBe('/Users/runner/Library/Caches/com.apple.Safari/photo.jpg');
   });
 });
+
+describe('pressMissed on a press that loads a new page', () => {
+  it('counts as reached: only a new page has no note of the press at all', () => {
+    expect(pressMissed('Demo', { x: 1, y: 2 }, undefined)).toBeUndefined();
+  });
+
+  it('still names a press that never reached a page that stayed', () => {
+    expect(pressMissed('Demo', { x: 1, y: 2 }, null)).toContain('never reached the page');
+  });
+});
