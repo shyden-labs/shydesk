@@ -176,7 +176,7 @@ export function openViewer({ doc, host, items, start, onClose }) {
     if (file === undefined) return;
     const name = `${kindOf(target.index)} ${String(target.index + 1)} full size`;
     const media = file.mime.startsWith('video/')
-      ? el('video', { controls: '', playsinline: '', preload: 'metadata', 'aria-label': name })
+      ? el('video', { controls: '', playsinline: '', preload: 'metadata', 'aria-label': name, draggable: 'false' })
       : el('img', { alt: name, 'aria-label': name, draggable: 'false' });
     shown = media;
     stage.replaceChildren(media);
