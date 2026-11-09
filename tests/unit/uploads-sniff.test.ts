@@ -21,6 +21,16 @@ const mvhd0 = (timescale: number, duration: number): number[] =>
 const mvhd1 = (timescale: number, hi: number, lo: number): number[] =>
   box('mvhd', [1, 0, 0, 0, ...u32(0), ...u32(0), ...u32(0), ...u32(0), ...u32(timescale), ...u32(hi), ...u32(lo)]);
 const ftyp = box('ftyp', ascii('isom'));
+// A track's header (`tkhd`, in the movie's timescale) and its media header (`mdhd`, in its own), as `trak/tkhd` and
+// `trak/mdia/mdhd` (shyden-labs/shydesk#86).
+const tkhd0 = (duration: number): number[] => box('tkhd', [0, 0, 0, 0, ...u32(0), ...u32(0), ...u32(1), ...u32(0), ...u32(duration)]);
+const tkhd1 = (hi: number, lo: number): number[] =>
+  box('tkhd', [1, 0, 0, 0, ...u32(0), ...u32(0), ...u32(0), ...u32(0), ...u32(1), ...u32(0), ...u32(hi), ...u32(lo)]);
+const mdhd0 = (timescale: number, duration: number): number[] =>
+  box('mdhd', [0, 0, 0, 0, ...u32(0), ...u32(0), ...u32(timescale), ...u32(duration)]);
+const mdhd1 = (timescale: number, hi: number, lo: number): number[] =>
+  box('mdhd', [1, 0, 0, 0, ...u32(0), ...u32(0), ...u32(0), ...u32(0), ...u32(timescale), ...u32(hi), ...u32(lo)]);
+const trak = (header: number[], media: number[]): number[] => box('trak', [...header, ...box('mdia', media)]);
 const file = (...boxes: number[][]): Uint8Array => new Uint8Array(boxes.flat());
 const duration = (bytes: Uint8Array): Promise<number | null> => mp4DurationMs(reader(bytes), bytes.length);
 
@@ -140,6 +150,74 @@ describe('mp4DurationMs', () => {
 
   it('is null for a zero duration, which proves no length', async () => {
     expect(await duration(file(ftyp, box('moov', mvhd0(1000, 0))))).toBeNull();
+  });
+
+  // shyden-labs/shydesk#86: every track's own lengths are read too, and a file that disagrees with itself is refused.
+  it('gives the longest length when every track agrees with the movie within a second', async () => {
+    const moov = box('moov', [...mvhd0(1000, 10_000), ...trak(tkhd0(10_200), mdhd0(48_000, 48 * 10_100))]);
+    expect(await duration(file(ftyp, moov))).toBe(10_200);
+  });
+
+  it('refuses a track header that runs over a second past the movie header', async () => {
+    const moov = box('moov', [...mvhd0(1000, 10_000), ...trak(tkhd0(45_000), mdhd0(1000, 10_000))]);
+    expect(await duration(file(ftyp, moov))).toBeNull();
+  });
+
+  it("refuses a track's media running over a second past the movie, in the track's own timescale", async () => {
+    const moov = box('moov', [...mvhd0(1000, 10_000), ...trak(tkhd0(10_000), mdhd0(90_000, 90 * 45_000))]);
+    expect(await duration(file(ftyp, moov))).toBeNull();
+  });
+
+  it('refuses a track shorter than the movie by over a second', async () => {
+    const moov = box('moov', [...mvhd0(1000, 10_000), ...trak(tkhd0(8_000), mdhd0(1000, 8_000))]);
+    expect(await duration(file(ftyp, moov))).toBeNull();
+  });
+
+  it('checks every track, not just the first', async () => {
+    const ok = trak(tkhd0(10_000), mdhd0(1000, 10_000));
+    const moov = box('moov', [...mvhd0(1000, 10_000), ...ok, ...trak(tkhd0(40_000), mdhd0(1000, 40_000))]);
+    expect(await duration(file(ftyp, moov))).toBeNull();
+  });
+
+  it('reads a track header in the movie timescale, wherever the movie header sits', async () => {
+    const moov = box('moov', [...trak(tkhd0(20_000), mdhd0(1000, 10_000)), ...mvhd0(2000, 20_000)]);
+    expect(await duration(file(ftyp, moov))).toBe(10_000);
+  });
+
+  it('reads version 1 track and media headers, high halves kept', async () => {
+    const long = trak(tkhd1(1, 10_000), mdhd1(1000, 0, 10_000));
+    expect(await duration(file(ftyp, box('moov', [...mvhd0(1000, 10_000), ...long])))).toBeNull();
+    const fine = trak(tkhd1(0, 10_000), mdhd1(1000, 0, 10_000));
+    expect(await duration(file(ftyp, box('moov', [...mvhd0(1000, 10_000), ...fine])))).toBe(10_000);
+  });
+
+  it('refuses a track whose headers are cut short or missing', async () => {
+    const cut = box('tkhd', [0, 0, 0, 0, ...u32(0)]);
+    expect(await duration(file(ftyp, box('moov', [...mvhd0(1000, 10_000), ...trak(cut, mdhd0(1000, 10_000))])))).toBeNull();
+    const noMedia = box('trak', tkhd0(10_000));
+    expect(await duration(file(ftyp, box('moov', [...mvhd0(1000, 10_000), ...noMedia])))).toBeNull();
+    const noHeader = box('trak', box('mdia', mdhd0(1000, 10_000)));
+    expect(await duration(file(ftyp, box('moov', [...mvhd0(1000, 10_000), ...noHeader])))).toBeNull();
+  });
+
+  it('refuses a track whose box runs past the end of moov', async () => {
+    const whole = trak(tkhd0(10_000), mdhd0(1000, 10_000));
+    const cut = [...u32(whole.length + 50), ...whole.slice(4)];
+    expect(await duration(file(ftyp, box('moov', [...mvhd0(1000, 10_000), ...cut])))).toBeNull();
+  });
+
+  it('refuses a second moov, whatever it says', async () => {
+    const one = box('moov', mvhd0(1000, 10_000));
+    expect(await duration(file(ftyp, one, box('mdat', [1, 2, 3]), one))).toBeNull();
+  });
+
+  it('refuses a file with too many boxes after moov to see whether a second one follows', async () => {
+    const many = Array.from({ length: 40 }, () => box('free', []));
+    expect(await duration(file(ftyp, box('moov', mvhd0(1000, 10_000)), ...many))).toBeNull();
+  });
+
+  it('refuses a file whose boxes stop making sense after moov', async () => {
+    expect(await duration(file(ftyp, box('moov', mvhd0(1000, 10_000)), [0, 0, 0, 2, 9, 9]))).toBeNull();
   });
 
   it('gives up on a file of endless tiny boxes', async () => {
