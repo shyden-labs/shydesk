@@ -19,8 +19,14 @@ updates:
         patterns:
           - 'vitest'
           - '@vitest/*'
+      # The WebdriverIO packages are released together at one version, so
+      # they move in one pull request, not six (shyden-labs/shydesk#113).
+      wdio:
+        patterns:
+          - '@wdio/*'
+          - 'webdriverio'
       # Dependabot scores groups rather than reading them in order, so the
-      # catch-all names what the vitest group holds, or a patch bump of one
+      # catch-all names what each pattern group holds, or a patch bump of one
       # of them could land here alone.
       patch-updates:
         update-types:
@@ -28,6 +34,8 @@ updates:
         exclude-patterns:
           - 'vitest'
           - '@vitest/*'
+          - '@wdio/*'
+          - 'webdriverio'
 
   - package-ecosystem: 'github-actions'
     directory: '/'
