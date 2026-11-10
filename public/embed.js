@@ -9,7 +9,8 @@
  * The piece draws in its own shadow root, takes its colours and font from the
  * page's `--shydesk-*` custom properties, and calls `/support-api/...` on the
  * ShyDesk host this script came from, so the same file works on live and on
- * Non-Prod. `lang` is accepted and not used until the piece is translated.
+ * Non-Prod. `lang` picks the privacy notice's language and policy link
+ * (Indonesian for `id`, English otherwise); the rest of the piece is English.
  * Cloudflare's Turnstile widget lives in the element's light DOM, shown
  * through a slot, where Turnstile's own script can reach it.
  *
@@ -25,7 +26,7 @@
   const TEXT = {
     loading: 'Loading the support form…',
     cannotLoad: 'The support form could not load here.',
-    // shyden-labs/shydesk#78: DRAFT wording, waiting on Shyden's approval; the Indonesian line follows it.
+    // shyden-labs/shydesk#78: wording approved by Shyden 2026-11-11; the Indonesian copy is NOTICE_ID below.
     kept: 'Messages are kept for {text} days, and photos and videos for {attachments} days, after the request is closed.',
     privacyNotice: 'Privacy notice',
     privacyPolicy: 'Privacy policy',
@@ -66,6 +67,16 @@
     wrongType: 'Only photos and MP4 videos can be attached.',
     tooMany: 'Attach up to 10 files.',
     notUploaded: 'The file could not be uploaded. Try again.',
+  };
+
+  /**
+   * The privacy notice for a page whose `lang` is Indonesian (shyden-labs/shydesk#78): written from the
+   * approved English, read back by Google Cloud Translation and read by Shyden, 2026-11-11.
+   */
+  const NOTICE_ID = {
+    kept: 'Pesan disimpan selama {text} hari, serta foto dan video selama {attachments} hari, setelah permintaan ditutup.',
+    privacyNotice: 'Pemberitahuan privasi',
+    privacyPolicy: 'Kebijakan privasi',
   };
 
   /** @type {Record<string, string>} */
@@ -309,11 +320,13 @@
       });
       const send = /** @type {HTMLButtonElement} */ (make('button', { type: 'submit', disabled: '' }, [TEXT.send]));
       // Above Send: what is kept and for how long, and the policy in the visitor's language (shyden-labs/shydesk#78).
-      const policyUrl = (this.getAttribute('lang') ?? '').toLowerCase().startsWith('id') ? config.privacy.id : config.privacy.en;
-      const kept = TEXT.kept.replace('{text}', String(config.keepDays.text)).replace('{attachments}', String(config.keepDays.attachments));
-      const notice = make('p', { class: 'notice', 'aria-label': TEXT.privacyNotice }, [
+      const indonesian = (this.getAttribute('lang') ?? '').toLowerCase().startsWith('id');
+      const policyUrl = indonesian ? config.privacy.id : config.privacy.en;
+      const copy = indonesian ? NOTICE_ID : TEXT;
+      const kept = copy.kept.replace('{text}', String(config.keepDays.text)).replace('{attachments}', String(config.keepDays.attachments));
+      const notice = make('p', { class: 'notice', 'aria-label': copy.privacyNotice }, [
         `${kept} `,
-        make('a', { href: policyUrl, target: '_blank', rel: 'noopener', 'aria-label': TEXT.privacyPolicy }, [TEXT.privacyPolicy]),
+        make('a', { href: policyUrl, target: '_blank', rel: 'noopener', 'aria-label': copy.privacyPolicy }, [copy.privacyPolicy]),
       ]);
 
       const form = make('form', { class: 'panel', novalidate: '' }, [
