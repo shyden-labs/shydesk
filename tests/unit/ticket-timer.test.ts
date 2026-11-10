@@ -177,7 +177,7 @@ describe('TicketTimer.alarm', () => {
     expect(writes(statements)).toEqual([]);
   });
 
-  it('text: deletes the stored attachments first, then the attachment rows, messages and ticket, all only if still closed', async () => {
+  it('text: deletes the stored attachments first, then the attachment rows, messages, staff read marks and ticket, all only if still closed', async () => {
     const { timer, store, statements, deleted } = timerWith('closed', [{ id: 'a1', r2_key: 'k1', thumb_key: null, bytes: 7 }]);
     await timer.apply('t1', { schedule: { text: NOW + DAY_MS }, cancel: [] });
     vi.setSystemTime(NOW + DAY_MS);
@@ -187,6 +187,7 @@ describe('TicketTimer.alarm', () => {
     expect(deletes.map((s) => s.sql.split(' WHERE')[0])).toEqual([
       'DELETE FROM attachments',
       'DELETE FROM messages',
+      'DELETE FROM reads',
       'DELETE FROM tickets',
     ]);
     for (const d of deletes) {
