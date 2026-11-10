@@ -33,7 +33,10 @@ export async function deleteAttachments(
   ]);
 }
 
-/** Deletes a closed ticket's text: any attachments still stored first, then its attachment rows, messages and the ticket itself. */
+/**
+ * Deletes a closed ticket's text: any attachments still stored first, then its attachment rows, messages, the staff
+ * read marks that reference it (shyden-labs/shydesk#119) and the ticket itself.
+ */
 export async function deleteText(
   db: D1Database,
   files: Pick<R2Bucket, 'delete'> | undefined,
@@ -44,6 +47,7 @@ export async function deleteText(
   await db.batch([
     db.prepare(`DELETE FROM attachments WHERE ${STILL_CLOSED}`).bind(ticketId),
     db.prepare(`DELETE FROM messages WHERE ${STILL_CLOSED}`).bind(ticketId),
+    db.prepare(`DELETE FROM reads WHERE ${STILL_CLOSED}`).bind(ticketId),
     db.prepare(`DELETE FROM tickets WHERE id = ? AND status = 'closed'`).bind(ticketId),
   ]);
 }
