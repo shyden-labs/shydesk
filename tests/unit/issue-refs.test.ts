@@ -16,7 +16,7 @@ const BARE_REF = /(?<![\w/&-])#\d+\b/g;
 const IGNORED = ['node_modules/**', 'coverage/**', '.vite/**', '.git/**', '.claude/**', '.superpowers/**'];
 
 const FILES = globSync(
-  ['**/*.{ts,js,json,md}', '.github/**/*.{yml,md}', '.github/node/Dockerfile', '.githooks/*', '.gitignore', '.npmrc', '.prettierignore'],
+  ['**/*.{ts,js,json,md}', '.github/**/*.{yml,md}', 'docker/node/Dockerfile', '.githooks/*', '.gitignore', '.npmrc', '.prettierignore'],
   { exclude: IGNORED },
 )
   .filter((file) => file !== 'package-lock.json')

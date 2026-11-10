@@ -7,7 +7,7 @@
  * deploys, the demo support page with it (shyden-labs/shydesk#19), and
  * the script appends `worker=true` to the step output for the workflow's
  * deploy step. Files that never deploy (docs, tests, scripts, workflows,
- * hooks, root config) pass. Any other path fails, named, and deploys nothing,
+ * hooks, root config, CI's Node pin) pass. Any other path fails, named, and deploys nothing,
  * so new deployable code cannot land without a dev deploy defined for it here.
  */
 import { appendFileSync, readFileSync } from 'node:fs';
@@ -18,6 +18,7 @@ const WORKER_FILES = ['wrangler.jsonc'];
 const NEVER_DEPLOYED_FOLDERS = ['docs', 'tests', 'scripts', '.github', '.githooks'];
 const NEVER_DEPLOYED_FILES = [
   'README.md',
+  'docker/node/Dockerfile',
   'LICENSE',
   'NOTICE',
   'package.json',
