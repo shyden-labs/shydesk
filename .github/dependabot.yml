@@ -61,7 +61,7 @@ updates:
   # The exact Node CI runs (shyden-labs/repo-template#143): Dependabot opens one pull request per Node
   # release, which alone goes red if the release warns. Majors are chosen.
   - package-ecosystem: 'docker'
-    directory: '/.github/node'
+    directory: '/docker/node'
     target-branch: 'develop'
     schedule:
       interval: 'weekly'

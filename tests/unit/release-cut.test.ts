@@ -523,7 +523,7 @@ describe('check-release-cut.yml', () => {
       [
         '      - id: node',
         '        run: |',
-        "          version=$(sed -nE 's/^FROM node:([0-9]+\\.[0-9]+\\.[0-9]+)$/\\1/p' .github/node/Dockerfile)",
+        "          version=$(sed -nE 's/^FROM node:([0-9]+\\.[0-9]+\\.[0-9]+)$/\\1/p' docker/node/Dockerfile)",
         '          test -n "$version"',
         '          echo "version=$version" >> "$GITHUB_OUTPUT"',
       ].join('\n'),
