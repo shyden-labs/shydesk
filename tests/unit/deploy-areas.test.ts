@@ -39,6 +39,11 @@ describe('undeployedPaths', () => {
     ).toEqual([]);
   });
 
+  // CI's Node pin is read by workflows only; any other file under docker/ is still named (shyden-labs/shydesk#112).
+  it("passes CI's Node pin, and names any other file under docker/", () => {
+    expect(undeployedPaths(['docker/node/Dockerfile', 'docker/app/Dockerfile'])).toEqual(['docker/app/Dockerfile']);
+  });
+
   it('names every path no area covers, and leaves out the Worker area', () => {
     expect(undeployedPaths(['docs/a.md', 'src/worker.ts', 'wrangler.toml', 'elsewhere/index.html'])).toEqual([
       'wrangler.toml',

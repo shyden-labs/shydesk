@@ -61,6 +61,12 @@ async function attachment(
     .run();
 }
 
+/** A rep who has opened the ticket, as the desk records it (src/desk/queries.ts). */
+const staffRead = async (email: string, ticketId: string) => {
+  await db.prepare(`INSERT INTO staff (email, role, created_at) VALUES (?, 'rep', 1000)`).bind(email).run();
+  await db.prepare(`INSERT INTO reads (email, ticket_id, read_seq) VALUES (?, ?, 1)`).bind(email, ticketId).run();
+};
+
 const one = async (sql: string, ...values: unknown[]) =>
   db
     .prepare(sql)
@@ -123,24 +129,30 @@ describe('retention on D1', () => {
     await product('it-tm-open');
     await ticket('it-tm-open', 'it-tm-o1', 'open', 1000, null);
     await attachment('it-tm-open', 'it-tm-y1', 'it-tm-o1', 'stored', 10);
+    await staffRead('it-tm-rep-o@example.com', 'it-tm-o1');
     const { deleted, files } = recorder();
     await deleteText(db, files, 'it-tm-o1', NOW);
     expect(deleted).toEqual([]);
+    expect(await one('SELECT read_seq FROM reads WHERE ticket_id = ?', 'it-tm-o1')).toEqual({ read_seq: 1 });
     expect(await one('SELECT state FROM attachments WHERE id = ?', 'it-tm-y1')).toEqual({ state: 'stored' });
     expect(await one('SELECT status FROM tickets WHERE id = ?', 'it-tm-o1')).toEqual({ status: 'open' });
   });
 
-  it('deletes a closed ticket’s text: its attachments, messages and the ticket', async () => {
+  // A ticket staff have opened carries their read marks, which reference it (shyden-labs/shydesk#119).
+  it('deletes a closed ticket’s text: its attachments, messages, staff read marks and the ticket', async () => {
     await product('it-tm-text');
     await ticket('it-tm-text', 'it-tm-t1', 'closed', 1000, 1000);
     await db
       .prepare(`INSERT INTO messages (id, ticket_id, author, body, created_at) VALUES ('it-tm-m1', 'it-tm-t1', 'customer', 'Hello', 1000)`)
       .run();
     await attachment('it-tm-text', 'it-tm-z1', 'it-tm-t1', 'deleted', 5);
+    await staffRead('it-tm-rep-t@example.com', 'it-tm-t1');
     await deleteText(db, recorder().files, 'it-tm-t1', NOW);
     expect(await one('SELECT id FROM tickets WHERE id = ?', 'it-tm-t1')).toBeNull();
     expect(await one('SELECT id FROM messages WHERE ticket_id = ?', 'it-tm-t1')).toBeNull();
     expect(await one('SELECT id FROM attachments WHERE ticket_id = ?', 'it-tm-t1')).toBeNull();
+    expect(await one('SELECT email FROM reads WHERE ticket_id = ?', 'it-tm-t1')).toBeNull();
+    expect(await one('SELECT email FROM staff WHERE email = ?', 'it-tm-rep-t@example.com')).toEqual({ email: 'it-tm-rep-t@example.com' });
   });
 });
 
