@@ -207,7 +207,7 @@ describe('Dependabot keeps the pins from rotting', () => {
       leaks: ecosystems.flatMap(leaks),
     }).toEqual({
       judged: [
-        ['npm', ['vitest', 'patch-updates']],
+        ['npm', ['vitest', 'wdio', 'patch-updates']],
         ['github-actions', ['actions-subpaths', 'patch-updates']],
         ['docker', []],
       ],
