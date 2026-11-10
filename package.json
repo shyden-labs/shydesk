@@ -36,7 +36,7 @@
     "typescript-eslint": "8.72.1",
     "vitest": "5.1.0",
     "webdriverio": "10.2.0",
-    "wrangler": "4.157.0",
+    "wrangler": "4.158.0",
     "yaml": "2.9.1"
   },
   "allowScripts": {
