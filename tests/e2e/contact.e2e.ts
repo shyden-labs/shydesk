@@ -135,10 +135,22 @@ describe('the contact form', () => {
     await textHolding('Viewer status', 'Photo 3 of 3, zoom ');
     await press('ArrowRight');
     await textHolding('Viewer status', 'Video 1 of 3, zoom 100%, rotated 0°');
-    await press('ArrowRight');
+    // TEMPORARY diagnosis for shyden-labs/shydesk#108: records (never sends) the events the page sees during the drag.
+    await driver().execute(
+      `const seen = []; let last = ''; window.seen108 = seen;
+      for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel', 'dragstart', 'mousedown', 'lostpointercapture']) {
+        document.addEventListener(type, (event) => {
+          if (last !== type) seen.push(type + ':' + event.target.tagName + ':' + event.defaultPrevented);
+          last = type;
+        }, true);
+      }`,
+    );
+    // Dragged across the video, which desktop Firefox did not move on from (shyden-labs/shydesk#108), then across a photo.
+    await swipeLeft('Viewer stage');
+    const seen = await driver().execute<string>("return window.seen108.join(' ')");
+    console.log(`#108 events: ${seen}`);
     await textHolding('Viewer status', 'Photo 2 of 3, zoom 100%, rotated 0°');
     await pictureDrew('Photo 2 full size');
-    // Dragged across a photo: on desktop Firefox a drag across a video does not move on yet (shyden-labs/shydesk#108).
     await swipeLeft('Viewer stage');
     await textHolding('Viewer status', 'Photo 3 of 3, zoom 100%, rotated 0°');
     await tap('Zoom in');
