@@ -68,6 +68,16 @@ describe('demoPage', () => {
     );
   });
 
+  it('sets the piece to the language asked for (shyden-labs/shydesk#78)', () => {
+    expect(demoPage(html, 'http://localhost:8787', 'demo', 'id')).toBe(
+      `<script src="http://localhost:8787/embed.js" defer></script>\n<shydesk-support product="demo" view="contact" lang="id"></shydesk-support>`,
+    );
+  });
+
+  it('refuses a language that is not a plain language code', () => {
+    expect(() => demoPage(html, 'http://localhost:8787', 'demo', '"><script>')).toThrow('not a language code');
+  });
+
   it('refuses a product id that is not plain', () => {
     expect(() => demoPage(html, 'http://localhost:8787', '"><script>')).toThrow('not a product id');
   });

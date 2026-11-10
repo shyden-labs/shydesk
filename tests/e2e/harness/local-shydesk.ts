@@ -57,13 +57,17 @@ export function seedSql(suiteOrigin: string): string {
   ].join('\n');
 }
 
-/** The demo page with its piece loaded from `shydesk` for `product`. */
-export function demoPage(html: string, shydesk: string, product: string): string {
+/** The demo page with its piece loaded from `shydesk` for `product`, in `lang` (shyden-labs/shydesk#78). */
+export function demoPage(html: string, shydesk: string, product: string, lang = 'en'): string {
   if (!PRODUCT_ID.test(product)) throw new Error(`${product} is not a product id`);
+  if (!/^[a-z]{2}$/.test(lang)) throw new Error(`${lang} is not a language code`);
   if (!html.includes(`${NON_PROD_SHYDESK}/embed.js`) || !html.includes('product="demo"')) {
     throw new Error('the demo page no longer loads the Non-Prod piece for product "demo"');
   }
-  return html.replace(`${NON_PROD_SHYDESK}/embed.js`, `${shydesk}/embed.js`).replace('product="demo"', `product="${product}"`);
+  return html
+    .replace(`${NON_PROD_SHYDESK}/embed.js`, `${shydesk}/embed.js`)
+    .replace(/(<shydesk-support [^>]*)lang="en"/, `$1lang="${lang}"`)
+    .replace('product="demo"', `product="${product}"`);
 }
 
 /** `npx` arguments for the local ShyDesk, its state kept in `stateDir`. */

@@ -196,6 +196,19 @@ describe('the contact form', () => {
     await textHolding('Support status', 'This link is no longer valid.');
   });
 
+  it('shows an Indonesian page the privacy notice in Indonesian, linking the Indonesian policy', async () => {
+    // shyden-labs/shydesk#78 AC2, AC3: wording approved by Shyden 2026-11-11, read back by Google Cloud Translation.
+    await driver().url('/contact.html?product=demo&lang=id');
+    await textHolding(
+      'Pemberitahuan privasi',
+      'Pesan disimpan selama 365 hari, serta foto dan video selama 30 hari, setelah permintaan ditutup.',
+    );
+    const policy = await named('Kebijakan privasi');
+    assert.equal(await policy.getText(), 'Kebijakan privasi');
+    const pageOrigin = await driver().execute<string>('return location.origin;');
+    assert.equal(await policy.getAttribute('href'), `${pageOrigin}/privacy-id.html`);
+  });
+
   it('cannot load on a page whose origin the product does not allow', async () => {
     // A known product whose only allowed origin is elsewhere: the browser refuses the answer (no CORS header).
     await driver().url('/contact.html?product=demo-elsewhere');
