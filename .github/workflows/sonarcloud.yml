@@ -55,7 +55,7 @@ jobs:
       # The exact Node, from the one file Dependabot bumps (shyden-labs/repo-template#143).
       - id: node
         run: |
-          version=$(sed -nE 's/^FROM node:([0-9]+\.[0-9]+\.[0-9]+)$/\1/p' .github/node/Dockerfile)
+          version=$(sed -nE 's/^FROM node:([0-9]+\.[0-9]+\.[0-9]+)$/\1/p' docker/node/Dockerfile)
           test -n "$version"
           echo "version=$version" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0

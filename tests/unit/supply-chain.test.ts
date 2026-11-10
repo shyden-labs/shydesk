@@ -244,7 +244,7 @@ describe('Dependabot keeps the pins from rotting', () => {
  * sets Node 26.3+, and every project runs the same versions as the rest).
  *
  * `ubuntu-latest` and a bare major Node are floating pins: the image or the Node under CI changes on
- * GitHub's schedule, not this repo's. Node is now `.github/node/Dockerfile` alone. Each
+ * GitHub's schedule, not this repo's. Node is now `docker/node/Dockerfile` alone. Each
  * reader is an allow-list of the one value written, so every other spelling
  * (a list, an expression, a block of labels, another case) fails, naming it.
  */
@@ -282,14 +282,14 @@ const workflow = (file: string) => readFileSync(join(WORKFLOWS, file), 'utf8');
 
 /**
  * The read step every Node setup follows (shyden-labs/repo-template#143): it takes the exact version
- * from the one file Dependabot bumps, `.github/node/Dockerfile`, and fails the
+ * from the one file Dependabot bumps, `docker/node/Dockerfile`, and fails the
  * job when that file holds no exact `FROM node:x.y.z` line, so setup-node
  * never gets an empty version and falls back to the runner's own Node.
  */
 const READ_STEP = [
   '- id: node',
   '  run: |',
-  "    version=$(sed -nE 's/^FROM node:([0-9]+\\.[0-9]+\\.[0-9]+)$/\\1/p' .github/node/Dockerfile)",
+  "    version=$(sed -nE 's/^FROM node:([0-9]+\\.[0-9]+\\.[0-9]+)$/\\1/p' docker/node/Dockerfile)",
   '    test -n "$version"',
   '    echo "version=$version" >> "$GITHUB_OUTPUT"',
 ];
@@ -461,7 +461,7 @@ describe('the template runs one Node and one runner, pinned exactly', () => {
 
   // No version is written here: a second copy would turn every Dependabot pull request red until edited by hand (reference-supply-chain.md, 2026-10-30).
   it('reads an exact Node 26 from the one file Dependabot bumps, whatever patch Dependabot moved it to', () => {
-    const pin = nodePin(readFileSync('.github/node/Dockerfile', 'utf8'));
+    const pin = nodePin(readFileSync('docker/node/Dockerfile', 'utf8'));
     // A refused file prints `wrong: <its reason>` here, with no branch left unrun on a valid file.
     expect(
       Object.entries(pin)
@@ -494,7 +494,7 @@ describe('the template runs one Node and one runner, pinned exactly', () => {
     expect(configBody()).toContain(
       [
         "  - package-ecosystem: 'docker'",
-        "    directory: '/.github/node'",
+        "    directory: '/docker/node'",
         "    target-branch: 'develop'",
         '    schedule:',
         "      interval: 'weekly'",
