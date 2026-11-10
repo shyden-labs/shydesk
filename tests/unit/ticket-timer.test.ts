@@ -177,7 +177,7 @@ describe('TicketTimer.alarm', () => {
     expect(writes(statements)).toEqual([]);
   });
 
-  it('text: deletes the stored attachments first, then the attachment rows, messages and ticket, all only if still closed', async () => {
+  it('text: deletes the stored attachments first, then the attachment rows, messages, staff read marks and ticket, all only if still closed', async () => {
     const { timer, store, statements, deleted } = timerWith('closed', [{ id: 'a1', r2_key: 'k1', thumb_key: null, bytes: 7 }]);
     await timer.apply('t1', { schedule: { text: NOW + DAY_MS }, cancel: [] });
     vi.setSystemTime(NOW + DAY_MS);
@@ -187,6 +187,7 @@ describe('TicketTimer.alarm', () => {
     expect(deletes.map((s) => s.sql.split(' WHERE')[0])).toEqual([
       'DELETE FROM attachments',
       'DELETE FROM messages',
+      'DELETE FROM reads',
       'DELETE FROM tickets',
     ]);
     for (const d of deletes) {
@@ -201,8 +202,10 @@ describe('TicketTimer.alarm', () => {
     await timer.apply('t1', { schedule: { text: NOW + DAY_MS }, cancel: [] });
     vi.setSystemTime(NOW + DAY_MS);
     await timer.alarm();
-    expect(statements.filter((s) => s.sql.startsWith('DELETE'))).toHaveLength(3);
-    // The deletes carry the closed check, so on an open ticket they match nothing.
+    const deletes = statements.filter((s) => s.sql.startsWith('DELETE'));
+    // The deletes carry the closed check, so on an open ticket they match nothing (its read marks included, shyden-labs/shydesk#119).
+    expect(deletes).toHaveLength(4);
+    for (const d of deletes) expect(d.sql).toContain("status = 'closed'");
     expect(statements.some((s) => s.sql.startsWith('UPDATE'))).toBe(false);
   });
 
