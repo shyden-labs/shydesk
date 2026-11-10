@@ -18,7 +18,7 @@
     "test:e2e:device": "wdio run wdio.conf.ts; status=$?; node scripts/e2e-totals.ts .e2e-runs && exit $status"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "5.20261106.1",
+    "@cloudflare/workers-types": "5.20261107.1",
     "@eslint/js": "10.0.1",
     "@types/mocha": "10.0.10",
     "@types/node": "26.6.6",
