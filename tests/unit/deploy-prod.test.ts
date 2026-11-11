@@ -37,8 +37,10 @@ describe('deploy-prod', () => {
 
   it('migrates and deploys the live Worker, never the dev one, refusing a missing secret', () => {
     const text = workflow();
-    expect(text).toContain('npx wrangler d1 migrations apply shydesk --remote');
-    expect(text).toMatch(/npx wrangler deploy$/m);
+    // `--env=""` names the top-level (live) Worker, so wrangler does not warn that no environment was chosen.
+    // (The text is read with quotes removed, so `--env=""` reads as `--env=`.)
+    expect(text).toContain('npx wrangler d1 migrations apply shydesk --remote --env=\n');
+    expect(text).toMatch(/npx wrangler deploy --env=$/m);
     expect(text).not.toMatch(/--env\s+dev/);
     expect(text).not.toContain('--dry-run');
     expect(text).toContain('::error title=No $name in the production environment::');
