@@ -410,6 +410,22 @@ export async function swipeLeft(label: string): Promise<void> {
     .perform();
 }
 
+/**
+ * A real mouse click at the middle of where the element named `label` is drawn: whatever a person's
+ * click there would reach gets it, as a layer drawn over the element does (shyden-labs/shydesk#108).
+ */
+export async function clickMiddleOf(label: string): Promise<void> {
+  const on = phone();
+  if (on !== undefined) notOnPhonesYet(on, 'a click on a drawn point');
+  const at = await drawnCentre(label);
+  await driver()
+    .action('pointer', { parameters: { pointerType: 'mouse' } })
+    .move({ x: at.x, y: at.y })
+    .down()
+    .up()
+    .perform();
+}
+
 /** A real key press, sent to whatever has focus. */
 export async function press(key: ViewerKey): Promise<void> {
   const on = phone();
