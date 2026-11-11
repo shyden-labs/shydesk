@@ -10,7 +10,7 @@ import { describe, it } from 'mocha';
 import { strict as assert } from 'node:assert';
 import { driver } from './harness/driver.ts';
 import { named } from './harness/find.ts';
-import { clickMiddleOf, pickFile, press, swipeLeft, tap, tapToNewPage, type, zoomIn } from './harness/input.ts';
+import { clickMiddleOf, pickFile, press, pressVideoControl, swipeLeft, tap, tapToNewPage, type, zoomIn } from './harness/input.ts';
 import { SEEDED_TICKET_TOKEN, SHYDESK_PORT } from './harness/local-shydesk.ts';
 
 const WAIT = 20_000;
@@ -60,6 +60,33 @@ async function videoPlaying(label: string): Promise<void> {
     timeout: WAIT,
     timeoutMsg: `"${label}" never started playing`,
   });
+}
+
+/** Waits until the video named `label` is paused. */
+async function videoPaused(label: string): Promise<void> {
+  const video = await named(label);
+  await driver().waitUntil(async () => (await video.getProperty('paused')) === true, {
+    timeout: WAIT,
+    timeoutMsg: `"${label}" never paused`,
+  });
+}
+
+/** The current time, in seconds, of the video named `label`. */
+async function videoTime(label: string): Promise<number> {
+  return Number(await (await named(label)).getProperty('currentTime'));
+}
+
+/** Waits until the video named `label` has jumped more than 2 s from `from` seconds, still inside it. */
+async function videoJumpedFrom(label: string, from: number): Promise<void> {
+  const video = await named(label);
+  let time = from;
+  await driver().waitUntil(
+    async () => {
+      time = Number(await video.getProperty('currentTime'));
+      return Math.abs(time - from) > 2 && time < Number(await video.getProperty('duration'));
+    },
+    { timeout: WAIT, timeoutMsg: `"${label}" never scrubbed away from ${String(from)} s; it stood at ${String(time)} s` },
+  );
 }
 
 /** Fails unless the point a few pixels above the bottom middle of the video named `label` is the video itself. */
@@ -159,6 +186,14 @@ describe('the contact form', () => {
     await clickMiddleOf('Video 1 full size');
     await videoPlaying('Video 1 full size');
     await controlsBarUncovered('Video 1 full size');
+    // AC2: the browser's own controls still work over the drag layer: its pause, a scrub along its bar, its play.
+    await pressVideoControl('Video 1 full size', 'play');
+    await videoPaused('Video 1 full size');
+    const pausedAt = await videoTime('Video 1 full size');
+    await pressVideoControl('Video 1 full size', 'scrub');
+    await videoJumpedFrom('Video 1 full size', pausedAt);
+    await pressVideoControl('Video 1 full size', 'play');
+    await videoPlaying('Video 1 full size');
     // A sideways drag across the video moves on, as across a photo, on every browser.
     await swipeLeft('Viewer stage');
     await textHolding('Viewer status', 'Photo 2 of 3, zoom 100%, rotated 0°');

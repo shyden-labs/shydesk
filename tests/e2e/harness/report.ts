@@ -35,15 +35,20 @@ export async function supportPieceState(): Promise<string> {
 }
 
 /**
- * On a phone, what the screen showed when a test failed: a screenshot and
+ * What the screen showed when a test failed: on a phone a screenshot and
  * the native tree, saved beside the run's records. The keyboard covering
  * Send and the names iOS gives controls were each found this way
  * (shyden-labs/shydesk#73); a dialog over the page would show here too.
  */
-export async function savePhoneScreen(dir: string, title: string): Promise<void> {
+export async function saveFailureScreen(dir: string, title: string): Promise<void> {
   const target = targetOf(driver().capabilities);
-  if (target !== 'android' && target !== 'ios') return;
   const name = join(dir, `${target}-${title.replace(/\W+/g, '-').slice(0, 60)}`);
+  if (target !== 'android' && target !== 'ios') {
+    // A desktop browser's window at the failure, its own video controls included (shyden-labs/shydesk#108).
+    await driver().saveScreenshot(`${name}.png`);
+    console.log(`${target}: the window at the failure is in ${name}.png`);
+    return;
+  }
   const page = await driver().getContext();
   try {
     await driver().switchContext('NATIVE_APP');

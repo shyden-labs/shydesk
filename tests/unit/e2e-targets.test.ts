@@ -29,6 +29,7 @@ import {
   STEADY_MS,
   swipeUp,
   centreInside,
+  videoControlPoint,
 } from '../e2e/harness/targets.ts';
 
 /**
@@ -620,5 +621,25 @@ describe('pressMissed on a press that loads a new page', () => {
 
   it('still names a press that never reached a page that stayed', () => {
     expect(pressMissed('Demo', { x: 1, y: 2 }, null)).toContain('never reached the page');
+  });
+});
+
+describe('videoControlPoint (shyden-labs/shydesk#108 AC2)', () => {
+  const video = { x: 100, y: 50, width: 640, height: 360 };
+
+  it('puts play and pause 20 px in from the left and 20 px up from the bottom of the video', () => {
+    expect(videoControlPoint(video, 'play')).toEqual({ x: 120, y: 390 });
+  });
+
+  it('puts the scrub point 60% across the video, 20 px up from its bottom', () => {
+    expect(videoControlPoint(video, 'scrub')).toEqual({ x: 484, y: 390 });
+  });
+
+  it('rounds to whole CSS pixels', () => {
+    expect(videoControlPoint({ x: 0.4, y: 0.4, width: 101, height: 50.3 }, 'scrub')).toEqual({ x: 61, y: 31 });
+  });
+
+  it('refuses a video that is not drawn', () => {
+    expect(() => videoControlPoint({ x: 0, y: 0, width: 0, height: 0 }, 'play')).toThrow('the video is not drawn (it has no size)');
   });
 });

@@ -195,6 +195,22 @@ export function viewportPoint(box: Box, viewport: { width: number; height: numbe
   return { x, y };
 }
 
+/** A control in the browser's own controls bar along the bottom of a video (shyden-labs/shydesk#108 AC2). */
+export type VideoControl = 'play' | 'scrub';
+
+/** How far up from the video's bottom edge the controls bar's middle is drawn, in CSS pixels. */
+const CONTROLS_BAR_MIDDLE = 20;
+
+/**
+ * Where to press the browser's own control on a video drawn at `box`: play and
+ * pause at the bar's left end, the scrub point 60% across, on the bar.
+ */
+export function videoControlPoint(box: Box, control: VideoControl): { x: number; y: number } {
+  if (box.width <= 0 || box.height <= 0) throw new Error('the video is not drawn (it has no size)');
+  const across = control === 'play' ? CONTROLS_BAR_MIDDLE : box.width * 0.6;
+  return { x: Math.round(box.x + across), y: Math.round(box.y + box.height - CONTROLS_BAR_MIDDLE) };
+}
+
 /**
  * Why a lookup by name failed: the name wanted, every distinct name the page
  * did have, and the error the last lookup threw, if it threw one.

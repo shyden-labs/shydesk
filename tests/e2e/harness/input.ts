@@ -35,6 +35,8 @@ import {
   centreInside,
   viewportPoint,
   type Box,
+  videoControlPoint,
+  type VideoControl,
   type Fixture,
   type Phone,
   typedMismatch,
@@ -421,6 +423,28 @@ export async function clickMiddleOf(label: string): Promise<void> {
   await driver()
     .action('pointer', { parameters: { pointerType: 'mouse' } })
     .move({ x: at.x, y: at.y })
+    .down()
+    .up()
+    .perform();
+}
+
+/**
+ * A real mouse press on the browser's own control over the video named `label`: the
+ * pointer rests on the bar first, so a browser that hides its controls shows them.
+ */
+export async function pressVideoControl(label: string, control: VideoControl): Promise<void> {
+  const on = phone();
+  if (on !== undefined) notOnPhonesYet(on, `the video's own ${control} control`);
+  const video = await named(label);
+  const box = await driver().execute<Box>(
+    'const r = arguments[0].getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height };',
+    video,
+  );
+  const at = videoControlPoint(box, control);
+  await driver()
+    .action('pointer', { parameters: { pointerType: 'mouse' } })
+    .move({ x: at.x, y: at.y })
+    .pause(500)
     .down()
     .up()
     .perform();
