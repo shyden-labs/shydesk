@@ -10,7 +10,7 @@ import { describe, it } from 'mocha';
 import { strict as assert } from 'node:assert';
 import { driver } from './harness/driver.ts';
 import { named } from './harness/find.ts';
-import { pickFile, press, swipeLeft, tap, tapToNewPage, type, zoomIn } from './harness/input.ts';
+import { clickMiddleOf, pickFile, press, swipeLeft, tap, tapToNewPage, type, zoomIn } from './harness/input.ts';
 import { SEEDED_TICKET_TOKEN, SHYDESK_PORT } from './harness/local-shydesk.ts';
 
 const WAIT = 20_000;
@@ -51,6 +51,25 @@ async function zoomedIn(): Promise<void> {
     },
     { timeout: WAIT, timeoutMsg: `the viewer never zoomed in; its status said "${text}"` },
   );
+}
+
+/** Waits until the video named `label` is playing. */
+async function videoPlaying(label: string): Promise<void> {
+  const video = await named(label);
+  await driver().waitUntil(async () => (await video.getProperty('paused')) === false, {
+    timeout: WAIT,
+    timeoutMsg: `"${label}" never started playing`,
+  });
+}
+
+/** Fails unless the point a few pixels above the bottom middle of the video named `label` is the video itself. */
+async function controlsBarUncovered(label: string): Promise<void> {
+  const video = await named(label);
+  const top = await driver().execute<string>(
+    'const v = arguments[0]; const r = v.getBoundingClientRect(); const hit = v.getRootNode().elementFromPoint(r.x + r.width / 2, r.bottom - 8); return hit === v ? "video" : String(hit && hit.className);',
+    video,
+  );
+  assert.equal(top, 'video', `the controls bar of "${label}" is covered by "${top}"`);
 }
 
 /** Waits until the full-size picture named `label` has drawn. */
@@ -135,10 +154,15 @@ describe('the contact form', () => {
     await textHolding('Viewer status', 'Photo 3 of 3, zoom ');
     await press('ArrowRight');
     await textHolding('Viewer status', 'Video 1 of 3, zoom 100%, rotated 0°');
-    await press('ArrowRight');
+    // shyden-labs/shydesk#108: a click on the video's picture plays it, and the browser's own controls bar,
+    // along the bottom of the picture, is left uncovered for the browser's play, pause and scrub.
+    await clickMiddleOf('Video 1 full size');
+    await videoPlaying('Video 1 full size');
+    await controlsBarUncovered('Video 1 full size');
+    // A sideways drag across the video moves on, as across a photo, on every browser.
+    await swipeLeft('Viewer stage');
     await textHolding('Viewer status', 'Photo 2 of 3, zoom 100%, rotated 0°');
     await pictureDrew('Photo 2 full size');
-    // Dragged across a photo: on desktop Firefox a drag across a video does not move on yet (shyden-labs/shydesk#108).
     await swipeLeft('Viewer stage');
     await textHolding('Viewer status', 'Photo 3 of 3, zoom 100%, rotated 0°');
     await tap('Zoom in');
