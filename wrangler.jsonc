@@ -8,6 +8,15 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-10-20",
   "workers_dev": false,
+  // shyden-labs/shydesk#13: live is served on its own domain only.
+  "routes": [{ "pattern": "shydesk.dpdns.org", "custom_domain": true }],
+  // Public values only; TURNSTILE_SECRET, SMTP_LOGINS and TICKET_TOKEN_KEY are Worker secrets.
+  "vars": {
+    "TURNSTILE_SITE_KEY": "0x4AAAAAAFzxpu4P-1-Vh2oT",
+    "SMTP_HOST": "web-par-01.sparkedhost.us",
+    "ACCESS_TEAM_DOMAIN": "mute-hall-8342.cloudflareaccess.com",
+    "ACCESS_AUD": "7348351af5ffa113214ae16277b0d288153984854337eb2cade7cf4d18bd1ea0",
+  },
   // The API docs (shyden-labs/shydesk#26): built by scripts/build-api-docs.ts
   // before every deploy, and served only through the Worker's staff check.
   "build": { "command": "node scripts/build-api-docs.ts" },
@@ -21,16 +30,18 @@
     "dev": {
       "name": "shydesk",
       "workers_dev": true,
+      // Routes are inherited: dev keeps off live's custom domain.
+      "routes": [],
       "d1_databases": [{ "binding": "DB", "database_name": "shydesk", "database_id": "482eef16-a848-488a-a1fa-e859031aabd1" }],
       "r2_buckets": [{ "binding": "FILES", "bucket_name": "shydesk-attachments" }],
       "durable_objects": { "bindings": [{ "name": "TICKET_TIMER", "class_name": "TicketTimer" }] },
-      // Non-Prod's Turnstile: Cloudflare's published always-pass test keys (shyden-labs/shydesk#19)
-      // until shyden-labs/shydesk#13 sets real ones. Live has none: its contact form answers 503.
+      // Non-Prod's own Turnstile widget and Sparked Host's mail server (shyden-labs/shydesk#13); the
+      // secrets (TURNSTILE_SECRET, SMTP_LOGINS) are set on the Worker, never here.
       // Non-Prod's Access team and application audience (shyden-labs/shydesk#74): public, as they
       // appear in every Access login address and token, so they are vars, not secrets.
       "vars": {
-        "TURNSTILE_SITE_KEY": "1x00000000000000000000AA",
-        "TURNSTILE_SECRET": "1x0000000000000000000000000000000AA",
+        "TURNSTILE_SITE_KEY": "0x4AAAAAAFzxlFNTRFPriE2H",
+        "SMTP_HOST": "web-par-01.sparkedhost.us",
         "ACCESS_TEAM_DOMAIN": "dawn-lab-ed42.cloudflareaccess.com",
         "ACCESS_AUD": "cecc27a55c169053120557c748cd105f9b4199f3a66d9ef313eaf5700db39973",
         // The API docs let staff try requests that write here only (shyden-labs/shydesk#83).

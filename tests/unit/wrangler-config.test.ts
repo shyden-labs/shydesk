@@ -16,8 +16,19 @@ const config = JSON.parse(
   build?: unknown;
   durable_objects?: unknown;
   migrations?: unknown;
-  vars?: unknown;
-  env: { dev: { assets?: unknown; build?: unknown; durable_objects?: unknown; migrations?: unknown; vars?: unknown } };
+  vars?: Record<string, string>;
+  routes?: unknown;
+  workers_dev?: unknown;
+  env: {
+    dev: {
+      assets?: unknown;
+      build?: unknown;
+      durable_objects?: unknown;
+      migrations?: unknown;
+      routes?: unknown;
+      vars?: Record<string, string>;
+    };
+  };
 };
 
 describe('wrangler.jsonc', () => {
@@ -57,21 +68,45 @@ describe('the ticket timer in wrangler.jsonc', () => {
     expect(entry.TicketTimer).toBe(TicketTimer);
   });
 
-  // shyden-labs/shydesk#19: Non-Prod checks the contact form with Cloudflare's
-  // published always-pass test keys until shyden-labs/shydesk#13 sets real
-  // ones; live never carries them, so it answers 503 until its secret is set.
-  it('gives dev the Turnstile test keys and live none', () => {
-    expect(config.env.dev.vars).toMatchObject({
-      TURNSTILE_SITE_KEY: '1x00000000000000000000AA',
-      TURNSTILE_SECRET: '1x0000000000000000000000000000000AA',
-    });
-    expect(config.vars).toBeUndefined();
+  // shyden-labs/shydesk#13: each account's real Turnstile widget. Site keys are public, so they
+  // are vars; each TURNSTILE_SECRET is a Worker secret Shyden sets, so no config names one.
+  it('gives live and dev their own Turnstile site keys and no secret', () => {
+    expect(config.vars).toMatchObject({ TURNSTILE_SITE_KEY: '0x4AAAAAAFzxpu4P-1-Vh2oT' });
+    expect(config.env.dev.vars).toMatchObject({ TURNSTILE_SITE_KEY: '0x4AAAAAAFzxlFNTRFPriE2H' });
+    expect(config.vars).not.toHaveProperty('TURNSTILE_SECRET');
+    expect(config.env.dev.vars).not.toHaveProperty('TURNSTILE_SECRET');
   });
 
-  // shyden-labs/shydesk#83: staff may try requests that write from the docs on Non-Prod only; live has no vars at all.
+  // shyden-labs/shydesk#13 AC3: both send through Sparked Host's mail server (Paris); the logins are the SMTP_LOGINS secret.
+  it('sends mail through Sparked Host on live and on dev', () => {
+    expect(config.vars).toMatchObject({ SMTP_HOST: 'web-par-01.sparkedhost.us' });
+    expect(config.env.dev.vars).toMatchObject({ SMTP_HOST: 'web-par-01.sparkedhost.us' });
+  });
+
+  // shyden-labs/shydesk#13 AC1: live staff sign in through the live account's Access app "ShyDesk staff"
+  // over shydesk.dpdns.org /desk, /admin and /api/docs (created 2026-11-11). Both values are public.
+  it("gives live the live account's Access team and audience", () => {
+    expect(config.vars).toMatchObject({
+      ACCESS_TEAM_DOMAIN: 'mute-hall-8342.cloudflareaccess.com',
+      ACCESS_AUD: '7348351af5ffa113214ae16277b0d288153984854337eb2cade7cf4d18bd1ea0',
+    });
+  });
+
+  // shyden-labs/shydesk#13 AC2: live is served on its own domain, never on workers.dev.
+  it('serves live on shydesk.dpdns.org as a custom domain', () => {
+    expect(config.routes).toEqual([{ pattern: 'shydesk.dpdns.org', custom_domain: true }]);
+    expect(config.workers_dev).toBe(false);
+  });
+
+  // Routes are inherited by an environment: without its own empty list, a dev deploy would claim live's domain.
+  it('keeps dev off the live domain', () => {
+    expect(config.env.dev.routes).toEqual([]);
+  });
+
+  // shyden-labs/shydesk#83: staff may try requests that write from the docs on Non-Prod only.
   it('lets the docs try writes on dev only', () => {
     expect(config.env.dev.vars).toMatchObject({ TRY_WRITES: 'true' });
-    expect(config.vars).toBeUndefined();
+    expect(config.vars).not.toHaveProperty('TRY_WRITES');
   });
 
   // Staff sign in through Non-Prod's Cloudflare Access (shyden-labs/shydesk#74). Both values are
