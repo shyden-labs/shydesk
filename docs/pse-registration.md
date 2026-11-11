@@ -48,8 +48,14 @@ off).
 - **Sparked Host's mail server** sends the no-reply notice, over SMTP on port 587 with STARTTLS (`src/mail/socket.ts`).
 - **Cloudflare Access** signs staff in (`src/auth/access.ts:39-46`).
 
-Still to read before submitting (Shyden, in the dashboards): the region Cloudflare placed the live D1 database and R2
-bucket in (Cloudflare's dashboard, the ShyDesk account), and the country of the Sparked Host mail server.
+Read 2026-11-11 (shyden-labs/shydesk#109):
+
+- The live D1 database `shydesk` and R2 bucket `shydesk-attachments` are in Cloudflare's **Asia-Pacific (APAC)**
+  region, with no jurisdiction set (Cloudflare dashboard, ShyDesk account: D1 Settings "Region: Asia Pacific",
+  "Jurisdiction: None"; R2 Settings "Location: Asia-Pacific (APAC)"). Cloudflare does not name the country within
+  APAC.
+- Sparked Host's mail server `web-par-01.sparkedhost.us` (45.43.163.116) is in **Paris, France** (`dig`, and
+  ipinfo.io's location for that address).
 
 ## Ready to paste (English)
 
@@ -59,8 +65,8 @@ bucket in (Cloudflare's dashboard, the ShyDesk account), and the country of the 
 > message text, and any photos or videos the customer attaches; the customer's IP address is used for anti-spam checks
 > (Cloudflare Turnstile) and rate limits, and deleted within about an hour. Staff email addresses are processed for
 > staff sign-in (Cloudflare Access). Ticket text is stored in a Cloudflare D1 database and attachments in Cloudflare R2
-> storage; ticket text is deleted 365 days and attachments 30 days after the request is closed, unless the product sets
-> other periods. Notice emails are sent through Sparked Host's mail server. No request logs are kept.
+> storage, both in Cloudflare's Asia-Pacific region; ticket text is deleted 365 days and attachments 30 days after the request is closed, unless the product sets
+> other periods. Notice emails are sent through Sparked Host's mail server in France. No request logs are kept.
 
 The periods in that paragraph are ShyDesk's defaults: use the product's own `text_keep_days` and
 `attachments_keep_days` from ShyDesk's admin settings when they differ.
