@@ -137,6 +137,8 @@ jobs:
         with:
           name: e2e-desktop-failures
           path: .e2e-runs/*.png
+          # .e2e-runs is a hidden folder, which the action leaves out unless told.
+          include-hidden-files: true
           if-no-files-found: ignore
           retention-days: 7
 

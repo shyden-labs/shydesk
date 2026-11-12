@@ -71,6 +71,13 @@ async function videoPaused(label: string): Promise<void> {
   });
 }
 
+/** Waits until the video named `label` is paused by a press, not by reaching its end. */
+async function videoPausedBeforeItsEnd(label: string): Promise<void> {
+  await videoPaused(label);
+  const video = await named(label);
+  assert.equal(await video.getProperty('ended'), false, `"${label}" stopped only because it reached its end`);
+}
+
 /** The current time, in seconds, of the video named `label`. */
 async function videoTime(label: string): Promise<number> {
   return Number(await (await named(label)).getProperty('currentTime'));
@@ -186,14 +193,17 @@ describe('the contact form', () => {
     await clickMiddleOf('Video 1 full size');
     await videoPlaying('Video 1 full size');
     await controlsBarUncovered('Video 1 full size');
-    // AC2: the browser's own controls still work over the drag layer: its pause, a scrub along its bar, its play.
-    await pressVideoControl('Video 1 full size', 'play');
+    // AC2: the browser's own controls still work over the drag layer. A click on the picture pauses it first, so
+    // the 10 s video cannot reach its end; then the bar's scrub, its play, and its pause, which stops it short of the end.
+    await clickMiddleOf('Video 1 full size');
     await videoPaused('Video 1 full size');
     const pausedAt = await videoTime('Video 1 full size');
     await pressVideoControl('Video 1 full size', 'scrub');
     await videoJumpedFrom('Video 1 full size', pausedAt);
     await pressVideoControl('Video 1 full size', 'play');
     await videoPlaying('Video 1 full size');
+    await pressVideoControl('Video 1 full size', 'play');
+    await videoPausedBeforeItsEnd('Video 1 full size');
     // A sideways drag across the video moves on, as across a photo, on every browser.
     await swipeLeft('Viewer stage');
     await textHolding('Viewer status', 'Photo 2 of 3, zoom 100%, rotated 0°');
