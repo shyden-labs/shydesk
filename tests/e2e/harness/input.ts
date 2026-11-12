@@ -19,7 +19,8 @@ import { copyFile, mkdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import {
-  ANDROID_PAGE,
+  ANDROID_COORDINATOR,
+  androidPageArea,
   nativeFinder,
   desktopFilePath,
   pickerItem,
@@ -35,6 +36,9 @@ import {
   centreInside,
   viewportPoint,
   type Box,
+  ANDROID_KEYS,
+  pinchOut,
+  fingerSwipeLeft,
   type Fixture,
   type Phone,
   typedMismatch,
@@ -178,31 +182,6 @@ const ANDROID_BACK = 4;
 /** The Done button on the bar iOS shows above the on-screen keyboard; it closes the keyboard. */
 const IOS_KEYBOARD_DONE = "-ios class chain:**/XCUIElementTypeToolbar/**/XCUIElementTypeButton[`label == 'Done'`]";
 
-/**
- * A real touch on a page control in the phone's native layer. The native tree
- * leaves out controls drawn below the screen ("Send" never appeared on the
- * OnePlus, 2026-11-08) and also lists controls hidden under the on-screen
- * keyboard (Send at y 2820, below a page view ending at 1887). So once the
- * control is in the page, real finger swipes bring it inside the page view,
- * one at a time, and the touch fails naming how many.
- */
-async function nativePageTap(on: 'android', label: string, what: string): Promise<void> {
-  const selector = nativeFinder(on, label);
-  const element = driver().$(selector);
-  // The native tree also lists controls under the keyboard, so a control must be inside the page view.
-  const onScreen = async (): Promise<boolean> =>
-    (await element.isExisting()) && centreInside({ ...(await element.getLocation()), ...(await element.getSize()) }, await pageView());
-  let swipes = 0;
-  while (!(await onScreen())) {
-    if (swipes === SWIPES) {
-      throw new Error(`${on}: ${what} was not inside the page view after ${String(SWIPES)} swipes up the page (${selector})`);
-    }
-    await swipePage(await pageView());
-    swipes += 1;
-  }
-  await element.click();
-}
-
 /** A real click or touch on the control named `label`. */
 export async function tap(label: string): Promise<void> {
   const on = phone();
@@ -211,9 +190,7 @@ export async function tap(label: string): Promise<void> {
     return;
   }
   if (on === 'android') {
-    // In the page first, so a form still drawing is waited for, never swiped past.
-    await named(label);
-    await native(() => nativePageTap(on, label, `the control named "${label}"`));
+    await touchDrawn(label);
     return;
   }
   await native(async () => {
@@ -239,11 +216,18 @@ async function swipePage(area: Box): Promise<void> {
     .perform();
 }
 
-/** Chrome's page view in the native layer: the part of the screen showing the page, above the keyboard when it is up. */
-async function pageView(): Promise<Box> {
-  const page = driver().$(ANDROID_PAGE);
-  await page.waitForExist({ timeout: WAIT, timeoutMsg: `android: Chrome's page area never appeared (${ANDROID_PAGE})` });
-  return { ...(await page.getLocation()), ...(await page.getSize()) };
+/**
+ * Chrome's page view in the native layer: the part of the screen showing the page, found from Chrome's
+ * coordinator view and the page's own window, since Chrome's WebView node comes and goes from the native
+ * tree (shyden-labs/shydesk#99). The on-screen keyboard is closed before it is read.
+ */
+async function pageView(innerHeight: number, ratio: number): Promise<Box> {
+  const coordinator = driver().$(ANDROID_COORDINATOR);
+  await coordinator.waitForExist({
+    timeout: WAIT,
+    timeoutMsg: `android: Chrome's coordinator view never appeared (${ANDROID_COORDINATOR})`,
+  });
+  return androidPageArea({ ...(await coordinator.getLocation()), ...(await coordinator.getSize()) }, innerHeight, ratio);
 }
 
 /**
@@ -269,23 +253,23 @@ async function touchDrawn(label: string): Promise<void> {
   });
   for (let swipes = 0; swipes <= SWIPES; swipes += 1) {
     // Reads where the field is drawn, until two reads agree, so a page still moving is never touched.
-    const drawn = (): Promise<{ box: Box; ratio: number }> =>
+    const drawn = (): Promise<{ box: Box; ratio: number; innerHeight: number }> =>
       driver().execute(
-        'const r = arguments[0].getBoundingClientRect(); return { box: { x: r.x, y: r.y, width: r.width, height: r.height }, ratio: window.devicePixelRatio };',
+        'const r = arguments[0].getBoundingClientRect(); return { box: { x: r.x, y: r.y, width: r.width, height: r.height }, ratio: window.devicePixelRatio, innerHeight: window.innerHeight };',
         element,
       );
-    let { box, ratio } = await drawn();
+    let { box, ratio, innerHeight } = await drawn();
     let steady: Steady | undefined;
     await driver().waitUntil(
       async () => {
-        ({ box, ratio } = await drawn());
+        ({ box, ratio, innerHeight } = await drawn());
         steady = steadyFrom(steady, box, Date.now());
         return steadyLongEnough(steady, Date.now());
       },
       { timeout: WAIT, timeoutMsg: `android: the field named "${label}" never stopped moving` },
     );
     const touched = await native(async () => {
-      const area = await pageView();
+      const area = await pageView(innerHeight, ratio);
       const at = screenPoint(box, ratio, area);
       // A point is a box with no size, whose middle is the point itself.
       if (!centreInside({ ...at, width: 0, height: 0 }, area)) {
@@ -345,9 +329,12 @@ export async function pickFile(label: string, fixture: Fixture): Promise<void> {
     await (await named(label)).addValue(path);
     return;
   }
+  // On Android the input is touched where the page draws it: Chrome's WebView node, and the input's
+  // native name with it, comes and goes from the native tree (shyden-labs/shydesk#99).
+  if (on === 'android') await touchDrawn(label);
   await native(async () => {
-    await nativeTap(on, nativeFinder(on, label), `the file input named "${label}"`);
     if (on === 'ios') {
+      await nativeTap(on, nativeFinder(on, label), `the file input named "${label}"`);
       await nativeTap(on, nativeFinder(on, 'Photo Library'), 'the Photo Library choice');
       await nativeTap(on, nativeFinder(on, 'Collections'), 'the Collections tab');
       await nativeTap(on, nativeFinder(on, 'ShyDesk tests'), 'the "ShyDesk tests" album (AirDrop tests/fixtures/media into it)');
@@ -388,18 +375,51 @@ function notOnPhonesYet(on: Phone, what: string): never {
   throw new Error(`${on}: ${what} is not written for phones yet; it waits on a measured run on the real phone (shyden-labs/shydesk#99)`);
 }
 
-/** A real zoom in over the element named `label`: one wheel notch toward the screen. */
+/** Where on the Android screen the middle of the element named `label` is drawn, and the screen px per CSS px. */
+async function onAndroidScreen(label: string): Promise<{ at: { x: number; y: number }; ratio: number }> {
+  const element = await named(label);
+  const { box, ratio, innerHeight } = await driver().execute<{ box: Box; ratio: number; innerHeight: number }>(
+    'const r = arguments[0].getBoundingClientRect(); return { box: { x: r.x, y: r.y, width: r.width, height: r.height }, ratio: window.devicePixelRatio, innerHeight: window.innerHeight };',
+    element,
+  );
+  const area = await native(() => pageView(innerHeight, ratio));
+  return { at: screenPoint(box, ratio, area), ratio };
+}
+
+/** One real finger: down at `from`, along to `to` over `duration` ms, then up. */
+function finger(id: string, from: { x: number; y: number }, to: { x: number; y: number }, duration: number) {
+  return driver()
+    .action('pointer', { id, parameters: { pointerType: 'touch' } })
+    .move(from)
+    .down()
+    .move({ ...to, duration })
+    .up();
+}
+
+/** A real zoom in over the element named `label`: one wheel notch on a desktop, a two-finger pinch out on Android. */
 export async function zoomIn(label: string): Promise<void> {
   const on = phone();
-  if (on !== undefined) notOnPhonesYet(on, 'pinch zoom');
+  if (on === 'ios') notOnPhonesYet(on, 'pinch zoom');
+  if (on === 'android') {
+    const { at, ratio } = await onAndroidScreen(label);
+    const [one, two] = pinchOut(at, ratio);
+    await native(() => driver().actions([finger('one', one.from, one.to, 400), finger('two', two.from, two.to, 400)]));
+    return;
+  }
   const at = await drawnCentre(label);
   await driver().action('wheel').scroll({ x: at.x, y: at.y, deltaX: 0, deltaY: -120, duration: 100 }).perform();
 }
 
-/** A real sideways move across the element named `label`, right to left: a mouse drag on a desktop. */
+/** A real sideways move across the element named `label`, right to left: a mouse drag on a desktop, a finger swipe on Android. */
 export async function swipeLeft(label: string): Promise<void> {
   const on = phone();
-  if (on !== undefined) notOnPhonesYet(on, 'a finger swipe');
+  if (on === 'ios') notOnPhonesYet(on, 'a finger swipe');
+  if (on === 'android') {
+    const { at, ratio } = await onAndroidScreen(label);
+    const path = fingerSwipeLeft(at, ratio);
+    await native(() => finger('one', path.from, path.to, 300).perform());
+    return;
+  }
   const at = await drawnCentre(label);
   await driver()
     .action('pointer', { parameters: { pointerType: 'mouse' } })
@@ -411,12 +431,18 @@ export async function swipeLeft(label: string): Promise<void> {
 }
 
 /**
- * A real mouse click at the middle of where the element named `label` is drawn: whatever a person's
- * click there would reach gets it, as a layer drawn over the element does (shyden-labs/shydesk#108).
+ * A real press at the middle of where the element named `label` is drawn: a mouse click on a desktop, a
+ * finger tap on Android. Whatever a person's press there would reach gets it, as a layer drawn over the
+ * element does (shyden-labs/shydesk#108).
  */
 export async function clickMiddleOf(label: string): Promise<void> {
   const on = phone();
-  if (on !== undefined) notOnPhonesYet(on, 'a click on a drawn point');
+  if (on === 'ios') notOnPhonesYet(on, 'a click on a drawn point');
+  if (on === 'android') {
+    const { at } = await onAndroidScreen(label);
+    await native(() => finger('one', at, at, 0).perform());
+    return;
+  }
   const at = await drawnCentre(label);
   await driver()
     .action('pointer', { parameters: { pointerType: 'mouse' } })
@@ -426,9 +452,13 @@ export async function clickMiddleOf(label: string): Promise<void> {
     .perform();
 }
 
-/** A real key press, sent to whatever has focus. */
+/** A real key press, sent to whatever has focus: Android's own key event on the phone. */
 export async function press(key: ViewerKey): Promise<void> {
   const on = phone();
-  if (on !== undefined) notOnPhonesYet(on, `the ${key} key`);
+  if (on === 'ios') notOnPhonesYet(on, `the ${key} key`);
+  if (on === 'android') {
+    await native(() => driver().pressKeyCode(ANDROID_KEYS[key]));
+    return;
+  }
   await driver().keys([KEY_CODES[key]]);
 }
