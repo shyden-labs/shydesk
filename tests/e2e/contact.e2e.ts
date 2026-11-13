@@ -67,7 +67,8 @@ async function videoPlaying(label: string): Promise<void> {
       'const v = arguments[0]; const r = v.getBoundingClientRect(); const hit = v.getRootNode().elementFromPoint(r.x + r.width / 2, r.y + r.height / 2); return JSON.stringify({ paused: v.paused, readyState: v.readyState, networkState: v.networkState, error: v.error && v.error.code, time: v.currentTime, box: [r.x, r.y, r.width, r.height], middle: hit === v ? "video" : String(hit && hit.className) });',
       video,
     );
-    throw new Error(`"${label}" never started playing: ${state}`);
+    const probe = await driver().execute<unknown>('return window.pressProbe ?? null;');
+    throw new Error(`"${label}" never started playing: ${state} press-probe=${JSON.stringify(probe)}`);
   }
 }
 

@@ -423,6 +423,8 @@ export async function swipeLeft(label: string): Promise<void> {
     return;
   }
   const at = await drawnCentre(label);
+  // One-off probe (shyden-labs/shydesk#108): which events the press reaches, and what play() answers.
+  await driver().execute(PRESS_PROBE);
   await driver()
     .action('pointer', { parameters: { pointerType: 'mouse' } })
     .move({ x: at.x + 80, y: at.y })
@@ -431,6 +433,10 @@ export async function swipeLeft(label: string): Promise<void> {
     .up()
     .perform();
 }
+
+/** Records each press event's first target and every play() answer on `window.pressProbe` (shyden-labs/shydesk#108). */
+const PRESS_PROBE =
+  'const log = (window.pressProbe = []); for (const type of ["pointerdown", "pointerup", "mousedown", "mouseup", "click"]) document.addEventListener(type, (e) => { const t = e.composedPath()[0]; log.push(type + ":" + (t && (t.className || t.tagName))); }, true); const play = HTMLMediaElement.prototype.play; HTMLMediaElement.prototype.play = function () { log.push("play()"); const p = play.call(this); p.then(() => log.push("play-ok"), (err) => log.push("play-refused:" + err.name + ":" + err.message)); return p; };';
 
 /**
  * A real press at the middle of where the element named `label` is drawn: a mouse click on a desktop, a
@@ -446,6 +452,8 @@ export async function clickMiddleOf(label: string): Promise<void> {
     return;
   }
   const at = await drawnCentre(label);
+  // One-off probe (shyden-labs/shydesk#108): which events the press reaches, and what play() answers.
+  await driver().execute(PRESS_PROBE);
   await driver()
     .action('pointer', { parameters: { pointerType: 'mouse' } })
     .move({ x: at.x, y: at.y })
