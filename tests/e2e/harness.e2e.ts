@@ -14,6 +14,14 @@ import type { Fixture } from './harness/targets.ts';
 
 const size = (fixture: Fixture): number => statSync(resolve(import.meta.dirname, '../fixtures/media', fixture)).size;
 
+/**
+ * Logs one check that ran and passed, so a CI run's output shows every check each target made
+ * (shyden-labs/shydesk#130).
+ */
+function ran(check: string): void {
+  process.stdout.write(`check-ran: ${check}\n`);
+}
+
 /** The page's event log once it holds `expected`, or a failure showing what it held. */
 async function eventsHolding(expected: string): Promise<string> {
   let events = '';
@@ -24,6 +32,7 @@ async function eventsHolding(expected: string): Promise<string> {
     },
     { timeout: 15_000, timeoutMsg: `the page never logged "${expected}"; it logged "${events}"` },
   );
+  ran(expected);
   return events;
 }
 
@@ -41,6 +50,7 @@ describe('the input helpers', () => {
     await type('Harness field', 'ok');
     const events = await eventsHolding('field-input:true:ok');
     assert.equal(events.split(' ').filter((event) => event === 'field-keydown:true').length, 2, events);
+    ran('field-keydown:true x2');
   });
 
   it("a photo picked through the target's own picker arrives whole", async () => {
