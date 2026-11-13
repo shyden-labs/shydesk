@@ -216,17 +216,38 @@ export function viewportPoint(box: Box, viewport: { width: number; height: numbe
 /** A control in the browser's own controls bar along the bottom of a video (shyden-labs/shydesk#108 AC2). */
 export type VideoControl = 'play' | 'scrub';
 
-/** How far up from the video's bottom edge the controls bar's middle is drawn, in CSS pixels. */
-const CONTROLS_BAR_MIDDLE = 20;
+/** How far up from the video's bottom edge the scrub bar's middle is drawn, in CSS pixels. */
+const SCRUB_BAR_MIDDLE = 20;
 
 /**
- * Where to press the browser's own control on a video drawn at `box`: play and
- * pause at the bar's left end, the scrub point 60% across, on the bar.
+ * Where each desktop browser draws its play button, in from the video's left edge and up from its
+ * bottom edge, in CSS pixels, measured from CI's windows (run 43125326793): Chrome draws it on a row
+ * above its scrub bar, Firefox at the left end of its one bar. Safari's floating bar is drawn
+ * inset from both sides, and the place of its play button is not yet measured.
  */
-export function videoControlPoint(box: Box, control: VideoControl): { x: number; y: number } {
+const PLAY_BUTTON: Partial<Record<Target, { inFromLeft: number; upFromBottom: number }>> = {
+  chromium: { inFromLeft: 24, upFromBottom: 48 },
+  firefox: { inFromLeft: 20, upFromBottom: 20 },
+};
+
+/**
+ * Where to press the browser's own control on a video drawn at `box` on `target`: play and
+ * pause at the browser's play button, the scrub point 60% across, on the scrub bar.
+ */
+export function videoControlPoint(box: Box, control: VideoControl, target: Target): { x: number; y: number } {
+  if (target === 'android' || target === 'ios') {
+    throw new Error(`${target}: the video's own controls are pressed by touch, not here`);
+  }
   if (box.width <= 0 || box.height <= 0) throw new Error('the video is not drawn (it has no size)');
-  const across = control === 'play' ? CONTROLS_BAR_MIDDLE : box.width * 0.6;
-  return { x: Math.round(box.x + across), y: Math.round(box.y + box.height - CONTROLS_BAR_MIDDLE) };
+  const bottom = box.y + box.height;
+  if (control === 'scrub') {
+    return { x: Math.round(box.x + box.width * 0.6), y: Math.round(bottom - SCRUB_BAR_MIDDLE) };
+  }
+  const play = PLAY_BUTTON[target];
+  if (play === undefined) {
+    throw new Error(`${target}: where the floating bar's play button is drawn is not yet measured (shyden-labs/shydesk#108)`);
+  }
+  return { x: Math.round(box.x + play.inFromLeft), y: Math.round(bottom - play.upFromBottom) };
 }
 
 /**

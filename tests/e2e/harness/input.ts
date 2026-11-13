@@ -466,7 +466,26 @@ export async function pressVideoControl(label: string, control: VideoControl): P
     'const r = arguments[0].getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height };',
     video,
   );
-  const at = videoControlPoint(box, control);
+  const target = targetOf(driver().capabilities);
+  if (target === 'safari' && control === 'play') await probeSafariPlay(video, box);
+  const at = videoControlPoint(box, control, target);
+  // The button around the press point is the browser's, not the drag layer's: the point and 12 px above it.
+  for (const y of [at.y, at.y - 12]) {
+    const hit = await driver().execute<string>(
+      'const v = arguments[0]; const hit = v.getRootNode().elementFromPoint(arguments[1], arguments[2]); return hit === v ? "video" : String(hit && hit.className);',
+      video,
+      at.x,
+      y,
+    );
+    if (hit !== 'video') {
+      throw new Error(`the ${control} control of "${label}" at ${String(at.x)}, ${String(y)} is covered by "${hit}"`);
+    }
+  }
+  await pointerPress(at);
+}
+
+/** A real mouse press at `at`, after the pointer rests there long enough for hidden controls to show. */
+async function pointerPress(at: { x: number; y: number }): Promise<void> {
   await driver()
     .action('pointer', { parameters: { pointerType: 'mouse' } })
     .move({ x: at.x, y: at.y })
@@ -474,6 +493,26 @@ export async function pressVideoControl(label: string, control: VideoControl): P
     .down()
     .up()
     .perform();
+}
+
+/**
+ * ONE-OFF MEASUREMENT for shyden-labs/shydesk#108, removed before merge: real presses along the
+ * left end of Safari's floating bar, logging each point whose press starts the paused video.
+ */
+async function probeSafariPlay(video: unknown, box: Box): Promise<void> {
+  for (const up of [20, 28, 36, 44]) {
+    for (let inFromLeft = 8; inFromLeft <= 296; inFromLeft += 12) {
+      const at = { x: Math.round(box.x + inFromLeft), y: Math.round(box.y + box.height - up) };
+      await pointerPress(at);
+      await new Promise((settle) => setTimeout(settle, 300));
+      const paused = await driver().execute<boolean>('return arguments[0].paused;', video);
+      process.stdout.write(`safari-probe box=${JSON.stringify(box)} in=${String(inFromLeft)} up=${String(up)} paused=${String(paused)}\n`);
+      if (!paused) {
+        await pointerPress(at);
+        await new Promise((settle) => setTimeout(settle, 300));
+      }
+    }
+  }
 }
 
 /** A real key press, sent to whatever has focus: Android's own key event on the phone. */
