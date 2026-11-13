@@ -222,12 +222,16 @@ const SCRUB_BAR_MIDDLE = 20;
 /**
  * Where each desktop browser draws its play button, in from the video's left edge and up from its
  * bottom edge, in CSS pixels, measured from CI's windows (run 43125326793): Chrome draws it on a row
- * above its scrub bar, Firefox at the left end of its one bar. Safari's floating bar is drawn
- * inset from both sides, and the place of its play button is not yet measured.
+ * above its scrub bar, Firefox at the left end of its one bar. Safari draws a floating bar centred
+ * under the picture, inset 12.8% of the video's width from each side (x 129 to 879 on a 1007 px wide
+ * video, y 601 to 646 above a bottom edge at 652, run 43437413861), with its play button at the
+ * bar's left end. CI's Safari draws no icons, so the button's place in the bar is Safari's layout,
+ * proven by the play that follows the press.
  */
-const PLAY_BUTTON: Partial<Record<Target, { inFromLeft: number; upFromBottom: number }>> = {
-  chromium: { inFromLeft: 24, upFromBottom: 48 },
-  firefox: { inFromLeft: 20, upFromBottom: 20 },
+const PLAY_BUTTON: Record<'chromium' | 'firefox' | 'safari', { inFromLeft: number; inFromLeftShare: number; upFromBottom: number }> = {
+  chromium: { inFromLeft: 24, inFromLeftShare: 0, upFromBottom: 48 },
+  firefox: { inFromLeft: 20, inFromLeftShare: 0, upFromBottom: 20 },
+  safari: { inFromLeft: 22, inFromLeftShare: 0.128, upFromBottom: 29 },
 };
 
 /**
@@ -244,10 +248,7 @@ export function videoControlPoint(box: Box, control: VideoControl, target: Targe
     return { x: Math.round(box.x + box.width * 0.6), y: Math.round(bottom - SCRUB_BAR_MIDDLE) };
   }
   const play = PLAY_BUTTON[target];
-  if (play === undefined) {
-    throw new Error(`${target}: where the floating bar's play button is drawn is not yet measured (shyden-labs/shydesk#108)`);
-  }
-  return { x: Math.round(box.x + play.inFromLeft), y: Math.round(bottom - play.upFromBottom) };
+  return { x: Math.round(box.x + box.width * play.inFromLeftShare + play.inFromLeft), y: Math.round(bottom - play.upFromBottom) };
 }
 
 /**

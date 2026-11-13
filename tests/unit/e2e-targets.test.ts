@@ -645,10 +645,12 @@ describe('videoControlPoint (shyden-labs/shydesk#108 AC2)', () => {
     }
   });
 
-  it("refuses Safari's play until its place on Safari's floating bar is measured", () => {
-    expect(() => videoControlPoint(video, 'play', 'safari')).toThrow(
-      "safari: where the floating bar's play button is drawn is not yet measured (shyden-labs/shydesk#108)",
-    );
+  it("puts Safari's play at the left end of its centred floating bar: 12.8% in plus 22 px, 29 px up (run 43437413861)", () => {
+    expect(videoControlPoint(video, 'play', 'safari')).toEqual({ x: 204, y: 381 });
+  });
+
+  it("puts Safari's play where CI drew its bar on the 1007 px wide video: 151 px in, 29 px up", () => {
+    expect(videoControlPoint({ x: 0, y: 87, width: 1007, height: 565 }, 'play', 'safari')).toEqual({ x: 151, y: 623 });
   });
 
   it('refuses a phone, whose controls are pressed by touch', () => {
