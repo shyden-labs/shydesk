@@ -126,10 +126,23 @@ jobs:
           test -x "$geckodriver" || { echo "no geckodriver at $geckodriver"; exit 1; }
           echo "E2E_DESKTOP_CHROMEDRIVER=$chromedriver" >> "$GITHUB_ENV"
           echo "E2E_GECKODRIVER=$geckodriver" >> "$GITHUB_ENV"
+      # ONE-OFF MEASUREMENT for shyden-labs/shydesk#135, removed before merge: the installed Chrome
+      # before and after the suite, and any updater running, to see whether Chrome changes mid-run.
+      - name: Chrome before the suite (shyden-labs/shydesk#135 measurement)
+        run: |
+          "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --version
+          ls -la "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions" || true
+          pgrep -fl -i "updater|keystone|GoogleSoftwareUpdate" || echo "no updater process"
       - name: End-to-end suite on every desktop target
         env:
           E2E_TARGETS: chromium,firefox,safari
         run: npm run test:e2e
+      - name: Chrome after the suite (shyden-labs/shydesk#135 measurement)
+        if: always()
+        run: |
+          "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --version
+          ls -la "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions" || true
+          pgrep -fl -i "updater|keystone|GoogleSoftwareUpdate" || echo "no updater process"
 
   # The SonarCloud quality gate, blocking (shyden-labs/repo-template#27, shyden-labs/repo-template#60): the reusable workflow
   # scans, then fails unless this scan's gate is OK (docs/sonarcloud.md).
