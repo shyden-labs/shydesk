@@ -467,10 +467,11 @@ export async function pressVideoControl(label: string, control: VideoControl): P
     video,
   );
   const target = targetOf(driver().capabilities);
-  if (target === 'safari' && control === 'play') await probeSafariPlay(video, box);
+  if (target === 'safari' && control === 'scrub') await probeSafariBar(video, box);
   const at = videoControlPoint(box, control, target);
-  // The button around the press point is the browser's, not the drag layer's: the point and 12 px above it.
-  for (const y of [at.y, at.y - 12]) {
+  // The button around the press point is the browser's, not the drag layer's: the point and 24 px above it,
+  // the top of Chrome's 48 px button row.
+  for (const y of [at.y, at.y - 24]) {
     const hit = await driver().execute<string>(
       'const v = arguments[0]; const hit = v.getRootNode().elementFromPoint(arguments[1], arguments[2]); return hit === v ? "video" : String(hit && hit.className);',
       video,
@@ -496,18 +497,24 @@ async function pointerPress(at: { x: number; y: number }): Promise<void> {
 }
 
 /**
- * ONE-OFF MEASUREMENT for shyden-labs/shydesk#108, removed before merge: real presses along the
- * left end of Safari's floating bar, logging each point whose press starts the paused video.
+ * ONE-OFF MEASUREMENT for shyden-labs/shydesk#108, removed before merge: real presses across
+ * Safari's floating bar, logging where a press moves the video's time and where it starts it.
  */
-async function probeSafariPlay(video: unknown, box: Box): Promise<void> {
-  for (const up of [20, 28, 36, 44]) {
-    for (let inFromLeft = 8; inFromLeft <= 296; inFromLeft += 12) {
+async function probeSafariBar(video: unknown, box: Box): Promise<void> {
+  for (const up of [30, 36, 42]) {
+    for (let inFromLeft = 120; inFromLeft <= box.width - 120; inFromLeft += 20) {
       const at = { x: Math.round(box.x + inFromLeft), y: Math.round(box.y + box.height - up) };
+      const before = await driver().execute<number>('return arguments[0].currentTime;', video);
       await pointerPress(at);
       await new Promise((settle) => setTimeout(settle, 300));
-      const paused = await driver().execute<boolean>('return arguments[0].paused;', video);
-      process.stdout.write(`safari-probe box=${JSON.stringify(box)} in=${String(inFromLeft)} up=${String(up)} paused=${String(paused)}\n`);
-      if (!paused) {
+      const after = await driver().execute<{ paused: boolean; time: number }>(
+        'return { paused: arguments[0].paused, time: arguments[0].currentTime };',
+        video,
+      );
+      process.stdout.write(
+        `safari-probe box=${JSON.stringify(box)} in=${String(inFromLeft)} up=${String(up)} before=${String(before)} after=${String(after.time)} paused=${String(after.paused)}\n`,
+      );
+      if (!after.paused) {
         await pointerPress(at);
         await new Promise((settle) => setTimeout(settle, 300));
       }

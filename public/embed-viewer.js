@@ -102,9 +102,10 @@ const SWIPE_PX = 50;
 const CLICK_PX = 10;
 /**
  * The height left free along the bottom of a video for the browser's own controls bar (shyden-labs/shydesk#108):
- * the drag layer stops this far above the picture's bottom edge.
+ * the drag layer stops this far above the picture's bottom edge. Chrome draws its buttons on a 48 px row
+ * centred 48 px up, so the row's top is 72 px up; Safari's floating bar reaches about 51 px up.
  */
-const CONTROLS_BAR_PX = 48;
+const CONTROLS_BAR_PX = 80;
 
 const VIEWER_CSS = `
 .shydesk-viewer{position:fixed;inset:0;z-index:2147483647;display:flex;flex-direction:column;background:rgba(0,0,0,.92);color:#fff;font:16px/1.4 system-ui,sans-serif}
