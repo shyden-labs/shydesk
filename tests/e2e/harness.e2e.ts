@@ -40,6 +40,9 @@ async function eventsHolding(expected: string): Promise<string> {
 describe('the input helpers', () => {
   it("reach the page as trusted clicks and key presses, and pick files whole through the target's own picker", async () => {
     await driver().url('/harness.html');
+    // Each target runs at its own window size; none is set by the suite (shyden-labs/shydesk#130).
+    const windowSize = await driver().execute<string>('return `${String(innerWidth)}x${String(innerHeight)}`;');
+    process.stdout.write(`window-size: ${windowSize}\n`);
     await tap('Harness button');
     await eventsHolding('button-click:true');
     await type('Harness field', 'ok');
