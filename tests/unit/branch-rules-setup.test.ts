@@ -4,7 +4,6 @@ import {
   desiredRuleset,
   main,
   planRulesets,
-  planDevPolicies,
   auditBranchRules,
   auditDevEnvironment,
   auditRepoSettings,
@@ -353,67 +352,31 @@ describe('auditRepoSettings', () => {
   });
 });
 
-// shyden-labs/repo-template#117: `dev` holds the dev credential, so only `develop` may deploy to it. A
-// pull_request run uses the pull request's own workflows, so without the
-// policy a same-repository branch could name `environment: dev`.
-const DEVELOP = { id: 1, name: 'develop', type: 'branch' };
+// Anything can deploy to dev at any time (Shyden, 2026-11-13; shyden-labs/shydesk#136): `dev` lets every
+// branch deploy, so a pull request's branch can be deployed and tested against dev. Fork pull requests get no
+// secrets, and no job naming a dev environment runs on pull_request_target (deploy-dev-anywhere.test.ts).
+const ALL = { deployment_branch_policy: null };
 const CUSTOM = { deployment_branch_policy: { protected_branches: false, custom_branch_policies: true } };
-
-describe('planDevPolicies', () => {
-  it('adds develop to an empty list', () => {
-    expect(planDevPolicies([])).toEqual({ remove: [], add: true });
-  });
-
-  it('keeps develop alone as it is', () => {
-    expect(planDevPolicies([DEVELOP])).toEqual({ remove: [], add: false });
-  });
-
-  it('removes every other branch, by id', () => {
-    expect(planDevPolicies([DEVELOP, { id: 2, name: 'main', type: 'branch' }, { id: 3, name: 'develop*', type: 'branch' }])).toEqual({
-      remove: [2, 3],
-      add: false,
-    });
-  });
-
-  it('removes a tag named develop and adds the branch', () => {
-    expect(planDevPolicies([{ id: 4, name: 'develop', type: 'tag' }])).toEqual({ remove: [4], add: true });
-  });
-});
+const LIMITED = (protectedOnly: boolean, custom: boolean) =>
+  `dev: limits which branches may deploy (protected_branches ${String(protectedOnly)}, custom_branch_policies ${String(custom)}), not every branch`;
 
 describe('auditDevEnvironment', () => {
-  it('passes a custom policy naming the develop branch alone', () => {
-    expect(auditDevEnvironment(CUSTOM, [DEVELOP])).toEqual([]);
+  it('passes a dev with no deployment branch policy, so every branch may deploy', () => {
+    expect(auditDevEnvironment(ALL)).toEqual([]);
   });
 
   it('names a missing dev', () => {
-    expect(auditDevEnvironment(undefined, [])).toEqual(['dev: missing; deploy-dev.yml deploys there']);
+    expect(auditDevEnvironment(undefined)).toEqual(['dev: missing; deploy-dev.yml deploys there']);
   });
 
-  it('names a dev with no branch policy', () => {
-    expect(auditDevEnvironment({ deployment_branch_policy: null }, [])).toEqual([
-      'dev: no deployment branch policy, so any branch may deploy',
+  it('names a dev that lets only the branches it names deploy', () => {
+    expect(auditDevEnvironment(CUSTOM)).toEqual([LIMITED(false, true)]);
+  });
+
+  it('names a dev that lets only protected branches deploy', () => {
+    expect(auditDevEnvironment({ deployment_branch_policy: { protected_branches: true, custom_branch_policies: false } })).toEqual([
+      LIMITED(true, false),
     ]);
-  });
-
-  it('names a dev that lets every protected branch deploy', () => {
-    expect(auditDevEnvironment({ deployment_branch_policy: { protected_branches: true, custom_branch_policies: false } }, [])).toEqual([
-      'dev: lets every protected branch deploy (main included), not develop alone',
-    ]);
-  });
-
-  it('names a dev whose policy names no custom branches', () => {
-    expect(auditDevEnvironment({ deployment_branch_policy: { protected_branches: false, custom_branch_policies: false } }, [])).toEqual([
-      'dev: names no custom branches, so develop alone is not set',
-    ]);
-  });
-
-  it.each([
-    [[], 'no branch'],
-    [[DEVELOP, { id: 2, name: 'main', type: 'branch' }], 'develop (branch), main (branch)'],
-    [[{ id: 3, name: 'develop*', type: 'branch' }], 'develop* (branch)'],
-    [[{ id: 4, name: 'develop', type: 'tag' }], 'develop (tag)'],
-  ])('names a custom list of %j', (policies, named) => {
-    expect(auditDevEnvironment(CUSTOM, policies)).toEqual([`dev: lets ${named} deploy, not develop alone`]);
   });
 });
 
@@ -456,24 +419,15 @@ describe('main', () => {
 
   const ENVS = `repos/${REPO}/environments`;
   const DEV = `${ENVS}/dev`;
-  const POLICIES = `${DEV}/deployment-branch-policies`;
-  const LIST = `${POLICIES}?per_page=100`;
-  const SUMMARY = `${REPO}: develop requires strict checks; main requires release-cut instead; both forbid deletion and require pull requests; develop takes squashes alone and main merge commits alone, with rebase merging off; merged head branches are deleted; dev deploys from develop alone.\n`;
-  /** `dev` already set: listed with its policy, develop alone, read back the same. */
-  const devSet = [
-    { total_count: 1, environments: [{ name: 'dev', ...CUSTOM, protection_rules: [{ type: 'branch_policy' }] }] },
-    { total_count: 1, branch_policies: [DEVELOP] },
-    CUSTOM,
-    { total_count: 1, branch_policies: [DEVELOP] },
-  ];
+  const SUMMARY = `${REPO}: develop requires strict checks; main requires release-cut instead; both forbid deletion and require pull requests; develop takes squashes alone and main merge commits alone, with rebase merging off; merged head branches are deleted; dev deploys from any branch.\n`;
+  /** `dev` already set: listed with no branch policy, read back the same. */
+  const devSet = [{ total_count: 1, environments: [{ name: 'dev', ...ALL, protection_rules: [] }] }, ALL];
+  const PUT_ALL = [['api', '-X', 'PUT', DEV, '--input', '-'], JSON.stringify(ALL)];
   /** The seven ruleset and repository calls every full run makes first, for the created path. */
   const RULE_REPLIES = [[], {}, {}, strict, mainRules, {}, SETTLED];
 
   it('creates both rulesets and dev where there are none, reads them all back and exits 0', () => {
-    reply(...RULE_REPLIES, { total_count: 0, environments: [] }, {}, { total_count: 0, branch_policies: [] }, {}, CUSTOM, {
-      total_count: 1,
-      branch_policies: [DEVELOP],
-    });
+    reply(...RULE_REPLIES, { total_count: 0, environments: [] }, {}, ALL);
     expect(main([REPO, ...CHECKS])).toBe(0);
     expect(calls()).toEqual([
       [['api', `repos/${REPO}/rulesets`], undefined],
@@ -500,89 +454,63 @@ describe('main', () => {
       ],
       [['api', `repos/${REPO}`], undefined],
       [['api', ENVS], undefined],
-      [['api', '-X', 'PUT', DEV, '--input', '-'], JSON.stringify(CUSTOM)],
-      [['api', LIST], undefined],
-      [['api', '-X', 'POST', POLICIES, '-f', 'name=develop', '-f', 'type=branch'], undefined],
+      PUT_ALL,
       [['api', DEV], undefined],
-      [['api', LIST], undefined],
     ]);
     expect(out).toEqual(['develop: create\n', 'main: create\n', 'dev: set\n', SUMMARY]);
   });
 
-  it('leaves a dev already set to develop alone as it is, writing nothing to it', () => {
+  it('leaves a dev that already lets every branch deploy as it is, writing nothing to it', () => {
     reply(...RULE_REPLIES, ...devSet);
     expect(main([REPO, ...CHECKS])).toBe(0);
     expect(calls().slice(7)).toEqual([
       [['api', ENVS], undefined],
-      [['api', LIST], undefined],
       [['api', DEV], undefined],
-      [['api', LIST], undefined],
     ]);
     expect(out.slice(2)).toEqual(['dev: keep\n', SUMMARY]);
   });
 
-  it('removes every other branch from dev by id, with no PUT when its policy is already custom', () => {
-    reply(...RULE_REPLIES, devSet[0], { total_count: 2, branch_policies: [DEVELOP, { id: 2, name: 'main', type: 'branch' }] });
-    gh.mockReturnValueOnce('');
-    reply(CUSTOM, { total_count: 1, branch_policies: [DEVELOP] });
+  it.each([
+    ['names its branches', CUSTOM.deployment_branch_policy],
+    ['lets protected branches alone deploy', { protected_branches: true, custom_branch_policies: false }],
+  ])('lets every branch deploy to a dev that %s', (_, policy) => {
+    reply(
+      ...RULE_REPLIES,
+      { total_count: 1, environments: [{ name: 'dev', deployment_branch_policy: policy, protection_rules: [{ type: 'branch_policy' }] }] },
+      {},
+      ALL,
+    );
     expect(main([REPO, ...CHECKS])).toBe(0);
-    expect(calls().slice(8, 10)).toEqual([
-      [['api', LIST], undefined],
-      [['api', '-X', 'DELETE', `${POLICIES}/2`], undefined],
-    ]);
+    expect(calls().slice(8)).toEqual([PUT_ALL, [['api', DEV], undefined]]);
     expect(out.slice(2)).toEqual(['dev: set\n', SUMMARY]);
   });
 
-  it('refuses to set the policy over a dev holding other protection rules, writing nothing', () => {
+  it('refuses to clear the policy of a dev holding other protection rules, writing nothing', () => {
     const guarded = {
       name: 'dev',
-      deployment_branch_policy: null,
-      protection_rules: [{ type: 'required_reviewers' }, { type: 'wait_timer' }],
+      ...CUSTOM,
+      protection_rules: [{ type: 'branch_policy' }, { type: 'required_reviewers' }, { type: 'wait_timer' }],
     };
     reply(...RULE_REPLIES, { total_count: 1, environments: [guarded] });
     expect(() => main([REPO, ...CHECKS])).toThrow(
-      'dev has protection rules (required_reviewers, wait_timer) that setting its branch policy could drop: set its deployment branches to develop alone by hand, then run this again',
+      'dev has protection rules (required_reviewers, wait_timer) that setting its branch policy could drop: set its deployment branches to all branches by hand, then run this again',
     );
     expect(gh).toHaveBeenCalledTimes(8);
   });
 
-  it('fails, naming it, when dev’s policy did not take, and lists no policies GitHub would 404', () => {
-    reply(
-      ...RULE_REPLIES,
-      { total_count: 0, environments: [] },
-      {},
-      { total_count: 0, branch_policies: [] },
-      {},
-      {
-        deployment_branch_policy: null,
-      },
-    );
-    expect(() => main([REPO, ...CHECKS])).toThrow(
-      'read back, the dev environment still falls short:\n  dev: no deployment branch policy, so any branch may deploy',
-    );
-    expect(gh).toHaveBeenCalledTimes(12);
+  it('keeps a dev that lets every branch deploy and holds other protection rules, writing nothing', () => {
+    reply(...RULE_REPLIES, { total_count: 1, environments: [{ name: 'dev', ...ALL, protection_rules: [{ type: 'wait_timer' }] }] }, ALL);
+    expect(main([REPO, ...CHECKS])).toBe(0);
+    expect(calls().slice(7)).toEqual([
+      [['api', ENVS], undefined],
+      [['api', DEV], undefined],
+    ]);
   });
 
-  it('fails, naming it, when dev reads back with custom branches off, and lists no policies GitHub would 404', () => {
-    reply(
-      ...RULE_REPLIES,
-      { total_count: 0, environments: [] },
-      {},
-      { total_count: 0, branch_policies: [] },
-      {},
-      {
-        deployment_branch_policy: { protected_branches: false, custom_branch_policies: false },
-      },
-    );
-    expect(() => main([REPO, ...CHECKS])).toThrow(
-      'read back, the dev environment still falls short:\n  dev: names no custom branches, so develop alone is not set',
-    );
-    expect(gh).toHaveBeenCalledTimes(12);
-  });
-
-  it('refuses a policies list longer than the page it read', () => {
-    reply(...RULE_REPLIES, devSet[0], { total_count: 101, branch_policies: [DEVELOP] });
-    expect(() => main([REPO, ...CHECKS])).toThrow(`${LIST} lists 101 branch policies; one page of 100 was read`);
+  it('fails, naming it, when dev still limits its branches after the write', () => {
+    reply(...RULE_REPLIES, { total_count: 0, environments: [] }, {}, CUSTOM);
+    expect(() => main([REPO, ...CHECKS])).toThrow(`read back, the dev environment still falls short:\n  ${LIMITED(false, true)}`);
+    expect(gh).toHaveBeenCalledTimes(10);
   });
 
   it('keeps a ruleset that matches and updates one that differs, by id', () => {

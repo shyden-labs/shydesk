@@ -31,8 +31,8 @@ describe('deploy-dev', () => {
     );
   });
 
-  // What keeps the credential out of a pull request is dev letting only develop
-  // deploy (shyden-labs/repo-template#117); this line only picks an environment a pull request may use.
+  // A pull request's automatic run rehearses with no credential; every branch may still deploy dev by a
+  // hand-started run (shyden-labs/shydesk#136). Forks get no secrets on pull_request.
   it('deploys from the dev environment, and rehearses in dev-rehearsal, which holds no credential', () => {
     const jobs = topLevel(workflow(), 'jobs').split('\n');
     expect(jobs).toContain('    environment: ${{ github.event_name == pull_request && dev-rehearsal || dev }}');
