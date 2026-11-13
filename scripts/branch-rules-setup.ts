@@ -233,10 +233,9 @@ export function auditDevEnvironment(env: DevEnvironment | undefined): string[] {
   ];
 }
 
-/** gh's JSON answer; an empty one (a DELETE's 204) reads as nothing. */
+/** gh's JSON answer. */
 function gh(args: string[], input?: string): unknown {
-  const answer = execFileSync('gh', args, { encoding: 'utf8', input });
-  return answer.trim() === '' ? undefined : JSON.parse(answer);
+  return JSON.parse(execFileSync('gh', args, { encoding: 'utf8', input }));
 }
 
 type ListedEnvironment = DevEnvironment & { name: string; protection_rules?: { type: string }[] };

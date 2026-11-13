@@ -498,6 +498,15 @@ describe('main', () => {
     expect(gh).toHaveBeenCalledTimes(8);
   });
 
+  it('keeps a dev listed with no branch policy field, writing nothing', () => {
+    reply(...RULE_REPLIES, { total_count: 1, environments: [{ name: 'dev' }] }, ALL);
+    expect(main([REPO, ...CHECKS])).toBe(0);
+    expect(calls().slice(7)).toEqual([
+      [['api', ENVS], undefined],
+      [['api', DEV], undefined],
+    ]);
+  });
+
   it('keeps a dev that lets every branch deploy and holds other protection rules, writing nothing', () => {
     reply(...RULE_REPLIES, { total_count: 1, environments: [{ name: 'dev', ...ALL, protection_rules: [{ type: 'wait_timer' }] }] }, ALL);
     expect(main([REPO, ...CHECKS])).toBe(0);
