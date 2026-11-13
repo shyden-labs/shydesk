@@ -194,12 +194,20 @@ export async function tap(label: string): Promise<void> {
     return;
   }
   await native(async () => {
-    // The keyboard and the bar above it cover the lower page, so a person closes it before tapping a
-    // control there: Send sat on the keyboard's top edge and the touch never reached it (shyden-labs/shydesk#73).
-    const done = driver().$(IOS_KEYBOARD_DONE);
-    if (await done.isExisting()) await done.click();
+    await closeIosKeyboard();
     await nativeTap(on, nativeFinder(on, label), `the control named "${label}"`);
   });
+}
+
+/**
+ * Closes the iPhone's on-screen keyboard with its Done button, if it is up. The keyboard and the bar
+ * above it cover the lower page, so a person closes it before tapping a control there: Send sat on the
+ * keyboard's top edge (shyden-labs/shydesk#73), and the reply's Choose Files sat under the bar
+ * (shyden-labs/shydesk#130, 2026-11-14), and neither touch reached its control. Run in the native layer.
+ */
+async function closeIosKeyboard(): Promise<void> {
+  const done = driver().$(IOS_KEYBOARD_DONE);
+  if (await done.isExisting()) await done.click();
 }
 
 /** A real finger swipe up Chrome's page view, which scrolls the page down. */
@@ -334,6 +342,7 @@ export async function pickFile(label: string, fixture: Fixture): Promise<void> {
   if (on === 'android') await touchDrawn(label);
   await native(async () => {
     if (on === 'ios') {
+      await closeIosKeyboard();
       await nativeTap(on, nativeFinder(on, label), `the file input named "${label}"`);
       await nativeTap(on, nativeFinder(on, 'Photo Library'), 'the Photo Library choice');
       await nativeTap(on, nativeFinder(on, 'Collections'), 'the Collections tab');
