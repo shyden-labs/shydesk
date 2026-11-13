@@ -18,9 +18,9 @@
  * requires release-cut and lets main be created before its checks have run
  * (issue shyden-labs/repo-template#171), and unless develop takes pull requests by squash alone
  * and main by merge commit alone (issue shyden-labs/repo-template#115). It sets the repository to
- * delete merged head branches and refuse rebase merges, reads that back, then gives the `dev` environment, which holds the
- * dev credential, a deployment branch policy naming `develop` alone, and reads
- * that back too (issue shyden-labs/repo-template#117).
+ * delete merged head branches and refuse rebase merges, reads that back, then lets every branch deploy to
+ * the `dev` environment, which holds the dev credential, and reads that back too (Shyden 2026-11-13: anything
+ * can deploy to dev at any time; shyden-labs/shydesk#136).
  */
 import { execFileSync } from 'node:child_process';
 import { runIfEntry } from './cli.ts';
@@ -212,93 +212,52 @@ export function auditRepoSettings(repo: RepoSettings): string[] {
     .map(([key, want]) => `${want.problem} (${key} is ${String(repo[key as keyof RepoSettings])})`);
 }
 
-/** The environment that holds the dev credential, and the one branch that may deploy to it (shyden-labs/repo-template#117). */
+/** The environment that holds the dev credential, which every branch may deploy to (shyden-labs/shydesk#136). */
 export const DEV_ENVIRONMENT = 'dev';
-const DEV_BRANCH = 'develop';
-
-/** One of an environment's deployment branch policies. */
-export interface BranchPolicy {
-  id: number;
-  name: string;
-  type?: string;
-}
-
-const isDevelopBranch = (p: BranchPolicy) => p.name === DEV_BRANCH && p.type === 'branch';
-
-/** Which of `dev`'s branch policies to delete by id, and whether `develop` must be added. */
-export function planDevPolicies(existing: BranchPolicy[]): { remove: number[]; add: boolean } {
-  return { remove: existing.filter((p) => !isDevelopBranch(p)).map((p) => p.id), add: !existing.some(isDevelopBranch) };
-}
 
 interface DevEnvironment {
   deployment_branch_policy?: { protected_branches?: boolean; custom_branch_policies?: boolean } | null;
 }
 
 /**
- * Every way `dev` (as `environments/dev` and its branch policies report it)
- * lets more than `develop` deploy; empty when none (shyden-labs/repo-template#117). A pull_request run
- * uses the pull request's own workflows, so without this a same-repository
- * branch could name `environment: dev` and read its secrets.
+ * How `dev` (as `environments/dev` reports it) falls short of letting every branch deploy; empty when it
+ * does (shyden-labs/shydesk#136). Fork pull requests get no secrets, and no job naming a dev environment
+ * runs on pull_request_target (tests/unit/deploy-dev-anywhere.test.ts), so only those who can push reach it.
  */
-export function auditDevEnvironment(env: DevEnvironment | undefined, policies: BranchPolicy[]): string[] {
+export function auditDevEnvironment(env: DevEnvironment | undefined): string[] {
   if (env === undefined) return [`${DEV_ENVIRONMENT}: missing; deploy-dev.yml deploys there`];
   const policy = env.deployment_branch_policy;
-  if (policy === null || policy === undefined) return [`${DEV_ENVIRONMENT}: no deployment branch policy, so any branch may deploy`];
-  if (policy.protected_branches !== false)
-    return [`${DEV_ENVIRONMENT}: lets every protected branch deploy (main included), not develop alone`];
-  if (policy.custom_branch_policies !== true) return [`${DEV_ENVIRONMENT}: names no custom branches, so develop alone is not set`];
-  if (policies.length === 1 && isDevelopBranch(policies[0] as BranchPolicy)) return [];
-  const named = policies.length === 0 ? 'no branch' : policies.map((p) => `${p.name} (${String(p.type)})`).join(', ');
-  return [`${DEV_ENVIRONMENT}: lets ${named} deploy, not develop alone`];
+  if (policy === null || policy === undefined) return [];
+  return [
+    `${DEV_ENVIRONMENT}: limits which branches may deploy (protected_branches ${String(policy.protected_branches)}, custom_branch_policies ${String(policy.custom_branch_policies)}), not every branch`,
+  ];
 }
 
-/** gh's JSON answer; an empty one (a DELETE's 204) reads as nothing. */
+/** gh's JSON answer. */
 function gh(args: string[], input?: string): unknown {
-  const answer = execFileSync('gh', args, { encoding: 'utf8', input });
-  return answer.trim() === '' ? undefined : JSON.parse(answer);
-}
-
-/** `dev`'s branch policies, from one page; a longer list fails closed rather than being read in part. */
-function devPolicies(repo: string): BranchPolicy[] {
-  const path = `repos/${repo}/environments/${DEV_ENVIRONMENT}/deployment-branch-policies?per_page=100`;
-  const page = gh(['api', path]) as { total_count: number; branch_policies: BranchPolicy[] };
-  if (page.total_count > page.branch_policies.length) {
-    throw new Error(`${path} lists ${page.total_count} branch policies; one page of 100 was read`);
-  }
-  return page.branch_policies;
+  return JSON.parse(execFileSync('gh', args, { encoding: 'utf8', input }));
 }
 
 type ListedEnvironment = DevEnvironment & { name: string; protection_rules?: { type: string }[] };
 
-/** Gives `dev` a custom policy naming `develop` alone, then reads it back (shyden-labs/repo-template#117). Prints `dev: set` or `dev: keep`. */
+/** Lets every branch deploy to `dev`, then reads it back (shyden-labs/shydesk#136). Prints `dev: set` or `dev: keep`. */
 function setDevEnvironment(repo: string): void {
   const env = `repos/${repo}/environments/${DEV_ENVIRONMENT}`;
   const listed = (gh(['api', `repos/${repo}/environments`]) as { environments: ListedEnvironment[] }).environments;
   const before = listed.find((e) => e.name === DEV_ENVIRONMENT);
-  const policy = before?.deployment_branch_policy;
-  let wrote = false;
-  if (policy?.protected_branches !== false || policy.custom_branch_policies !== true) {
+  const wrote = before === undefined || (before.deployment_branch_policy ?? null) !== null;
+  if (wrote) {
     // Unmeasured whether a PUT naming only the branch policy keeps reviewers
     // and wait timers, so it is never sent over them.
     const kept = (before?.protection_rules ?? []).map((r) => r.type).filter((type) => type !== 'branch_policy');
     if (kept.length > 0) {
       throw new Error(
-        `${DEV_ENVIRONMENT} has protection rules (${kept.join(', ')}) that setting its branch policy could drop: set its deployment branches to develop alone by hand, then run this again`,
+        `${DEV_ENVIRONMENT} has protection rules (${kept.join(', ')}) that setting its branch policy could drop: set its deployment branches to all branches by hand, then run this again`,
       );
     }
-    gh(
-      ['api', '-X', 'PUT', env, '--input', '-'],
-      JSON.stringify({ deployment_branch_policy: { protected_branches: false, custom_branch_policies: true } }),
-    );
-    wrote = true;
+    gh(['api', '-X', 'PUT', env, '--input', '-'], JSON.stringify({ deployment_branch_policy: null }));
   }
-  const { remove, add } = planDevPolicies(devPolicies(repo));
-  for (const id of remove) gh(['api', '-X', 'DELETE', `${env}/deployment-branch-policies/${id}`]);
-  if (add) gh(['api', '-X', 'POST', `${env}/deployment-branch-policies`, '-f', `name=${DEV_BRANCH}`, '-f', 'type=branch']);
-  wrote ||= remove.length > 0 || add;
-  const after = gh(['api', env]) as DevEnvironment;
-  // GitHub answers 404 for the policies of an environment whose custom policy is off.
-  const problems = auditDevEnvironment(after, after.deployment_branch_policy?.custom_branch_policies === true ? devPolicies(repo) : []);
+  const problems = auditDevEnvironment(gh(['api', env]) as DevEnvironment);
   if (problems.length > 0) {
     throw new Error(`read back, the dev environment still falls short:\n  ${problems.join('\n  ')}`);
   }
@@ -339,7 +298,7 @@ export function main(args: string[]): number {
   }
   setDevEnvironment(repo);
   process.stdout.write(
-    `${repo}: develop requires strict checks; main requires ${RELEASE_CUT} instead; both forbid deletion and require pull requests; develop takes squashes alone and main merge commits alone, with rebase merging off; merged head branches are deleted; ${DEV_ENVIRONMENT} deploys from ${DEV_BRANCH} alone.\n`,
+    `${repo}: develop requires strict checks; main requires ${RELEASE_CUT} instead; both forbid deletion and require pull requests; develop takes squashes alone and main merge commits alone, with rebase merging off; merged head branches are deleted; ${DEV_ENVIRONMENT} deploys from any branch.\n`,
   );
   return 0;
 }
