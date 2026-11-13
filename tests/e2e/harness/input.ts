@@ -423,9 +423,6 @@ export async function swipeLeft(label: string): Promise<void> {
     return;
   }
   const at = await drawnCentre(label);
-  // One-off probe (shyden-labs/shydesk#108): which events the press reaches, and what play() answers.
-  await driver().execute(PRESS_PROBE);
-  await driver().execute('window.pressProbe.push("aim:" + arguments[0] + "," + arguments[1]);', Math.round(at.x), Math.round(at.y));
   await driver()
     .action('pointer', { parameters: { pointerType: 'mouse' } })
     .move({ x: at.x + 80, y: at.y })
@@ -434,10 +431,6 @@ export async function swipeLeft(label: string): Promise<void> {
     .up()
     .perform();
 }
-
-/** Records each press event's first target and every play() answer on `window.pressProbe` (shyden-labs/shydesk#108). */
-const PRESS_PROBE =
-  'const box = (root, sel) => { const found = root.querySelector ? root.querySelector(sel) : null; if (!found) return " " + sel + "=none"; const r = found.getBoundingClientRect(); return " " + sel + "=" + [r.x, r.y, r.width, r.height].map(Math.round).join(","); }; const log = (window.pressProbe = []); for (const type of ["pointerdown", "pointerup", "mousedown", "mouseup", "click"]) document.addEventListener(type, (e) => { const t = e.composedPath()[0]; const root = t && t.getRootNode ? t.getRootNode() : document; const hit = root.elementFromPoint ? root.elementFromPoint(e.clientX, e.clientY) : null; log.push(type + ":" + (t && (t.className || t.tagName)) + "@" + Math.round(e.clientX) + "," + Math.round(e.clientY) + ">" + (hit && (hit.className || hit.tagName)) + box(root, ".drag-layer") + box(root, "video")); }, true); const play = HTMLMediaElement.prototype.play; HTMLMediaElement.prototype.play = function () { log.push("play()"); const p = play.call(this); p.then(() => log.push("play-ok"), (err) => log.push("play-refused:" + err.name + ":" + err.message)); return p; };';
 
 /**
  * A real press at the middle of where the element named `label` is drawn: a mouse click on a desktop, a
@@ -453,9 +446,6 @@ export async function clickMiddleOf(label: string): Promise<void> {
     return;
   }
   const at = await drawnCentre(label);
-  // One-off probe (shyden-labs/shydesk#108): which events the press reaches, and what play() answers.
-  await driver().execute(PRESS_PROBE);
-  await driver().execute('window.pressProbe.push("aim:" + arguments[0] + "," + arguments[1]);', Math.round(at.x), Math.round(at.y));
   await driver()
     .action('pointer', { parameters: { pointerType: 'mouse' } })
     .move({ x: at.x, y: at.y })

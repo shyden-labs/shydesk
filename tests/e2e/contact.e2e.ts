@@ -53,6 +53,31 @@ async function zoomedIn(): Promise<void> {
   );
 }
 
+/**
+ * Waits until the video named `label` has loaded its size and is drawn at it. Before that a browser draws
+ * it at the 300 x 150 default, and a press at its middle can land on the controls strip instead of the
+ * picture (shyden-labs/shydesk#108: Safari pressed at 300 x 150 and play() was never called).
+ */
+async function videoHasPicture(label: string): Promise<void> {
+  const video = await named(label);
+  const state = (): Promise<{ readyState: number; width: number; box: number[] }> =>
+    driver().execute(
+      'const v = arguments[0]; const r = v.getBoundingClientRect(); return { readyState: v.readyState, width: v.videoWidth, box: [r.width, r.height].map(Math.round) };',
+      video,
+    );
+  try {
+    await driver().waitUntil(
+      async () => {
+        const now = await state();
+        return now.readyState >= 1 && now.width > 0 && !(now.box[0] === 300 && now.box[1] === 150);
+      },
+      { timeout: WAIT, timeoutMsg: `"${label}" never loaded its picture size` },
+    );
+  } catch {
+    throw new Error(`"${label}" never loaded its picture size: ${JSON.stringify(await state())}`);
+  }
+}
+
 /** Waits until the video named `label` is playing. */
 async function videoPlaying(label: string): Promise<void> {
   const video = await named(label);
@@ -67,8 +92,7 @@ async function videoPlaying(label: string): Promise<void> {
       'const v = arguments[0]; const r = v.getBoundingClientRect(); const hit = v.getRootNode().elementFromPoint(r.x + r.width / 2, r.y + r.height / 2); return JSON.stringify({ paused: v.paused, readyState: v.readyState, networkState: v.networkState, error: v.error && v.error.code, time: v.currentTime, box: [r.x, r.y, r.width, r.height], middle: hit === v ? "video" : String(hit && hit.className) });',
       video,
     );
-    const probe = await driver().execute<unknown>('return window.pressProbe ?? null;');
-    throw new Error(`"${label}" never started playing: ${state} press-probe=${JSON.stringify(probe)}`);
+    throw new Error(`"${label}" never started playing: ${state}`);
   }
 }
 
@@ -200,6 +224,7 @@ describe('the contact form', () => {
     await textHolding('Viewer status', 'Video 1 of 3, zoom 100%, rotated 0°');
     // shyden-labs/shydesk#108: a click on the video's picture plays it, and the browser's own controls bar,
     // along the bottom of the picture, is left uncovered for the browser's play, pause and scrub.
+    await videoHasPicture('Video 1 full size');
     await clickMiddleOf('Video 1 full size');
     await videoPlaying('Video 1 full size');
     await controlsBarUncovered('Video 1 full size');
