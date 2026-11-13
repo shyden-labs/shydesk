@@ -51,5 +51,5 @@ jobs:
             fi
           done
           node scripts/npm-ci.ts
-          npx wrangler d1 migrations apply shydesk --remote
-          npx wrangler deploy
+          npx wrangler d1 migrations apply shydesk --remote --env=""
+          npx wrangler deploy --env=""
