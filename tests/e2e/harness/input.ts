@@ -501,23 +501,33 @@ async function pointerPress(at: { x: number; y: number }): Promise<void> {
  * Safari's floating bar, logging where a press moves the video's time and where it starts it.
  */
 async function probeSafariBar(video: unknown, box: Box): Promise<void> {
-  for (const up of [30, 36, 42]) {
-    for (let inFromLeft = 120; inFromLeft <= box.width - 120; inFromLeft += 20) {
-      const at = { x: Math.round(box.x + inFromLeft), y: Math.round(box.y + box.height - up) };
-      const before = await driver().execute<number>('return arguments[0].currentTime;', video);
-      await pointerPress(at);
+  // Run 43460759813 found the scrub bar at 30 px up from x 320 to 740 and no press in rows 30, 36, 42
+  // from x 120 to 880 that starts playback. This pass covers the rest: the low rows at the left and
+  // right ends, and the two pills along the top (x 6 to 88 and 811 to 1001, y 92 to 138 on CI).
+  const points: { at: { x: number; y: number }; where: string }[] = [];
+  for (const up of [8, 14, 20, 26]) {
+    for (let inFromLeft = 10; inFromLeft <= 310; inFromLeft += 15)
+      points.push({ at: { x: inFromLeft, y: box.height - up }, where: `low-left in=${String(inFromLeft)} up=${String(up)}` });
+    for (let inFromRight = 10; inFromRight <= 260; inFromRight += 15)
+      points.push({
+        at: { x: box.width - inFromRight, y: box.height - up },
+        where: `low-right fromRight=${String(inFromRight)} up=${String(up)}`,
+      });
+  }
+  for (let x = 10; x <= 85; x += 12) points.push({ at: { x, y: 28 }, where: `top-left in=${String(x)}` });
+  for (let x = 815; x <= 1000; x += 15) points.push({ at: { x, y: 28 }, where: `top-right in=${String(x)}` });
+  const state =
+    'return { paused: arguments[0].paused, time: arguments[0].currentTime, muted: arguments[0].muted, volume: arguments[0].volume };';
+  for (const { at, where } of points) {
+    const point = { x: Math.round(box.x + at.x), y: Math.round(box.y + at.y) };
+    const before = await driver().execute<{ paused: boolean; time: number; muted: boolean; volume: number }>(state, video);
+    await pointerPress(point);
+    await new Promise((settle) => setTimeout(settle, 300));
+    const after = await driver().execute<{ paused: boolean; time: number; muted: boolean; volume: number }>(state, video);
+    process.stdout.write(`safari-probe2 ${where} before=${JSON.stringify(before)} after=${JSON.stringify(after)}\n`);
+    if (!after.paused) {
+      await pointerPress(point);
       await new Promise((settle) => setTimeout(settle, 300));
-      const after = await driver().execute<{ paused: boolean; time: number }>(
-        'return { paused: arguments[0].paused, time: arguments[0].currentTime };',
-        video,
-      );
-      process.stdout.write(
-        `safari-probe box=${JSON.stringify(box)} in=${String(inFromLeft)} up=${String(up)} before=${String(before)} after=${String(after.time)} paused=${String(after.paused)}\n`,
-      );
-      if (!after.paused) {
-        await pointerPress(at);
-        await new Promise((settle) => setTimeout(settle, 300));
-      }
     }
   }
 }
