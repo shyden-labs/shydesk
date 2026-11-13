@@ -29,6 +29,7 @@ import {
   STEADY_MS,
   swipeUp,
   centreInside,
+  videoControlPoint,
   ANDROID_KEYS,
   pinchOut,
   fingerSwipeLeft,
@@ -624,6 +625,46 @@ describe('pressMissed on a press that loads a new page', () => {
 
   it('still names a press that never reached a page that stayed', () => {
     expect(pressMissed('Demo', { x: 1, y: 2 }, null)).toContain('never reached the page');
+  });
+});
+
+describe('videoControlPoint (shyden-labs/shydesk#108 AC2)', () => {
+  const video = { x: 100, y: 50, width: 640, height: 360 };
+
+  it("puts Chrome's play 24 px in and 48 px up, on the button row above its scrub bar (run 43125326793)", () => {
+    expect(videoControlPoint(video, 'play', 'chromium')).toEqual({ x: 124, y: 362 });
+  });
+
+  it("puts Firefox's play 20 px in from the left and 20 px up from the bottom of the video", () => {
+    expect(videoControlPoint(video, 'play', 'firefox')).toEqual({ x: 120, y: 390 });
+  });
+
+  it('puts the scrub point 60% across the video, 20 px up from its bottom, on every desktop browser', () => {
+    for (const target of ['chromium', 'firefox', 'safari'] as const) {
+      expect(videoControlPoint(video, 'scrub', target)).toEqual({ x: 484, y: 390 });
+    }
+  });
+
+  it("puts Safari's play at the left end of its centred floating bar: 12.8% in plus 22 px, 29 px up (run 43437413861)", () => {
+    expect(videoControlPoint(video, 'play', 'safari')).toEqual({ x: 204, y: 381 });
+  });
+
+  it("puts Safari's play where CI drew its bar on the 1007 px wide video: 151 px in, 29 px up", () => {
+    expect(videoControlPoint({ x: 0, y: 87, width: 1007, height: 565 }, 'play', 'safari')).toEqual({ x: 151, y: 623 });
+  });
+
+  it('refuses a phone, whose controls are pressed by touch', () => {
+    expect(() => videoControlPoint(video, 'play', 'android')).toThrow("android: the video's own controls are pressed by touch, not here");
+  });
+
+  it('rounds to whole CSS pixels', () => {
+    expect(videoControlPoint({ x: 0.4, y: 0.4, width: 101, height: 50.3 }, 'scrub', 'firefox')).toEqual({ x: 61, y: 31 });
+  });
+
+  it('refuses a video that is not drawn', () => {
+    expect(() => videoControlPoint({ x: 0, y: 0, width: 0, height: 0 }, 'play', 'firefox')).toThrow(
+      'the video is not drawn (it has no size)',
+    );
   });
 });
 

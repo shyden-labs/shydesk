@@ -10,7 +10,7 @@ import { describe, it } from 'mocha';
 import { strict as assert } from 'node:assert';
 import { driver } from './harness/driver.ts';
 import { named } from './harness/find.ts';
-import { clickMiddleOf, pickFile, press, swipeLeft, tap, tapToNewPage, type, zoomIn } from './harness/input.ts';
+import { clickMiddleOf, pickFile, press, pressVideoControl, swipeLeft, tap, tapToNewPage, type, zoomIn } from './harness/input.ts';
 import { SEEDED_TICKET_TOKEN, SHYDESK_PORT } from './harness/local-shydesk.ts';
 
 const WAIT = 20_000;
@@ -53,13 +53,81 @@ async function zoomedIn(): Promise<void> {
   );
 }
 
+/**
+ * Waits until the video named `label` has loaded its size and is drawn at it. Before that a browser draws
+ * it at the 300 x 150 default, and a press at its middle can land on the controls strip instead of the
+ * picture (shyden-labs/shydesk#108: Safari pressed at 300 x 150 and play() was never called).
+ */
+async function videoHasPicture(label: string): Promise<void> {
+  const video = await named(label);
+  const state = (): Promise<{ readyState: number; width: number; box: number[] }> =>
+    driver().execute(
+      'const v = arguments[0]; const r = v.getBoundingClientRect(); return { readyState: v.readyState, width: v.videoWidth, box: [r.width, r.height].map(Math.round) };',
+      video,
+    );
+  try {
+    await driver().waitUntil(
+      async () => {
+        const now = await state();
+        return now.readyState >= 1 && now.width > 0 && !(now.box[0] === 300 && now.box[1] === 150);
+      },
+      { timeout: WAIT, timeoutMsg: `"${label}" never loaded its picture size` },
+    );
+  } catch {
+    throw new Error(`"${label}" never loaded its picture size: ${JSON.stringify(await state())}`);
+  }
+}
+
 /** Waits until the video named `label` is playing. */
 async function videoPlaying(label: string): Promise<void> {
   const video = await named(label);
-  await driver().waitUntil(async () => (await video.getProperty('paused')) === false, {
+  try {
+    await driver().waitUntil(async () => (await video.getProperty('paused')) === false, {
+      timeout: WAIT,
+      timeoutMsg: `"${label}" never started playing`,
+    });
+  } catch {
+    // Names why: the video's own state, and what a press at its middle reaches.
+    const state = await driver().execute<string>(
+      'const v = arguments[0]; const r = v.getBoundingClientRect(); const hit = v.getRootNode().elementFromPoint(r.x + r.width / 2, r.y + r.height / 2); return JSON.stringify({ paused: v.paused, readyState: v.readyState, networkState: v.networkState, error: v.error && v.error.code, time: v.currentTime, box: [r.x, r.y, r.width, r.height], middle: hit === v ? "video" : String(hit && hit.className) });',
+      video,
+    );
+    throw new Error(`"${label}" never started playing: ${state}`);
+  }
+}
+
+/** Waits until the video named `label` is paused. */
+async function videoPaused(label: string): Promise<void> {
+  const video = await named(label);
+  await driver().waitUntil(async () => (await video.getProperty('paused')) === true, {
     timeout: WAIT,
-    timeoutMsg: `"${label}" never started playing`,
+    timeoutMsg: `"${label}" never paused`,
   });
+}
+
+/** Waits until the video named `label` is paused by a press, not by reaching its end. */
+async function videoPausedBeforeItsEnd(label: string): Promise<void> {
+  await videoPaused(label);
+  const video = await named(label);
+  assert.equal(await video.getProperty('ended'), false, `"${label}" stopped only because it reached its end`);
+}
+
+/** The current time, in seconds, of the video named `label`. */
+async function videoTime(label: string): Promise<number> {
+  return Number(await (await named(label)).getProperty('currentTime'));
+}
+
+/** Waits until the video named `label` has jumped more than 2 s from `from` seconds, still inside it. */
+async function videoJumpedFrom(label: string, from: number): Promise<void> {
+  const video = await named(label);
+  let time = from;
+  await driver().waitUntil(
+    async () => {
+      time = Number(await video.getProperty('currentTime'));
+      return Math.abs(time - from) > 2 && time < Number(await video.getProperty('duration'));
+    },
+    { timeout: WAIT, timeoutMsg: `"${label}" never scrubbed away from ${String(from)} s; it stood at ${String(time)} s` },
+  );
 }
 
 /** Fails unless the point a few pixels above the bottom middle of the video named `label` is the video itself. */
@@ -156,9 +224,21 @@ describe('the contact form', () => {
     await textHolding('Viewer status', 'Video 1 of 3, zoom 100%, rotated 0°');
     // shyden-labs/shydesk#108: a click on the video's picture plays it, and the browser's own controls bar,
     // along the bottom of the picture, is left uncovered for the browser's play, pause and scrub.
+    await videoHasPicture('Video 1 full size');
     await clickMiddleOf('Video 1 full size');
     await videoPlaying('Video 1 full size');
     await controlsBarUncovered('Video 1 full size');
+    // AC2: the browser's own controls still work over the drag layer. A click on the picture pauses it first, so
+    // the 10 s video cannot reach its end; then the bar's scrub, its play, and its pause, which stops it short of the end.
+    await clickMiddleOf('Video 1 full size');
+    await videoPaused('Video 1 full size');
+    const pausedAt = await videoTime('Video 1 full size');
+    await pressVideoControl('Video 1 full size', 'scrub');
+    await videoJumpedFrom('Video 1 full size', pausedAt);
+    await pressVideoControl('Video 1 full size', 'play');
+    await videoPlaying('Video 1 full size');
+    await pressVideoControl('Video 1 full size', 'play');
+    await videoPausedBeforeItsEnd('Video 1 full size');
     // A sideways drag across the video moves on, as across a photo, on every browser.
     await swipeLeft('Viewer stage');
     await textHolding('Viewer status', 'Photo 2 of 3, zoom 100%, rotated 0°');

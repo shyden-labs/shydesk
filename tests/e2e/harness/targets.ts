@@ -213,6 +213,44 @@ export function viewportPoint(box: Box, viewport: { width: number; height: numbe
   return { x, y };
 }
 
+/** A control in the browser's own controls bar along the bottom of a video (shyden-labs/shydesk#108 AC2). */
+export type VideoControl = 'play' | 'scrub';
+
+/** How far up from the video's bottom edge the scrub bar's middle is drawn, in CSS pixels. */
+const SCRUB_BAR_MIDDLE = 20;
+
+/**
+ * Where each desktop browser draws its play button, in from the video's left edge and up from its
+ * bottom edge, in CSS pixels, measured from CI's windows (run 43125326793): Chrome draws it on a row
+ * above its scrub bar, Firefox at the left end of its one bar. Safari draws a floating bar centred
+ * under the picture, inset 12.8% of the video's width from each side (x 129 to 879 on a 1007 px wide
+ * video, y 601 to 646 above a bottom edge at 652, run 43437413861), with its play button at the
+ * bar's left end. CI's Safari draws no icons, so the button's place in the bar is Safari's layout,
+ * proven by the play that follows the press.
+ */
+const PLAY_BUTTON: Record<'chromium' | 'firefox' | 'safari', { inFromLeft: number; inFromLeftShare: number; upFromBottom: number }> = {
+  chromium: { inFromLeft: 24, inFromLeftShare: 0, upFromBottom: 48 },
+  firefox: { inFromLeft: 20, inFromLeftShare: 0, upFromBottom: 20 },
+  safari: { inFromLeft: 22, inFromLeftShare: 0.128, upFromBottom: 29 },
+};
+
+/**
+ * Where to press the browser's own control on a video drawn at `box` on `target`: play and
+ * pause at the browser's play button, the scrub point 60% across, on the scrub bar.
+ */
+export function videoControlPoint(box: Box, control: VideoControl, target: Target): { x: number; y: number } {
+  if (target === 'android' || target === 'ios') {
+    throw new Error(`${target}: the video's own controls are pressed by touch, not here`);
+  }
+  if (box.width <= 0 || box.height <= 0) throw new Error('the video is not drawn (it has no size)');
+  const bottom = box.y + box.height;
+  if (control === 'scrub') {
+    return { x: Math.round(box.x + box.width * 0.6), y: Math.round(bottom - SCRUB_BAR_MIDDLE) };
+  }
+  const play = PLAY_BUTTON[target];
+  return { x: Math.round(box.x + box.width * play.inFromLeftShare + play.inFromLeft), y: Math.round(bottom - play.upFromBottom) };
+}
+
 /**
  * Android's own key codes for the viewer's keys (KeyEvent.KEYCODE_ESCAPE,
  * DPAD_LEFT, DPAD_RIGHT, R): Chrome hands them to the page as Escape, the
