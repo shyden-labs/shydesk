@@ -27,7 +27,7 @@ and project tooling.
 | `.github/workflows/sonarcloud.yml`, `scripts/sonar-verdict.ts`, `docs/sonarcloud.md` | A reusable SonarCloud scan whose quality gate blocks the pull request. |
 | `.github/workflows/check-release-cut.yml`, `scripts/release-cut.ts`, `docs/release-cut.md` | Proves each pull request into `main` lands exactly a release cut CI tested. |
 | `.github/workflows/deploy-dev.yml`, `scripts/deploy-dev.ts` | Every merge into `develop` deploys to dev and every pull request rehearses it. Until the app exists it deploys nothing, and fails naming any changed file that would need a deploy (shyden-labs/shydesk#7). |
-| `scripts/branch-rules-setup.ts` | Sets the `develop` (squash only) and `main` (merge commit only) rulesets, head-branch deletion, rebase merging off and the `dev` environment's branch policy, and reads each back. |
+| `scripts/branch-rules-setup.ts` | Sets the `develop` (squash only) and `main` (merge commit only) rulesets, head-branch deletion, rebase merging off and lets every branch deploy to the `dev` environment, and reads each back. |
 | `scripts/board-*.ts`, `scripts/file-story.ts`, `.github/ISSUE_TEMPLATE/story.yml`, `docs/project-board.md` | The project board: filing stories, Estimate and Priority fields, the next ticket, progress, and orphaned In Progress tickets. |
 | `tests/unit/supply-chain.test.ts` | Actions pinned to SHAs, Dependabot covering every ecosystem and targeting `develop`, Node read from the Dockerfile. |
 | `tests/unit/licences.test.ts`, `tests/unit/licences.ts` | Every package in `package-lock.json` has a licence the global rule accepts: permissive, LGPL and MPL pass, GPL, AGPL, SSPL and unknown refused (shyden-labs/repo-template#169). |
