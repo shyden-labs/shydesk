@@ -52,6 +52,7 @@ const targetEnv = Object.fromEntries(
   Object.entries({
     chromedriver: process.env.E2E_CHROMEDRIVER,
     desktopChromedriver: process.env.E2E_DESKTOP_CHROMEDRIVER,
+    desktopChrome: process.env.E2E_DESKTOP_CHROME,
     geckodriver: process.env.E2E_GECKODRIVER,
     iosUdid: process.env.E2E_IOS_UDID,
     androidSerial: process.env.E2E_ANDROID_SERIAL,

@@ -126,6 +126,17 @@ jobs:
           test -x "$geckodriver" || { echo "no geckodriver at $geckodriver"; exit 1; }
           echo "E2E_DESKTOP_CHROMEDRIVER=$chromedriver" >> "$GITHUB_ENV"
           echo "E2E_GECKODRIVER=$geckodriver" >> "$GITHUB_ENV"
+      # The runner's Chrome updates itself mid-job (run 43468019143: 156.0.8078.80 before the
+      # suite, 157.0.8103.51 after), so every session starts a copy made now, which matches the
+      # image's chromedriver and which the updater never touches (shyden-labs/shydesk#135).
+      - name: Copy Chrome before the suite
+        run: |
+          copy="$RUNNER_TEMP/chrome/Google Chrome.app"
+          mkdir -p "$RUNNER_TEMP/chrome"
+          ditto "/Applications/Google Chrome.app" "$copy"
+          binary="$copy/Contents/MacOS/Google Chrome"
+          "$binary" --version
+          echo "E2E_DESKTOP_CHROME=$binary" >> "$GITHUB_ENV"
       - name: End-to-end suite on every desktop target
         env:
           E2E_TARGETS: chromium,firefox,safari

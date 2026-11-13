@@ -35,6 +35,8 @@ export function targetsFrom(list: string): Target[] {
 export interface TargetEnv {
   chromedriver?: string;
   desktopChromedriver?: string;
+  /** A Chrome binary to start in place of the installed one (shyden-labs/shydesk#135). */
+  desktopChrome?: string;
   geckodriver?: string;
   iosUdid?: string;
   androidSerial?: string;
@@ -58,7 +60,12 @@ export function capabilitiesFor(target: Target, env: TargetEnv): Capabilities {
     case 'chromium':
       return {
         browserName: 'chrome',
-        'goog:chromeOptions': { args: ['--headless=new'] },
+        // CI starts Chrome from a copy made before the suite: the runner's own Chrome updates
+        // itself mid-job, so later sessions ran a newer Chrome (shyden-labs/shydesk#135).
+        'goog:chromeOptions':
+          env.desktopChrome === undefined || env.desktopChrome === ''
+            ? { args: ['--headless=new'] }
+            : { args: ['--headless=new'], binary: env.desktopChrome },
         'wdio:chromedriverOptions': {
           binary: need(
             env.desktopChromedriver,
