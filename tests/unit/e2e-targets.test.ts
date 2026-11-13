@@ -84,6 +84,16 @@ describe('capabilitiesFor', () => {
     });
   });
 
+  // The runner's Chrome updates itself mid-job (run 43468019143: 156.0.8078.80 before the suite,
+  // 157.0.8103.51 after), so CI starts Chrome from a copy made first (shyden-labs/shydesk#135).
+  it('starts desktop Chrome from the given binary when E2E_DESKTOP_CHROME is set', () => {
+    expect(capabilitiesFor('chromium', { ...PHONES, desktopChrome: '/copy/Google Chrome' })).toEqual({
+      browserName: 'chrome',
+      'goog:chromeOptions': { args: ['--headless=new'], binary: '/copy/Google Chrome' },
+      'wdio:chromedriverOptions': { binary: '/desktop-cd' },
+    });
+  });
+
   it('runs desktop Firefox headless with the given geckodriver', () => {
     expect(capabilitiesFor('firefox', PHONES)).toEqual({
       browserName: 'firefox',

@@ -126,23 +126,21 @@ jobs:
           test -x "$geckodriver" || { echo "no geckodriver at $geckodriver"; exit 1; }
           echo "E2E_DESKTOP_CHROMEDRIVER=$chromedriver" >> "$GITHUB_ENV"
           echo "E2E_GECKODRIVER=$geckodriver" >> "$GITHUB_ENV"
-      # ONE-OFF MEASUREMENT for shyden-labs/shydesk#135, removed before merge: the installed Chrome
-      # before and after the suite, and any updater running, to see whether Chrome changes mid-run.
-      - name: Chrome before the suite (shyden-labs/shydesk#135 measurement)
+      # The runner's Chrome updates itself mid-job (run 43468019143: 156.0.8078.80 before the
+      # suite, 157.0.8103.51 after), so every session starts a copy made now, which matches the
+      # image's chromedriver and which the updater never touches (shyden-labs/shydesk#135).
+      - name: Copy Chrome before the suite
         run: |
-          "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --version
-          ls -la "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions" || true
-          pgrep -fl -i "updater|keystone|GoogleSoftwareUpdate" || echo "no updater process"
+          copy="$RUNNER_TEMP/chrome/Google Chrome.app"
+          mkdir -p "$RUNNER_TEMP/chrome"
+          ditto "/Applications/Google Chrome.app" "$copy"
+          binary="$copy/Contents/MacOS/Google Chrome"
+          "$binary" --version
+          echo "E2E_DESKTOP_CHROME=$binary" >> "$GITHUB_ENV"
       - name: End-to-end suite on every desktop target
         env:
           E2E_TARGETS: chromium,firefox,safari
         run: npm run test:e2e
-      - name: Chrome after the suite (shyden-labs/shydesk#135 measurement)
-        if: always()
-        run: |
-          "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --version
-          ls -la "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions" || true
-          pgrep -fl -i "updater|keystone|GoogleSoftwareUpdate" || echo "no updater process"
 
   # The SonarCloud quality gate, blocking (shyden-labs/repo-template#27, shyden-labs/repo-template#60): the reusable workflow
   # scans, then fails unless this scan's gate is OK (docs/sonarcloud.md).

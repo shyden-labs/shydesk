@@ -29,6 +29,13 @@ Firefox use the runner image's own drivers, passed as `E2E_DESKTOP_CHROMEDRIVER`
 and `E2E_GECKODRIVER`, so nothing is downloaded mid-run (shyden-labs/shydesk#77);
 a run without either fails naming the variable.
 
+The runner's installed Chrome updates itself partway through a job (run
+43468019143: 156.0.8078.80 before the suite, 157.0.8103.51 after), so CI copies
+Chrome.app before the suite and passes the copy as `E2E_DESKTOP_CHROME`; every
+Chrome session in a run then starts the same Chrome, matching the image's
+chromedriver (shyden-labs/shydesk#135). Locally it is optional: without it
+Chrome starts the installed browser.
+
 ## Phones
 
 One-time set-up:
