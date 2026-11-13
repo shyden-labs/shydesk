@@ -63,7 +63,9 @@ export interface Driver {
   pressKeyCode(code: number): Promise<void>;
   /** Runs `script` in the page with `args` (elements arrive as DOM elements); reads only, never input. */
   execute<T>(script: string, ...args: unknown[]): Promise<T>;
-  action(type: 'pointer', options: { parameters: { pointerType: 'touch' | 'mouse' } }): PointerAction;
+  action(type: 'pointer', options: { id?: string; parameters: { pointerType: 'touch' | 'mouse' } }): PointerAction;
+  /** Several action sequences performed together, such as two fingers at once. */
+  actions(sequences: PointerAction[]): Promise<void>;
   action(type: 'wheel'): WheelAction;
   action(type: 'key'): KeyAction;
   /** A lazy handle; awaiting it resolves the element, as a page script needs. */
