@@ -98,6 +98,13 @@ export function stateLine(s, count, kind) {
 const ZOOM_STEP = 1.25;
 /** A one-pointer move this far sideways (and more sideways than up or down), unzoomed, changes file. */
 const SWIPE_PX = 50;
+/** How far a press may wander and still count as a click on a video's picture. */
+const CLICK_PX = 10;
+/**
+ * The height left free along the bottom of a video for the browser's own controls bar (shyden-labs/shydesk#108):
+ * the drag layer stops this far above the picture's bottom edge.
+ */
+const CONTROLS_BAR_PX = 48;
 
 const VIEWER_CSS = `
 .shydesk-viewer{position:fixed;inset:0;z-index:2147483647;display:flex;flex-direction:column;background:rgba(0,0,0,.92);color:#fff;font:16px/1.4 system-ui,sans-serif}
@@ -107,6 +114,7 @@ const VIEWER_CSS = `
 .shydesk-viewer .line{flex:1 1 14em;margin:0 8px}
 .shydesk-viewer .stage{position:relative;flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;touch-action:none}
 .shydesk-viewer .stage>img,.shydesk-viewer .stage>video{max-width:100%;max-height:100%;transform-origin:center;user-select:none;-webkit-user-select:none}
+.shydesk-viewer .drag-layer{position:absolute}
 `;
 
 /**
@@ -131,6 +139,9 @@ export function openViewer({ doc, host, items, start, onClose }) {
   const returnFocus = host instanceof ShadowRoot ? host.activeElement : doc.activeElement;
   /** @type {ViewerState} */
   let state = { ...START, index: start };
+  /** The drag layer over a shown video, its video and what keeps it placed; null while a photo is shown. */
+  /** @type {{ over: HTMLElement, video: HTMLVideoElement, watch: ResizeObserver } | null} */
+  let layer = null;
   /** @type {HTMLImageElement | HTMLVideoElement | null} */
   let shown = null;
 
@@ -180,6 +191,25 @@ export function openViewer({ doc, host, items, start, onClose }) {
       : el('img', { alt: name, 'aria-label': name, draggable: 'false' });
     shown = media;
     stage.replaceChildren(media);
+    layer?.watch.disconnect();
+    layer = null;
+    if (media instanceof HTMLVideoElement) {
+      // Firefox's own video controls keep a press from the page (shyden-labs/shydesk#108), so a layer over the
+      // picture takes drags and clicks; the controls bar along the bottom is left free.
+      const over = el('div', { class: 'drag-layer', 'aria-hidden': 'true' });
+      const place = () => {
+        over.style.left = `${String(media.offsetLeft)}px`;
+        over.style.top = `${String(media.offsetTop)}px`;
+        over.style.width = `${String(media.offsetWidth)}px`;
+        over.style.height = `${String(Math.max(0, media.offsetHeight - CONTROLS_BAR_PX))}px`;
+      };
+      // The picture's size changes as its metadata loads and as the window resizes.
+      const watch = new ResizeObserver(place);
+      watch.observe(media);
+      stage.append(over);
+      layer = { over, video: media, watch };
+      place();
+    }
     apply(target);
     file.load().then(
       (address) => {
@@ -270,11 +300,14 @@ export function openViewer({ doc, host, items, start, onClose }) {
   /** Where a one-pointer drag on an unzoomed file began; null once it cannot be a swipe. */
   /** @type {{ x: number, y: number } | null} */
   let swipeStart = null;
+  /** Whether the one pointer down began on a video's drag layer, where a click plays or pauses it. */
+  let pressOnLayer = false;
 
   stage.addEventListener('pointerdown', (event) => {
     stage.setPointerCapture(event.pointerId);
     pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
     swipeStart = pointers.size === 1 && state.zoom === 1 ? { x: event.clientX, y: event.clientY } : null;
+    pressOnLayer = pointers.size === 1 && layer !== null && event.target === layer.over;
   });
 
   stage.addEventListener('pointermove', (event) => {
@@ -304,7 +337,13 @@ export function openViewer({ doc, host, items, start, onClose }) {
     swipeStart = null;
     const dx = event.clientX - from.x;
     const dy = event.clientY - from.y;
-    if (Math.abs(dx) >= SWIPE_PX && Math.abs(dx) > Math.abs(dy)) showFile(dx < 0 ? next(state, count) : prev(state, count));
+    if (Math.abs(dx) >= SWIPE_PX && Math.abs(dx) > Math.abs(dy)) {
+      showFile(dx < 0 ? next(state, count) : prev(state, count));
+    } else if (pressOnLayer && layer !== null && Math.hypot(dx, dy) < CLICK_PX) {
+      const { video } = layer;
+      if (video.paused) void video.play();
+      else video.pause();
+    }
   };
   stage.addEventListener('pointerup', lift);
   stage.addEventListener('pointercancel', lift);
@@ -345,6 +384,7 @@ export function openViewer({ doc, host, items, start, onClose }) {
   });
 
   function close() {
+    layer?.watch.disconnect();
     overlay.remove();
     onClose?.();
     if (returnFocus instanceof HTMLElement) returnFocus.focus();

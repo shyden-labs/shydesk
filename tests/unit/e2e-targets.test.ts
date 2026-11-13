@@ -29,6 +29,10 @@ import {
   STEADY_MS,
   swipeUp,
   centreInside,
+  ANDROID_KEYS,
+  pinchOut,
+  fingerSwipeLeft,
+  androidPageArea,
 } from '../e2e/harness/targets.ts';
 
 /**
@@ -620,5 +624,40 @@ describe('pressMissed on a press that loads a new page', () => {
 
   it('still names a press that never reached a page that stayed', () => {
     expect(pressMissed('Demo', { x: 1, y: 2 }, null)).toContain('never reached the page');
+  });
+});
+
+describe('phone gestures (shyden-labs/shydesk#99)', () => {
+  it("sends Android's own key codes for the viewer's keys: Escape, the left and right arrows, and R", () => {
+    expect(ANDROID_KEYS).toEqual({ Escape: 111, ArrowLeft: 21, ArrowRight: 22, r: 46 });
+  });
+
+  it('spreads two fingers apart sideways from 40 to 120 CSS px either side of the point, in screen px', () => {
+    expect(pinchOut({ x: 500, y: 900 }, 3)).toEqual([
+      { from: { x: 380, y: 900 }, to: { x: 140, y: 900 } },
+      { from: { x: 620, y: 900 }, to: { x: 860, y: 900 } },
+    ]);
+  });
+
+  it('moves one finger from 100 CSS px right of the point to 100 CSS px left of it, in screen px', () => {
+    expect(fingerSwipeLeft({ x: 500, y: 900 }, 2.5)).toEqual({ from: { x: 750, y: 900 }, to: { x: 250, y: 900 } });
+  });
+
+  it('rounds gesture points to whole screen pixels', () => {
+    expect(fingerSwipeLeft({ x: 10, y: 20 }, 1.333)).toEqual({ from: { x: 143, y: 20 }, to: { x: -123, y: 20 } });
+  });
+});
+
+describe('androidPageArea (shyden-labs/shydesk#99)', () => {
+  // Measured on the OnePlus, 2026-11-12: Chrome's coordinator view ends where the page does, at 3014,
+  // and the page view then ran from 356 to 3014 at 3.5 screen px per CSS px (2658 px tall).
+  it("is the strip of Chrome's coordinator view, ending at its bottom, as tall as the page's window", () => {
+    expect(androidPageArea({ x: 0, y: 160, width: 1440, height: 2854 }, 759.43, 3.5)).toEqual({ x: 0, y: 356, width: 1440, height: 2658 });
+  });
+
+  it('refuses a page window taller than the coordinator view, naming both', () => {
+    expect(() => androidPageArea({ x: 0, y: 160, width: 1440, height: 1000 }, 759.43, 3.5)).toThrow(
+      "android: the page's window (2658 px) is taller than Chrome's coordinator view (1000 px)",
+    );
   });
 });
