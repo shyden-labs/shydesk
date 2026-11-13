@@ -3,7 +3,7 @@
  * (shyden-labs/shydesk#42 AC4): a trusted click, trusted key presses, and a
  * file chosen through the target's own picker arriving whole.
  */
-import { describe, it, beforeEach } from 'mocha';
+import { describe, it } from 'mocha';
 import { strict as assert } from 'node:assert';
 import { statSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -13,6 +13,14 @@ import { pickFile, tap, type } from './harness/input.ts';
 import type { Fixture } from './harness/targets.ts';
 
 const size = (fixture: Fixture): number => statSync(resolve(import.meta.dirname, '../fixtures/media', fixture)).size;
+
+/**
+ * Logs one check that ran and passed, so a CI run's output shows every check each target made
+ * (shyden-labs/shydesk#130).
+ */
+function ran(check: string): void {
+  process.stdout.write(`check-ran: ${check}\n`);
+}
 
 /** The page's event log once it holds `expected`, or a failure showing what it held. */
 async function eventsHolding(expected: string): Promise<string> {
@@ -24,32 +32,26 @@ async function eventsHolding(expected: string): Promise<string> {
     },
     { timeout: 15_000, timeoutMsg: `the page never logged "${expected}"; it logged "${events}"` },
   );
+  ran(expected);
   return events;
 }
 
+// One journey on one page load (shyden-labs/shydesk#130): every helper's checks, in the order a person would act.
 describe('the input helpers', () => {
-  beforeEach(async () => {
+  it("reach the page as trusted clicks and key presses, and pick files whole through the target's own picker", async () => {
     await driver().url('/harness.html');
-  });
-
-  it('a tap reaches the page as a trusted click', async () => {
+    // Each target runs at its own window size; none is set by the suite (shyden-labs/shydesk#130).
+    const windowSize = await driver().execute<string>('return `${String(innerWidth)}x${String(innerHeight)}`;');
+    process.stdout.write(`window-size: ${windowSize}\n`);
     await tap('Harness button');
     await eventsHolding('button-click:true');
-  });
-
-  it('typing reaches the field as trusted key presses', async () => {
     await type('Harness field', 'ok');
     const events = await eventsHolding('field-input:true:ok');
     assert.equal(events.split(' ').filter((event) => event === 'field-keydown:true').length, 2, events);
-  });
-
-  it("a photo picked through the target's own picker arrives whole", async () => {
+    ran('field-keydown:true x2');
     await pickFile('Harness file', 'photo.jpg');
     await eventsHolding(`file-change:true:${String(size('photo.jpg'))}`);
     await eventsHolding(`file-read:${String(size('photo.jpg'))}`);
-  });
-
-  it("a 10-second video picked through the target's own picker arrives whole", async () => {
     await pickFile('Harness file', 'ok-10s.mp4');
     await eventsHolding(`file-change:true:${String(size('ok-10s.mp4'))}`);
     await eventsHolding(`file-read:${String(size('ok-10s.mp4'))}`);
