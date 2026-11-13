@@ -156,8 +156,26 @@ export function screenPoint(box: Box, ratio: number, page: { x: number; y: numbe
   };
 }
 
-/** Chrome's page area in the Android native tree. */
-export const ANDROID_PAGE = '//android.webkit.WebView';
+/**
+ * Chrome's coordinator view in the Android native tree, which holds the page and
+ * ends where it does. Chrome drops its WebView node from the tree after a tap loads
+ * a new page (measured on the OnePlus, Chrome 156, 2026-11-12); this view stays.
+ */
+export const ANDROID_COORDINATOR = '//*[@resource-id="com.android.chrome:id/coordinator"]';
+
+/**
+ * The part of the screen showing the page: the bottom of Chrome's coordinator view,
+ * as tall as the page's own window (`innerHeight` CSS px at `ratio` screen px each).
+ */
+export function androidPageArea(coordinator: Box, innerHeight: number, ratio: number): Box {
+  const height = Math.round(innerHeight * ratio);
+  if (height > coordinator.height) {
+    throw new Error(
+      `android: the page's window (${String(height)} px) is taller than Chrome's coordinator view (${String(coordinator.height)} px)`,
+    );
+  }
+  return { x: coordinator.x, y: coordinator.y + coordinator.height - height, width: coordinator.width, height };
+}
 
 const SECONDS: Record<Exclude<Fixture, 'photo.jpg'>, string> = { 'ok-10s.mp4': '10', 'long-45s.mp4': '45' };
 /** How the iPhone picker speaks each length. */
@@ -193,6 +211,34 @@ export function viewportPoint(box: Box, viewport: { width: number; height: numbe
     );
   }
   return { x, y };
+}
+
+/**
+ * Android's own key codes for the viewer's keys (KeyEvent.KEYCODE_ESCAPE,
+ * DPAD_LEFT, DPAD_RIGHT, R): Chrome hands them to the page as Escape, the
+ * arrow keys and "r" (shyden-labs/shydesk#99).
+ */
+export const ANDROID_KEYS = { Escape: 111, ArrowLeft: 21, ArrowRight: 22, r: 46 } as const;
+
+type Point = { x: number; y: number };
+type Path = { from: Point; to: Point };
+
+/** A point `dx` CSS px sideways from `at`, in screen px at `ratio` screen px per CSS px. */
+function across(at: Point, dx: number, ratio: number): Point {
+  return { x: Math.round(at.x + dx * ratio), y: Math.round(at.y) };
+}
+
+/** Two fingers spreading apart sideways around the screen point `at`: a pinch that zooms in. */
+export function pinchOut(at: Point, ratio: number): [Path, Path] {
+  return [
+    { from: across(at, -40, ratio), to: across(at, -120, ratio) },
+    { from: across(at, 40, ratio), to: across(at, 120, ratio) },
+  ];
+}
+
+/** One finger moving right to left across the screen point `at`, well past the viewer's 50 px swipe. */
+export function fingerSwipeLeft(at: Point, ratio: number): Path {
+  return { from: across(at, 100, ratio), to: across(at, -100, ratio) };
 }
 
 /**
