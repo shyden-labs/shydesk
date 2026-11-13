@@ -74,10 +74,20 @@ export function openFromButton(button, buttons, viewer, doc) {
   });
 }
 
+/**
+ * The page's own timers for startBadge. Each calls the global itself: handed over as a method,
+ * a browser's clearInterval gets the timers object as `this` and refuses it (shyden-labs/shydesk#139).
+ */
+export const pageTimers = {
+  setInterval: (/** @type {() => void} */ fn, /** @type {number} */ ms) => setInterval(fn, ms),
+  clearInterval: (/** @type {never} */ id) => {
+    clearInterval(id);
+  },
+};
+
 if (typeof document !== 'undefined') {
   const badge = document.querySelector('[data-unread]');
-  if (badge !== null)
-    void startBadge(badge, document, fetch.bind(globalThis), { setInterval: (fn, ms) => setInterval(fn, ms), clearInterval });
+  if (badge !== null) void startBadge(badge, document, fetch.bind(globalThis), pageTimers);
   const box = /** @type {HTMLTextAreaElement | null} */ (document.querySelector('[data-reply]'));
   if (box !== null) {
     for (const button of document.querySelectorAll('button[data-canned]')) {
