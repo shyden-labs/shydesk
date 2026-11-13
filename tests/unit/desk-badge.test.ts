@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { fillReplyBox, openFromButton, startBadge } from '../../public/desk.js';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { fillReplyBox, openFromButton, pageTimers, startBadge } from '../../public/desk.js';
 
 // The desk page's own script (shyden-labs/shydesk#24 AC4, AC5): the unread badge
 // asks every 30 s only while the tab is visible, and a canned reply fills the box.
@@ -152,5 +152,37 @@ describe('the viewer buttons', () => {
     const items = v.opened[0]?.items ?? [];
     expect(items.map((item) => item.mime)).toEqual(['image/jpeg', 'video/mp4']);
     expect(await Promise.all(items.map((item) => item.load()))).toEqual(['/desk/files/a1', '/desk/files/a%2F2']);
+  });
+});
+
+// shyden-labs/shydesk#139: the page's own timers are called as `timers.clearInterval(id)`. A browser's
+// clearInterval refuses any `this` but the window (Firefox: "does not implement interface Window"),
+// so each must call the global itself, never be the global handed over as a method.
+describe('pageTimers (shyden-labs/shydesk#139)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('clears through the global with the window as this, when called as timers.clearInterval(id)', () => {
+    const cleared: unknown[] = [];
+    vi.stubGlobal('clearInterval', function (this: unknown, id: unknown) {
+      if (this !== undefined && this !== globalThis)
+        throw new TypeError("'clearInterval' called on an object that does not implement interface Window.");
+      cleared.push(id);
+    });
+    pageTimers.clearInterval(7 as never);
+    expect(cleared).toEqual([7]);
+  });
+
+  it('sets through the global with the window as this, when called as timers.setInterval(fn, ms)', () => {
+    const set: unknown[] = [];
+    vi.stubGlobal('setInterval', function (this: unknown, _fn: unknown, ms: unknown) {
+      if (this !== undefined && this !== globalThis)
+        throw new TypeError("'setInterval' called on an object that does not implement interface Window.");
+      set.push(ms);
+      return 9;
+    });
+    expect(pageTimers.setInterval(() => undefined, 30_000)).toBe(9);
+    expect(set).toEqual([30_000]);
   });
 });
