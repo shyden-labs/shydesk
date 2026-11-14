@@ -33,6 +33,8 @@ import {
   pinchOut,
   fingerSwipeLeft,
   androidPageArea,
+  pageLoadStalled,
+  IOS_PAGE_LOAD_MS,
 } from '../e2e/harness/targets.ts';
 
 /**
@@ -669,5 +671,36 @@ describe('androidPageArea (shyden-labs/shydesk#99)', () => {
     expect(() => androidPageArea({ x: 0, y: 160, width: 1440, height: 1000 }, 759.43, 3.5)).toThrow(
       "android: the page's window (2658 px) is taller than Chrome's coordinator view (1000 px)",
     );
+  });
+});
+
+describe('pageLoadStalled', () => {
+  // shyden-labs/shydesk#146: the iPhone's driver gives up waiting for Safari's
+  // page-load answer after 6,000 ms and carries on silently; every page script
+  // after that hangs and ends in a false "modal dialog" error.
+  it('names the stall when an iPhone page load took the driver its whole 6,000 ms wait', () => {
+    expect(pageLoadStalled('ios', '/contact.html?product=demo', 6005)).toBe(
+      'Safari never answered the load of /contact.html?product=demo: the driver gave up after 6005 ms ' +
+        "(its wait is 6000 ms) and Safari's Web Inspector link is stalled, so later page scripts would end " +
+        'in a false "modal dialog" error (shyden-labs/shydesk#146)',
+    );
+  });
+
+  it('names the stall at exactly the 6,000 ms wait', () => {
+    expect(pageLoadStalled('ios', '/x', IOS_PAGE_LOAD_MS)).toContain('gave up after 6000 ms');
+  });
+
+  it('lets an iPhone page load just under the wait pass', () => {
+    expect(pageLoadStalled('ios', '/x', IOS_PAGE_LOAD_MS - 1)).toBeUndefined();
+  });
+
+  it('lets a healthy iPhone page load pass', () => {
+    expect(pageLoadStalled('ios', '/x', 420)).toBeUndefined();
+  });
+
+  it('leaves the other targets to their own drivers, which fail a page load themselves', () => {
+    for (const target of ['chromium', 'firefox', 'safari', 'android'] as const) {
+      expect(pageLoadStalled(target, '/x', 60_000)).toBeUndefined();
+    }
   });
 });

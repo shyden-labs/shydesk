@@ -475,3 +475,25 @@ export function centreInside(box: Box, area: Box): boolean {
 export function desktopFilePath(target: 'chromium' | 'firefox' | 'safari', fixture: string, home: string): string {
   return target === 'safari' ? join(home, 'Library/Caches/com.apple.Safari', basename(fixture)) : fixture;
 }
+
+/**
+ * How long the iPhone's driver waits for Safari to answer a page load before it
+ * gives up and carries on without an error (appium-xcuitest-driver's `pageLoadMs`).
+ */
+export const IOS_PAGE_LOAD_MS = 6000;
+
+/**
+ * Why a page load must fail at once, or undefined when it may go on
+ * (shyden-labs/shydesk#146). On the iPhone a load that took the driver its whole
+ * wait means Safari's Web Inspector link stalled: every page script after it hangs
+ * and ends in a false "modal dialog" error. The other targets' drivers fail a page
+ * load themselves.
+ */
+export function pageLoadStalled(target: Target, url: string, elapsedMs: number): string | undefined {
+  if (target !== 'ios' || elapsedMs < IOS_PAGE_LOAD_MS) return undefined;
+  return (
+    `Safari never answered the load of ${url}: the driver gave up after ${String(elapsedMs)} ms ` +
+    `(its wait is ${String(IOS_PAGE_LOAD_MS)} ms) and Safari's Web Inspector link is stalled, so later page scripts would end ` +
+    'in a false "modal dialog" error (shyden-labs/shydesk#146)'
+  );
+}
