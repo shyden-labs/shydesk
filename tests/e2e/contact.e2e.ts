@@ -134,8 +134,11 @@ describe('the contact form', () => {
     await textHolding('Conversation', 'It still closes.');
     await textHolding('Conversation', 'Attachment, ');
     // The preview of the reply's photo really came, through the token's header: after the first message's video and photo.
-    const preview = await named('Attachment preview 3');
-    await driver().waitUntil(async () => Number(await preview.getProperty('naturalWidth')) > 0, {
+    // Found by its button's name, which every target gives it: iOS names a picture inside a button by the button
+    // (shyden-labs/shydesk#144).
+    const preview = await named('Open photo 3');
+    const drawnWidth = 'const picture = arguments[0].querySelector("img"); return picture === null ? 0 : picture.naturalWidth;';
+    await driver().waitUntil(async () => (await driver().execute<number>(drawnWidth, preview)) > 0, {
       timeout: WAIT,
       timeoutMsg: 'the third attachment preview never drew',
     });
