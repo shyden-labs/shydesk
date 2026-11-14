@@ -429,6 +429,29 @@ export function drawnAt(a: Box, b: Box): boolean {
   return centreInside(a, b) && centreInside(b, a);
 }
 
+/** Something the phone draws over the page, such as the on-screen keyboard or the bar above it. */
+export interface Cover {
+  name: string;
+  box: Box;
+}
+
+/**
+ * The failure naming the first cover lying over any part of `target`, or
+ * undefined when none does. Any overlap counts, not only one over the middle:
+ * Safari's keyboard bar over the top 8 points of the reply's "Choose Files"
+ * control, clear of its middle, still kept the tap from opening the picker
+ * (measured on the iPhone, shyden-labs/shydesk#149).
+ */
+export function coverOver(what: string, target: Box, covers: readonly Cover[]): string | undefined {
+  const over = covers.find(
+    ({ box }) =>
+      box.x < target.x + target.width && target.x < box.x + box.width && box.y < target.y + target.height && target.y < box.y + box.height,
+  );
+  if (over === undefined) return undefined;
+  const span = (box: Box): string => `y ${String(box.y)} to ${String(box.y + box.height)}`;
+  return `ios: ${over.name} (${span(over.box)}) lies over ${what} (${span(target)})`;
+}
+
 /** How long a control must stay in one place before it counts as stopped moving. */
 export const STEADY_MS = 300;
 
@@ -487,4 +510,26 @@ export function centreInside(box: Box, area: Box): boolean {
  */
 export function desktopFilePath(target: 'chromium' | 'firefox' | 'safari', fixture: string, home: string): string {
   return target === 'safari' ? join(home, 'Library/Caches/com.apple.Safari', basename(fixture)) : fixture;
+}
+
+/**
+ * How long the iPhone's driver waits for Safari to answer a page load before it
+ * gives up and carries on without an error (appium-xcuitest-driver's `pageLoadMs`).
+ */
+export const IOS_PAGE_LOAD_MS = 6000;
+
+/**
+ * Why a page load must fail at once, or undefined when it may go on
+ * (shyden-labs/shydesk#146). On the iPhone a load that took the driver its whole
+ * wait means Safari's Web Inspector link stalled: every page script after it hangs
+ * and ends in a false "modal dialog" error. The other targets' drivers fail a page
+ * load themselves.
+ */
+export function pageLoadStalled(target: Target, url: string, elapsedMs: number): string | undefined {
+  if (target !== 'ios' || elapsedMs < IOS_PAGE_LOAD_MS) return undefined;
+  return (
+    `Safari never answered the load of ${url}: the driver gave up after ${String(elapsedMs)} ms ` +
+    `(its wait is ${String(IOS_PAGE_LOAD_MS)} ms) and Safari's Web Inspector link is stalled, so later page scripts would end ` +
+    'in a false "modal dialog" error (shyden-labs/shydesk#146)'
+  );
 }

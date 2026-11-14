@@ -10,6 +10,7 @@ import { describe, it } from 'mocha';
 import { strict as assert } from 'node:assert';
 import { driver } from './harness/driver.ts';
 import { named } from './harness/find.ts';
+import { openPage } from './harness/open-page.ts';
 import { clickMiddleOf, pickFile, press, swipeLeft, tap, tapToNewPage, type, zoomIn } from './harness/input.ts';
 import { SEEDED_TICKET_TOKEN, SHYDESK_PORT } from './harness/local-shydesk.ts';
 
@@ -99,7 +100,7 @@ describe('the contact form', () => {
   it('sends a request typed and tapped in, and shows the private link', async () => {
     // Each browser's ticket is its own: they share one local database, and the desk opens a ticket by its subject.
     const subject = `The app will not open ${String(Date.now())}`;
-    await driver().url('/contact.html?product=demo');
+    await openPage('/contact.html?product=demo');
     await type('Email', 'e2e@example.com');
     await type('Subject', subject);
     await type('Message', 'It closes as soon as it starts.');
@@ -124,7 +125,7 @@ describe('the contact form', () => {
     assert.match(link, /\/support\/ticket#t=[A-Za-z0-9_-]{43}$/);
 
     // The private link opens the conversation, and a reply typed there joins it (shyden-labs/shydesk#23).
-    await driver().url(link);
+    await openPage(link);
     await textHolding('Conversation', 'It closes as soon as it starts.');
     await type('Reply', 'It still closes.');
     await pickFile('Photos and videos', 'photo.jpg');
@@ -134,8 +135,11 @@ describe('the contact form', () => {
     await textHolding('Conversation', 'It still closes.');
     await textHolding('Conversation', 'Attachment, ');
     // The preview of the reply's photo really came, through the token's header: after the first message's video and photo.
-    const preview = await named('Attachment preview 3');
-    await driver().waitUntil(async () => Number(await preview.getProperty('naturalWidth')) > 0, {
+    // Found by its button's name, which every target gives it: iOS names a picture inside a button by the button
+    // (shyden-labs/shydesk#144).
+    const preview = await named('Open photo 3');
+    const drawnWidth = 'const picture = arguments[0].querySelector("img"); return picture === null ? 0 : picture.naturalWidth;';
+    await driver().waitUntil(async () => (await driver().execute<number>(drawnWidth, preview)) > 0, {
       timeout: WAIT,
       timeoutMsg: 'the third attachment preview never drew',
     });
@@ -176,9 +180,9 @@ describe('the contact form', () => {
     // A rep signs in, switches product, opens the ticket, sends a canned reply they edited (shyden-labs/shydesk#24).
     const desk = new URL(link);
     desk.port = String(SHYDESK_PORT);
-    await driver().url(`${desk.origin}/health`);
+    await openPage(`${desk.origin}/health`);
     await driver().setCookies({ name: 'CF_Authorization', value: process.env.E2E_REP_TOKEN ?? '', path: '/' });
-    await driver().url(`${desk.origin}/desk?product=demo-elsewhere`);
+    await openPage(`${desk.origin}/desk?product=demo-elsewhere`);
     // The badge counts this run's unanswered tickets, once its first request is back.
     const badge = await named('Unread tickets');
     await driver().waitUntil(async () => /^\d+$/.test(await badge.getText()), {
@@ -202,21 +206,21 @@ describe('the contact form', () => {
     await textHolding('Conversation', answer);
 
     // The customer's page shows that reply.
-    await driver().url(link);
+    await openPage(link);
     await textHolding('Conversation', answer);
 
     // An attachment past its keeping time says so (seeded: tests/e2e/harness/local-shydesk.ts).
-    await driver().url(`/support/ticket?seeded#t=${SEEDED_TICKET_TOKEN}`);
+    await openPage(`/support/ticket?seeded#t=${SEEDED_TICKET_TOKEN}`);
     await textHolding('Conversation', 'Attachment removed after 30 days.');
 
     // A link nobody holds shows one plain line.
-    await driver().url('/support/ticket?unknown#t=nobody-holds-this');
+    await openPage('/support/ticket?unknown#t=nobody-holds-this');
     await textHolding('Support status', 'This link is no longer valid.');
   });
 
   it('cannot load on a page whose origin the product does not allow', async () => {
     // A known product whose only allowed origin is elsewhere: the browser refuses the answer (no CORS header).
-    await driver().url('/contact.html?product=demo-elsewhere');
+    await openPage('/contact.html?product=demo-elsewhere');
     await textHolding('Support status', 'The support form could not load here.');
   });
 });

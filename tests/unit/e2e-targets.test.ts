@@ -25,6 +25,7 @@ import {
   largest,
   inDocument,
   drawnAt,
+  coverOver,
   steadyFrom,
   steadyLongEnough,
   STEADY_MS,
@@ -34,6 +35,8 @@ import {
   pinchOut,
   fingerSwipeLeft,
   androidPageArea,
+  pageLoadStalled,
+  IOS_PAGE_LOAD_MS,
 } from '../e2e/harness/targets.ts';
 
 /**
@@ -683,5 +686,74 @@ describe('suiteOriginFor', () => {
 
   it.each(['chromium', 'firefox', 'safari', 'ios'] as const)('keeps the suite origin for %s', (target) => {
     expect(suiteOriginFor(target, 'http://192.168.1.7:8765')).toBe('http://192.168.1.7:8765');
+  });
+});
+
+describe('pageLoadStalled', () => {
+  // shyden-labs/shydesk#146: the iPhone's driver gives up waiting for Safari's
+  // page-load answer after 6,000 ms and carries on silently; every page script
+  // after that hangs and ends in a false "modal dialog" error.
+  it('names the stall when an iPhone page load took the driver its whole 6,000 ms wait', () => {
+    expect(pageLoadStalled('ios', '/contact.html?product=demo', 6005)).toBe(
+      'Safari never answered the load of /contact.html?product=demo: the driver gave up after 6005 ms ' +
+        "(its wait is 6000 ms) and Safari's Web Inspector link is stalled, so later page scripts would end " +
+        'in a false "modal dialog" error (shyden-labs/shydesk#146)',
+    );
+  });
+
+  it('names the stall at exactly the 6,000 ms wait', () => {
+    expect(pageLoadStalled('ios', '/x', IOS_PAGE_LOAD_MS)).toContain('gave up after 6000 ms');
+  });
+
+  it('lets an iPhone page load just under the wait pass', () => {
+    expect(pageLoadStalled('ios', '/x', IOS_PAGE_LOAD_MS - 1)).toBeUndefined();
+  });
+
+  it('lets a healthy iPhone page load pass', () => {
+    expect(pageLoadStalled('ios', '/x', 420)).toBeUndefined();
+  });
+
+  it('leaves the other targets to their own drivers, which fail a page load themselves', () => {
+    for (const target of ['chromium', 'firefox', 'safari', 'android'] as const) {
+      expect(pageLoadStalled(target, '/x', 60_000)).toBeUndefined();
+    }
+  });
+});
+
+describe('coverOver', () => {
+  // Measured on the iPhone, 2026-11-14 13:41 WIB (PR shyden-labs/shydesk#143): Safari's keyboard bar
+  // over the top 8 points of the reply's "Choose Files" control, whose middle it missed.
+  const bar = { name: 'the keyboard bar', box: { x: 0, y: 534, width: 420, height: 48 } };
+  const keyboard = { name: 'the on-screen keyboard', box: { x: 0, y: 609, width: 420, height: 245 } };
+  const control = { x: 32, y: 574, width: 356, height: 23 };
+
+  it('names the keyboard bar lying over the top of the control, though not over its middle', () => {
+    expect(coverOver('the file input named "Photos and videos"', control, [keyboard, bar])).toBe(
+      'ios: the keyboard bar (y 534 to 582) lies over the file input named "Photos and videos" (y 574 to 597)',
+    );
+  });
+
+  it('finds nothing once the keyboard and its bar are gone', () => {
+    expect(coverOver('the control', control, [])).toBeUndefined();
+  });
+
+  it('finds nothing when a cover ends exactly where the control starts', () => {
+    expect(
+      coverOver('the control', control, [{ name: 'the keyboard bar', box: { x: 0, y: 526, width: 420, height: 48 } }]),
+    ).toBeUndefined();
+  });
+
+  it('finds nothing when a cover starts exactly where the control ends', () => {
+    expect(coverOver('the control', control, [{ name: 'the keyboard', box: { x: 0, y: 597, width: 420, height: 245 } }])).toBeUndefined();
+  });
+
+  it('finds nothing when a cover sits beside the control at the same height', () => {
+    expect(coverOver('the control', control, [{ name: 'a button', box: { x: 388, y: 574, width: 30, height: 23 } }])).toBeUndefined();
+  });
+
+  it('names a cover that lies over one point of the control', () => {
+    expect(coverOver('the control', control, [{ name: 'the keyboard', box: { x: 0, y: 596, width: 420, height: 245 } }])).toBe(
+      'ios: the keyboard (y 596 to 841) lies over the control (y 574 to 597)',
+    );
   });
 });
