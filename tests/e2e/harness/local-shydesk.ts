@@ -36,16 +36,17 @@ export function shydeskOrigin(suiteOrigin: string): string {
   return url.origin;
 }
 
-/** The seed for the local D1, after the migrations. */
-export function seedSql(suiteOrigin: string): string {
-  if (!PLAIN_ORIGIN.test(suiteOrigin)) throw new Error(`${suiteOrigin} is not a plain origin`);
-  const product = (id: string, name: string, origin: string) =>
+/** The seed for the local D1, after the migrations; the demo product is also allowed on `otherOrigins`. */
+export function seedSql(suiteOrigin: string, otherOrigins: readonly string[] = []): string {
+  const allowed = [...new Set([suiteOrigin, ...otherOrigins])];
+  for (const origin of allowed) if (!PLAIN_ORIGIN.test(origin)) throw new Error(`${origin} is not a plain origin`);
+  const product = (id: string, name: string, origins: readonly string[]) =>
     `INSERT INTO products (id, name, sender_address, ticket_page_url, allowed_origins_json, monthly_email_share, created_at) VALUES ` +
-    `('${id}', '${name}', 'no-reply@example.com', '${origin}/support/ticket', '["${origin}"]', 100, 0);`;
+    `('${id}', '${name}', 'no-reply@example.com', '${origins[0] ?? ''}/support/ticket', '${JSON.stringify(origins)}', 100, 0);`;
   const fields = JSON.stringify([{ label: 'Device', kind: 'text', required: true }]);
   return [
-    product('demo', 'Demo', suiteOrigin),
-    product('demo-elsewhere', 'Elsewhere', 'https://elsewhere.example'),
+    product('demo', 'Demo', allowed),
+    product('demo-elsewhere', 'Elsewhere', ['https://elsewhere.example']),
     `INSERT INTO ticket_types (id, product_id, kind, name, fields_json, reasons_json, enabled) VALUES ('demo:support', 'demo', 'support', 'Support', '${fields}', '[]', 1);`,
     `INSERT INTO ticket_types (id, product_id, kind, name, fields_json, reasons_json, enabled) VALUES ('demo-elsewhere:support', 'demo-elsewhere', 'support', 'Support', '[]', '[]', 1);`,
     `INSERT INTO tickets (id, product_id, type_id, status, customer_email, subject, category, fields_json, token_hash, created_at, updated_at, seq) VALUES ('seeded', 'demo', 'demo:support', 'closed', 'e2e@example.com', 'Seeded', 'bug', '{}', '${createHash('sha256').update(SEEDED_TICKET_TOKEN).digest('hex')}', 0, 0, 0);`,

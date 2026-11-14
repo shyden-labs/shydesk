@@ -31,7 +31,8 @@ import {
   shydeskOrigin,
   wranglerDevArgs,
 } from './tests/e2e/harness/local-shydesk.ts';
-import { capabilitiesFor, targetOf, targetsFrom, type Target, type TargetEnv } from './tests/e2e/harness/targets.ts';
+import { capabilitiesFor, suiteOriginFor, targetOf, targetsFrom, type Target, type TargetEnv } from './tests/e2e/harness/targets.ts';
+import { driver } from './tests/e2e/harness/driver.ts';
 import { savePhoneScreen, supportPieceState } from './tests/e2e/harness/report.ts';
 
 const RUNS = '.e2e-runs';
@@ -97,7 +98,9 @@ export const config: Options.Testrunner & Capabilities.WithRequestedTestrunnerCa
       if (path === 'contact.html' || path === 'support/ticket') {
         const product = new URL(request.url ?? '/', 'http://x').searchParams.get('product') ?? 'demo';
         try {
-          const page = demoPage(readFileSync(path === 'contact.html' ? DEMO_PAGE : TICKET_PAGE, 'utf8'), SHYDESK, product);
+          // The piece loads from the host the page was asked on: localhost for Android, the LAN for the iPhone.
+          const local = shydeskOrigin(`http://${request.headers.host ?? ''}`);
+          const page = demoPage(readFileSync(path === 'contact.html' ? DEMO_PAGE : TICKET_PAGE, 'utf8'), local, product);
           response.writeHead(200, { 'content-type': TYPES['.html'] }).end(page);
         } catch (error) {
           response.writeHead(400, { 'content-type': 'text/plain' }).end((error as Error).message);
@@ -113,6 +116,11 @@ export const config: Options.Testrunner & Capabilities.WithRequestedTestrunnerCa
         () => response.writeHead(404).end(),
       );
     }).listen(PORT, '0.0.0.0');
+  },
+
+  /** Each target opens the suite where it reads it securely (shyden-labs/shydesk#21). */
+  before(capabilities) {
+    driver().options.baseUrl = suiteOriginFor(targetOf(capabilities as Record<string, unknown>), BASE);
   },
 
   async afterTest(test, _context, result) {
@@ -136,11 +144,6 @@ export const config: Options.Testrunner & Capabilities.WithRequestedTestrunnerCa
 };
 
 /**
- * Starts this branch's ShyDesk under `wrangler dev` with a fresh local D1
- * (migrations, then the seed) and waits until /health answers, failing at
- * SHYDESK_START_MS naming the log.
- */
-/**
  * A sign-in key for this run alone: the public half for the local ShyDesk, and a
  * signed token for the rep, handed to the test workers in their environment.
  */
@@ -155,9 +158,20 @@ async function accessStandIn(): Promise<string> {
   return JSON.stringify({ keys: [{ ...(await exportJWK(pair.publicKey)), kid: 'e2e', alg: 'RS256' }] });
 }
 
+/**
+ * Starts this branch's ShyDesk under `wrangler dev` with a fresh local D1
+ * (migrations, then the seed) and waits until /health answers, failing at
+ * SHYDESK_START_MS naming the log.
+ */
 async function startShydesk(): Promise<void> {
   const seed = join(RUNS, 'seed.sql');
-  writeFileSync(seed, seedSql(BASE));
+  writeFileSync(
+    seed,
+    seedSql(
+      BASE,
+      targets.map((target) => suiteOriginFor(target, BASE)),
+    ),
+  );
   const local = ['--local', '--persist-to', STATE];
   execFileSync('npx', ['wrangler', 'd1', 'migrations', 'apply', 'DB', ...local], { stdio: 'inherit' });
   execFileSync('npx', ['wrangler', 'd1', 'execute', 'DB', ...local, '--file', seed], { stdio: 'inherit' });

@@ -48,6 +48,8 @@ export interface WheelAction {
 
 export interface Driver {
   capabilities: Record<string, unknown>;
+  /** Where relative addresses given to `url` resolve: set per target before its first test. */
+  options: { baseUrl?: string };
   url(path: string): Promise<void>;
   setCookies(cookie: { name: string; value: string; path: string }): Promise<void>;
   getContext(): Promise<string | { id: string }>;

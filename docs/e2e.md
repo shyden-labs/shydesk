@@ -64,4 +64,6 @@ E2E_TARGETS=android,ios E2E_ORIGIN=http://<this Mac's LAN address>:8765 \
 it on a laptop, where every other suite is CI's.
 
 The suite serves its pages on port 8765 and the local ShyDesk on 8787; the
-iPhone reaches both over the LAN, Android through `adb reverse`.
+iPhone reaches both over the LAN, Android through `adb reverse` on localhost.
+Android must read localhost: Chrome keeps WebCodecs, and so video shrinking,
+from an insecure page, and a LAN http address is one (shyden-labs/shydesk#21).
