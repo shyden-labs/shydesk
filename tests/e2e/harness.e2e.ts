@@ -9,6 +9,7 @@ import { statSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { driver } from './harness/driver.ts';
 import { named } from './harness/find.ts';
+import { openPage } from './harness/open-page.ts';
 import { pickFile, tap, type } from './harness/input.ts';
 import type { Fixture } from './harness/targets.ts';
 
@@ -39,7 +40,7 @@ async function eventsHolding(expected: string): Promise<string> {
 // One journey on one page load (shyden-labs/shydesk#130): every helper's checks, in the order a person would act.
 describe('the input helpers', () => {
   it("reach the page as trusted clicks and key presses, and pick files whole through the target's own picker", async () => {
-    await driver().url('/harness.html');
+    await openPage('/harness.html');
     // Each target runs at its own window size; none is set by the suite (shyden-labs/shydesk#130).
     const windowSize = await driver().execute<string>('return `${String(innerWidth)}x${String(innerHeight)}`;');
     process.stdout.write(`window-size: ${windowSize}\n`);
