@@ -55,6 +55,8 @@ describe('/support-api and /embed.js on the Worker', () => {
             monthly_email_share: 1,
             attachments_keep_days: 30,
             text_keep_days: 365,
+            privacy_url_en: 'https://example.com/privacy',
+            privacy_url_id: 'https://example.com/id/privacy',
             created_at: 1,
           },
         ]

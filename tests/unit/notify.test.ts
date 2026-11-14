@@ -23,6 +23,8 @@ const shytalk = (share = 500): Product => ({
   monthlyEmailShare: share,
   attachmentsKeepDays: 30,
   textKeepDays: 365,
+  privacyPolicyUrlEn: 'https://example.com/privacy',
+  privacyPolicyUrlId: 'https://example.com/id/privacy',
   createdAt: 0,
 });
 

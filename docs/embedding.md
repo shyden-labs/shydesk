@@ -28,8 +28,9 @@ In **Admin > Products**, add the product with:
 
 - `product`: the product id from step 1.
 - `view`: `contact` shows the contact form.
-- `lang`: the page's language. It is accepted now and used once the piece is
-  translated; English is shown until then.
+- `lang`: the page's language. `id` shows the privacy notice above Send in
+  Indonesian and links the product's Indonesian privacy policy; any other value
+  shows it in English with the English policy. The rest of the piece is English.
 
 The piece calls the ShyDesk it was loaded from, so a test page loads it from
 the Non-Prod ShyDesk (`https://shydesk.<non-prod-subdomain>.workers.dev/embed.js`)

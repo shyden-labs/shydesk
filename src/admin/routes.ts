@@ -62,6 +62,8 @@ const productForm = (form: Form): ProductForm => ({
   monthlyEmailShare: text(form, 'monthlyEmailShare'),
   attachmentsKeepDays: text(form, 'attachmentsKeepDays'),
   textKeepDays: text(form, 'textKeepDays'),
+  privacyPolicyUrlEn: text(form, 'privacyPolicyUrlEn'),
+  privacyPolicyUrlId: text(form, 'privacyPolicyUrlId'),
 });
 
 const productInput = (f: ProductForm): ProductInput => ({
@@ -76,6 +78,8 @@ const productInput = (f: ProductForm): ProductInput => ({
   monthlyEmailShare: num(f.monthlyEmailShare),
   attachmentsKeepDays: num(f.attachmentsKeepDays),
   textKeepDays: num(f.textKeepDays),
+  privacyPolicyUrlEn: f.privacyPolicyUrlEn.trim(),
+  privacyPolicyUrlId: f.privacyPolicyUrlId.trim(),
 });
 
 const FIELD_LINE = 'write label; text or select; required or optional; then options for a choice list.';

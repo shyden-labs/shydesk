@@ -26,4 +26,6 @@ export const MESSAGES = {
   turnstile: 'The check did not pass. Try again.',
   tooMany: 'Too many requests for now. Try again in an hour.',
   unavailable: 'Support requests cannot be taken right now. Try again later.',
+  /** `{product}` is the product's name (shyden-labs/shydesk#78). */
+  notSetUp: 'The support form for {product} is not set up yet: its English and Indonesian privacy policy links are missing.',
 } as const;

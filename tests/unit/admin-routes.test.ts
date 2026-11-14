@@ -113,6 +113,8 @@ const PRODUCT_FORM = {
   monthlyEmailShare: '50',
   attachmentsKeepDays: '30',
   textKeepDays: '365',
+  privacyPolicyUrlEn: 'https://new.example/privacy',
+  privacyPolicyUrlId: 'https://new.example/id/privacy',
 };
 
 describe('who may use /admin', () => {
@@ -181,7 +183,7 @@ describe('products', () => {
     expect(response.headers.get('Location')).toBe('/admin/products/new-app');
     const write = writes(statements)[0];
     expect(write?.sql).toMatch(/INSERT INTO products/);
-    expect(write?.values.slice(0, 8)).toEqual([
+    expect(write?.values.slice(0, 10)).toEqual([
       'new-app',
       'New App',
       'no-reply@new.example',
@@ -190,7 +192,19 @@ describe('products', () => {
       50,
       30,
       365,
+      'https://new.example/privacy',
+      'https://new.example/id/privacy',
     ]);
+  });
+
+  // shyden-labs/shydesk#78: the product page asks for both privacy policy links.
+  it('asks for the English and Indonesian privacy policy links, and refuses the form without them', async () => {
+    const { env } = setup();
+    const page = await (await get('/admin', ADMIN, env)).text();
+    expect(page).toContain('<input id="privacyPolicyUrlEn" name="privacyPolicyUrlEn" type="url" value="" required />');
+    expect(page).toContain('<input id="privacyPolicyUrlId" name="privacyPolicyUrlId" type="url" value="" required />');
+    const refused = await (await post('/admin/products', ADMIN, env, { ...PRODUCT_FORM, privacyPolicyUrlId: '' })).text();
+    expect(refused).toContain('Indonesian privacy policy URL must be an https address.');
   });
 
   it('shows every error and keeps what was typed when the form is invalid', async () => {

@@ -9,7 +9,8 @@
  * The piece draws in its own shadow root, takes its colours and font from the
  * page's `--shydesk-*` custom properties, and calls `/support-api/...` on the
  * ShyDesk host this script came from, so the same file works on live and on
- * Non-Prod. `lang` is accepted and not used until the piece is translated.
+ * Non-Prod. `lang` picks the privacy notice's language and policy link
+ * (Indonesian for `id`, English otherwise); the rest of the piece is English.
  * Cloudflare's Turnstile widget lives in the element's light DOM, shown
  * through a slot, where Turnstile's own script can reach it.
  *
@@ -25,6 +26,10 @@
   const TEXT = {
     loading: 'Loading the support form…',
     cannotLoad: 'The support form could not load here.',
+    // shyden-labs/shydesk#78: wording approved by Shyden 2026-11-11; the Indonesian copy is NOTICE_ID below.
+    kept: 'Messages are kept for {text} days, and photos and videos for {attachments} days, after the request is closed.',
+    privacyNotice: 'Privacy notice',
+    privacyPolicy: 'Privacy policy',
     needsCheck: 'Complete the check below to send.',
     ready: 'Ready to send',
     sending: 'Sending…',
@@ -64,6 +69,16 @@
     notUploaded: 'The file could not be uploaded. Try again.',
   };
 
+  /**
+   * The privacy notice for a page whose `lang` is Indonesian (shyden-labs/shydesk#78): written from the
+   * approved English, read back by Google Cloud Translation and read by Shyden, 2026-11-11.
+   */
+  const NOTICE_ID = {
+    kept: 'Pesan disimpan selama {text} hari, serta foto dan video selama {attachments} hari, setelah permintaan ditutup.',
+    privacyNotice: 'Pemberitahuan privasi',
+    privacyPolicy: 'Kebijakan privasi',
+  };
+
   /** @type {Record<string, string>} */
   const CATEGORY_LABELS = {
     question: 'Question',
@@ -96,7 +111,7 @@
   /**
    * @typedef {{ label: string, kind: 'text' | 'select', required: boolean, options?: string[] }} SupportField
    * @typedef {{ id: string, name: string, fields: SupportField[] }} SupportType
-   * @typedef {{ product: { id: string, name: string }, types: SupportType[], categories: string[], maxAttachments: number, maxVideoSeconds: number, turnstileSiteKey: string }} FormConfig
+   * @typedef {{ product: { id: string, name: string }, types: SupportType[], categories: string[], maxAttachments: number, maxVideoSeconds: number, turnstileSiteKey: string, privacy: { en: string, id: string }, keepDays: { attachments: number, text: number } }} FormConfig
    * @typedef {{ render(target: HTMLElement, options: Record<string, unknown>): string, reset(widget: string): void }} TurnstileApi
    * @typedef {{ id: string, mime: string, bytes: number, durationMs: number | null, removed: boolean }} ThreadAttachment
    * @typedef {{ author: 'customer' | 'staff', body: string, createdAt: number, attachments: ThreadAttachment[] }} ThreadMessage
@@ -179,6 +194,13 @@
       let config;
       try {
         const answer = await fetch(this.endpoint('config'));
+        if (answer.status === 503) {
+          // A product not set up yet says which, so its owner knows what to fix (shyden-labs/shydesk#78).
+          const body = /** @type {unknown} */ (await answer.json());
+          const error = typeof body === 'object' && body !== null && 'error' in body ? body.error : undefined;
+          this.tell(typeof error === 'string' ? error : TEXT.cannotLoad);
+          return;
+        }
         if (!answer.ok) throw new Error(`config answered ${String(answer.status)}`);
         const raw = /** @type {unknown} */ (await answer.json());
         config = /** @type {FormConfig} */ (raw);
@@ -297,6 +319,15 @@
         updateSend();
       });
       const send = /** @type {HTMLButtonElement} */ (make('button', { type: 'submit', disabled: '' }, [TEXT.send]));
+      // Above Send: what is kept and for how long, and the policy in the visitor's language (shyden-labs/shydesk#78).
+      const indonesian = (this.getAttribute('lang') ?? '').toLowerCase().startsWith('id');
+      const policyUrl = indonesian ? config.privacy.id : config.privacy.en;
+      const copy = indonesian ? NOTICE_ID : TEXT;
+      const kept = copy.kept.replace('{text}', String(config.keepDays.text)).replace('{attachments}', String(config.keepDays.attachments));
+      const notice = make('p', { class: 'notice', 'aria-label': copy.privacyNotice }, [
+        `${kept} `,
+        make('a', { href: policyUrl, target: '_blank', rel: 'noopener', 'aria-label': copy.privacyPolicy }, [copy.privacyPolicy]),
+      ]);
 
       const form = make('form', { class: 'panel', novalidate: '' }, [
         field('email', TEXT.email, email),
@@ -312,6 +343,7 @@
         uploads.lines,
         make('slot', { name: 'turnstile' }),
         checkError,
+        notice,
         send,
       ]);
       this.shadow.insertBefore(form, this.statusLine);

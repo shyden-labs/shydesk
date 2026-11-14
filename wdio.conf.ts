@@ -95,9 +95,11 @@ export const config: Options.Testrunner & Capabilities.WithRequestedTestrunnerCa
         // A malformed address is not a page.
       }
       if (path === 'contact.html' || path === 'support/ticket') {
-        const product = new URL(request.url ?? '/', 'http://x').searchParams.get('product') ?? 'demo';
+        const query = new URL(request.url ?? '/', 'http://x').searchParams;
+        const product = query.get('product') ?? 'demo';
+        const lang = query.get('lang') ?? 'en';
         try {
-          const page = demoPage(readFileSync(path === 'contact.html' ? DEMO_PAGE : TICKET_PAGE, 'utf8'), SHYDESK, product);
+          const page = demoPage(readFileSync(path === 'contact.html' ? DEMO_PAGE : TICKET_PAGE, 'utf8'), SHYDESK, product, lang);
           response.writeHead(200, { 'content-type': TYPES['.html'] }).end(page);
         } catch (error) {
           response.writeHead(400, { 'content-type': 'text/plain' }).end((error as Error).message);

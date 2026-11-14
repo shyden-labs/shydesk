@@ -16,6 +16,7 @@ export const MIGRATIONS = [
   'migrations/0001_release_1.sql',
   'migrations/0002_upload_received_bytes.sql',
   'migrations/0003_ticket_token_sealed.sql',
+  'migrations/0004_product_privacy_urls.sql',
 ];
 
 export default async function setup(project: TestProject): Promise<() => Promise<void>> {

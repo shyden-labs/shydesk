@@ -40,8 +40,8 @@ export function shydeskOrigin(suiteOrigin: string): string {
 export function seedSql(suiteOrigin: string): string {
   if (!PLAIN_ORIGIN.test(suiteOrigin)) throw new Error(`${suiteOrigin} is not a plain origin`);
   const product = (id: string, name: string, origin: string) =>
-    `INSERT INTO products (id, name, sender_address, ticket_page_url, allowed_origins_json, monthly_email_share, created_at) VALUES ` +
-    `('${id}', '${name}', 'no-reply@example.com', '${origin}/support/ticket', '["${origin}"]', 100, 0);`;
+    `INSERT INTO products (id, name, sender_address, ticket_page_url, allowed_origins_json, monthly_email_share, privacy_url_en, privacy_url_id, created_at) VALUES ` +
+    `('${id}', '${name}', 'no-reply@example.com', '${origin}/support/ticket', '["${origin}"]', 100, '${origin}/privacy-en.html', '${origin}/privacy-id.html', 0);`;
   const fields = JSON.stringify([{ label: 'Device', kind: 'text', required: true }]);
   return [
     product('demo', 'Demo', suiteOrigin),
@@ -57,13 +57,17 @@ export function seedSql(suiteOrigin: string): string {
   ].join('\n');
 }
 
-/** The demo page with its piece loaded from `shydesk` for `product`. */
-export function demoPage(html: string, shydesk: string, product: string): string {
+/** The demo page with its piece loaded from `shydesk` for `product`, in `lang` (shyden-labs/shydesk#78). */
+export function demoPage(html: string, shydesk: string, product: string, lang = 'en'): string {
   if (!PRODUCT_ID.test(product)) throw new Error(`${product} is not a product id`);
+  if (!/^[a-z]{2}$/.test(lang)) throw new Error(`${lang} is not a language code`);
   if (!html.includes(`${NON_PROD_SHYDESK}/embed.js`) || !html.includes('product="demo"')) {
     throw new Error('the demo page no longer loads the Non-Prod piece for product "demo"');
   }
-  return html.replace(`${NON_PROD_SHYDESK}/embed.js`, `${shydesk}/embed.js`).replace('product="demo"', `product="${product}"`);
+  return html
+    .replace(`${NON_PROD_SHYDESK}/embed.js`, `${shydesk}/embed.js`)
+    .replace(/(<shydesk-support [^>]*)lang="en"/, `$1lang="${lang}"`)
+    .replace('product="demo"', `product="${product}"`);
 }
 
 /** `npx` arguments for the local ShyDesk, its state kept in `stateDir`. */

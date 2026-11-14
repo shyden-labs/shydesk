@@ -127,6 +127,8 @@ const PRODUCT = {
   monthly_email_share: 100,
   attachments_keep_days: 30,
   text_keep_days: 365,
+  privacy_url_en: 'https://example.com/privacy',
+  privacy_url_id: 'https://example.com/id/privacy',
   created_at: 1,
 };
 async function customer(method: 'GET' | 'POST', url: string, body?: unknown, counted = 1, secret: string | null = 's') {

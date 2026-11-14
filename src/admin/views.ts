@@ -21,6 +21,8 @@ export interface ProductForm {
   monthlyEmailShare: string;
   attachmentsKeepDays: string;
   textKeepDays: string;
+  privacyPolicyUrlEn: string;
+  privacyPolicyUrlId: string;
 }
 
 export const toForm = (p: Product): ProductForm => ({
@@ -32,6 +34,8 @@ export const toForm = (p: Product): ProductForm => ({
   monthlyEmailShare: String(p.monthlyEmailShare),
   attachmentsKeepDays: String(p.attachmentsKeepDays),
   textKeepDays: String(p.textKeepDays),
+  privacyPolicyUrlEn: p.privacyPolicyUrlEn,
+  privacyPolicyUrlId: p.privacyPolicyUrlId,
 });
 
 const EMPTY_FORM: ProductForm = {
@@ -43,6 +47,8 @@ const EMPTY_FORM: ProductForm = {
   monthlyEmailShare: '0',
   attachmentsKeepDays: '30',
   textKeepDays: '365',
+  privacyPolicyUrlEn: '',
+  privacyPolicyUrlId: '',
 };
 
 const layout = (title: string, body: Page): Page =>
@@ -128,6 +134,10 @@ const productFields = (f: ProductForm, idLocked: boolean): Page => html`
   <input id="attachmentsKeepDays" name="attachmentsKeepDays" type="number" min="1" step="1" value="${f.attachmentsKeepDays}" required />
   <label for="textKeepDays">Keep ticket text for (days)</label>
   <input id="textKeepDays" name="textKeepDays" type="number" min="1" step="1" value="${f.textKeepDays}" required />
+  <label for="privacyPolicyUrlEn">Privacy policy URL (English)</label>
+  <input id="privacyPolicyUrlEn" name="privacyPolicyUrlEn" type="url" value="${f.privacyPolicyUrlEn}" required />
+  <label for="privacyPolicyUrlId">Privacy policy URL (Indonesian)</label>
+  <input id="privacyPolicyUrlId" name="privacyPolicyUrlId" type="url" value="${f.privacyPolicyUrlId}" required />
 `;
 
 /** What the admin desk shows about storage and timers (shyden-labs/shydesk#22 AC3), worked out when the page loads. */

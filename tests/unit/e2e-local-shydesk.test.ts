@@ -38,6 +38,12 @@ describe('seedSql', () => {
     expect(sql).toContain(`('demo', 'Demo', 'no-reply@example.com', 'http://localhost:8765/support/ticket', '["http://localhost:8765"]'`);
   });
 
+  // shyden-labs/shydesk#78: the contact form only shows once both privacy policy links are set.
+  it('gives each product its English and Indonesian privacy policy links', () => {
+    expect(sql).toContain("100, 'http://localhost:8765/privacy-en.html', 'http://localhost:8765/privacy-id.html', 0);");
+    expect(sql).toContain("100, 'https://elsewhere.example/privacy-en.html', 'https://elsewhere.example/privacy-id.html', 0);");
+  });
+
   it('allows the second product only somewhere else', () => {
     expect(sql).toContain(
       `('demo-elsewhere', 'Elsewhere', 'no-reply@example.com', 'https://elsewhere.example/support/ticket', '["https://elsewhere.example"]'`,
@@ -60,6 +66,16 @@ describe('demoPage', () => {
     expect(demoPage(html, 'http://localhost:8787', 'demo-elsewhere')).toBe(
       `<script src="http://localhost:8787/embed.js" defer></script>\n<shydesk-support product="demo-elsewhere" view="contact" lang="en"></shydesk-support>`,
     );
+  });
+
+  it('sets the piece to the language asked for (shyden-labs/shydesk#78)', () => {
+    expect(demoPage(html, 'http://localhost:8787', 'demo', 'id')).toBe(
+      `<script src="http://localhost:8787/embed.js" defer></script>\n<shydesk-support product="demo" view="contact" lang="id"></shydesk-support>`,
+    );
+  });
+
+  it('refuses a language that is not a plain language code', () => {
+    expect(() => demoPage(html, 'http://localhost:8787', 'demo', '"><script>')).toThrow('not a language code');
   });
 
   it('refuses a product id that is not plain', () => {
