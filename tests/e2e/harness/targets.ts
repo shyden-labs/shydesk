@@ -416,6 +416,29 @@ export function drawnAt(a: Box, b: Box): boolean {
   return centreInside(a, b) && centreInside(b, a);
 }
 
+/** Something the phone draws over the page, such as the on-screen keyboard or the bar above it. */
+export interface Cover {
+  name: string;
+  box: Box;
+}
+
+/**
+ * The failure naming the first cover lying over any part of `target`, or
+ * undefined when none does. Any overlap counts, not only one over the middle:
+ * Safari's keyboard bar over the top 8 points of the reply's "Choose Files"
+ * control, clear of its middle, still kept the tap from opening the picker
+ * (measured on the iPhone, shyden-labs/shydesk#149).
+ */
+export function coverOver(what: string, target: Box, covers: readonly Cover[]): string | undefined {
+  const over = covers.find(
+    ({ box }) =>
+      box.x < target.x + target.width && target.x < box.x + box.width && box.y < target.y + target.height && target.y < box.y + box.height,
+  );
+  if (over === undefined) return undefined;
+  const span = (box: Box): string => `y ${String(box.y)} to ${String(box.y + box.height)}`;
+  return `ios: ${over.name} (${span(over.box)}) lies over ${what} (${span(target)})`;
+}
+
 /** How long a control must stay in one place before it counts as stopped moving. */
 export const STEADY_MS = 300;
 

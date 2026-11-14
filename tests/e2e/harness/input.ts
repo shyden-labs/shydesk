@@ -45,6 +45,8 @@ import {
   typed,
   pressMissed,
   type Landed,
+  coverOver,
+  type Cover,
 } from './targets.ts';
 
 const WAIT = 15_000;
@@ -182,6 +184,49 @@ const ANDROID_BACK = 4;
 /** The Done button on the bar iOS shows above the on-screen keyboard; it closes the keyboard. */
 const IOS_KEYBOARD_DONE = "-ios class chain:**/XCUIElementTypeToolbar/**/XCUIElementTypeButton[`label == 'Done'`]";
 
+/** What iOS draws over the lower page while a field is focused: the bar above the keyboard, and the keyboard. */
+const IOS_COVERS = [
+  { name: 'the keyboard bar', selector: '-ios class chain:**/XCUIElementTypeToolbar' },
+  { name: 'the on-screen keyboard', selector: '-ios class chain:**/XCUIElementTypeKeyboard' },
+] as const;
+
+/** iOS: where the keyboard bar and the keyboard are drawn, for those showing now. */
+async function iosCovers(): Promise<Cover[]> {
+  const covers: Cover[] = [];
+  for (const { name, selector } of IOS_COVERS) {
+    const cover = driver().$(selector);
+    if (await cover.isExisting()) covers.push({ name, box: { ...(await cover.getLocation()), ...(await cover.getSize()) } });
+  }
+  return covers;
+}
+
+/**
+ * iOS: a real tap on the element `selector` finds, with the keyboard closed
+ * first by a tap on its bar's Done button, as a person would. The keyboard and
+ * its bar cover the lower page: Send sat on the keyboard's top edge
+ * (shyden-labs/shydesk#73), and the bar over the top of the reply's "Choose
+ * Files" control kept the picker from opening (shyden-labs/shydesk#149). If
+ * anything still lies over the element, the test fails naming it.
+ */
+async function iosTapClear(selector: string, what: string): Promise<void> {
+  const element = driver().$(selector);
+  await element.waitForExist({ timeout: WAIT, timeoutMsg: `ios: ${what} never appeared (${selector})` });
+  const box = async (): Promise<Box> => ({ ...(await element.getLocation()), ...(await element.getSize()) });
+  // Read only, printed on every run: what the keyboard covered before it closed (shyden-labs/shydesk#149 AC1).
+  console.log(`ios: before the keyboard closed, ${coverOver(what, await box(), await iosCovers()) ?? `nothing lay over ${what}`}`);
+  const done = driver().$(IOS_KEYBOARD_DONE);
+  if (await done.isExisting()) {
+    await done.click();
+    await driver().waitUntil(async () => !(await driver().$(IOS_COVERS[1].selector).isExisting()), {
+      timeout: WAIT,
+      timeoutMsg: "ios: the on-screen keyboard stayed open after its bar's Done button",
+    });
+  }
+  const covered = coverOver(what, await box(), await iosCovers());
+  if (covered !== undefined) throw new Error(covered);
+  await element.click();
+}
+
 /** A real click or touch on the control named `label`. */
 export async function tap(label: string): Promise<void> {
   const on = phone();
@@ -193,13 +238,7 @@ export async function tap(label: string): Promise<void> {
     await touchDrawn(label);
     return;
   }
-  await native(async () => {
-    // The keyboard and the bar above it cover the lower page, so a person closes it before tapping a
-    // control there: Send sat on the keyboard's top edge and the touch never reached it (shyden-labs/shydesk#73).
-    const done = driver().$(IOS_KEYBOARD_DONE);
-    if (await done.isExisting()) await done.click();
-    await nativeTap(on, nativeFinder(on, label), `the control named "${label}"`);
-  });
+  await native(() => iosTapClear(nativeFinder(on, label), `the control named "${label}"`));
 }
 
 /** A real finger swipe up Chrome's page view, which scrolls the page down. */
@@ -334,7 +373,7 @@ export async function pickFile(label: string, fixture: Fixture): Promise<void> {
   if (on === 'android') await touchDrawn(label);
   await native(async () => {
     if (on === 'ios') {
-      await nativeTap(on, nativeFinder(on, label), `the file input named "${label}"`);
+      await iosTapClear(nativeFinder(on, label), `the file input named "${label}"`);
       await nativeTap(on, nativeFinder(on, 'Photo Library'), 'the Photo Library choice');
       await nativeTap(on, nativeFinder(on, 'Collections'), 'the Collections tab');
       await nativeTap(on, nativeFinder(on, 'ShyDesk tests'), 'the "ShyDesk tests" album (AirDrop tests/fixtures/media into it)');
