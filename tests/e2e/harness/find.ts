@@ -12,6 +12,7 @@
  */
 import { driver, type Element, type ElementReference } from './driver.ts';
 import { drawnAt, inDocument, iosNamed, iosPage, largest, nameMatches, notNamedMessage, targetOf, type Box } from './targets.ts';
+import { outermost } from './outermost.ts';
 
 const WAIT = 15_000;
 
@@ -38,11 +39,21 @@ const ELEMENT_KEY = 'element-6066-11e4-a52e-4f735466cecf';
 /** The page's title and zoom, and every candidate with its box in the document, in CSS pixels. */
 const LIST_PLACED = `
   const found = [];
+  const elements = [];
+  // Each candidate's nearest candidate ancestor, across shadow roots, or -1.
+  const parentOf = (element) => {
+    for (let up = element.parentNode; up; up = up.parentNode ?? up.host) {
+      const index = elements.indexOf(up);
+      if (index !== -1) return index;
+    }
+    return -1;
+  };
   const walk = (root) => {
     for (const element of root.querySelectorAll('*')) {
       if (element.matches(arguments[0])) {
         const r = element.getBoundingClientRect();
-        found.push({ element, box: { x: r.x + scrollX, y: r.y + scrollY, width: r.width, height: r.height } });
+        found.push({ element, parent: parentOf(element), box: { x: r.x + scrollX, y: r.y + scrollY, width: r.width, height: r.height } });
+        elements.push(element);
       }
       if (element.shadowRoot) walk(element.shadowRoot);
     }
@@ -55,7 +66,8 @@ interface Placed {
   title: string;
   /** The document's width in CSS pixels, against the page area's width in native points for the zoom. */
   width: number;
-  candidates: { element: ElementReference; box: Box }[];
+  /** `parent` is the index of the nearest candidate ancestor, or -1. */
+  candidates: { element: ElementReference; parent: number; box: Box }[];
 }
 
 async function boxOf(element: Element): Promise<Box> {
@@ -90,9 +102,13 @@ async function idsNamedOnIphone(label: string): Promise<{ ids: string[]; seen: s
   if (area === undefined) throw new Error(`ios: the page area named "${title}" is not in the native tree (${iosPage(title)})`);
   const pageArea = area;
   const scale = width / pageArea.width;
-  const ids = candidates
-    .filter(({ box }) => places.some((place) => drawnAt(inDocument(place, pageArea, scale), box)))
-    .map(({ element }) => element[ELEMENT_KEY]);
+  const drawn = candidates.flatMap(({ box }, index) =>
+    places.some((place) => drawnAt(inDocument(place, pageArea, scale), box)) ? [index] : [],
+  );
+  const ids = outermost(
+    drawn,
+    candidates.map(({ parent }) => parent),
+  ).map((index) => candidates[index]?.element[ELEMENT_KEY] ?? '');
   return { ids, seen };
 }
 
