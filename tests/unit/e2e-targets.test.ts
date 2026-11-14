@@ -10,6 +10,7 @@ import {
   screenPoint,
   viewportPoint,
   notNamedMessage,
+  suiteOriginFor,
   typedMismatch,
   nameMatches,
   scrollNeeded,
@@ -669,5 +670,18 @@ describe('androidPageArea (shyden-labs/shydesk#99)', () => {
     expect(() => androidPageArea({ x: 0, y: 160, width: 1440, height: 1000 }, 759.43, 3.5)).toThrow(
       "android: the page's window (2658 px) is taller than Chrome's coordinator view (1000 px)",
     );
+  });
+});
+
+// shyden-labs/shydesk#21: Chrome keeps WebCodecs from an insecure page, and a
+// LAN http address is one, so Android reads the suite on localhost through
+// adb reverse, as secure as a real https site.
+describe('suiteOriginFor', () => {
+  it('gives Android localhost on the suite port', () => {
+    expect(suiteOriginFor('android', 'http://192.168.1.7:8765')).toBe('http://localhost:8765');
+  });
+
+  it.each(['chromium', 'firefox', 'safari', 'ios'] as const)('keeps the suite origin for %s', (target) => {
+    expect(suiteOriginFor(target, 'http://192.168.1.7:8765')).toBe('http://192.168.1.7:8765');
   });
 });

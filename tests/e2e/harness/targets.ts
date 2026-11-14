@@ -16,6 +16,19 @@ export type Fixture = 'photo.jpg' | 'ok-10s.mp4' | 'long-45s.mp4';
 
 export type Capabilities = Record<string, unknown>;
 
+/**
+ * Where a target reads the suite's pages. Chrome keeps WebCodecs, and so video
+ * shrinking, from insecure pages, and a LAN http address is one; Android reads
+ * localhost through adb reverse instead, as secure as a real https site
+ * (shyden-labs/shydesk#21). The iPhone has no such tunnel and keeps the LAN.
+ */
+export function suiteOriginFor(target: Target, suiteOrigin: string): string {
+  if (target !== 'android') return suiteOrigin;
+  const url = new URL(suiteOrigin);
+  url.hostname = 'localhost';
+  return url.origin;
+}
+
 /** The targets named in `E2E_TARGETS`, comma-separated, in order. */
 export function targetsFrom(list: string): Target[] {
   const names = list

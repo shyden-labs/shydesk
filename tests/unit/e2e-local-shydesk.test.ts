@@ -38,6 +38,16 @@ describe('seedSql', () => {
     expect(sql).toContain(`('demo', 'Demo', 'no-reply@example.com', 'http://localhost:8765/support/ticket', '["http://localhost:8765"]'`);
   });
 
+  it('also allows the demo product on the other origins a target reads the suite from', () => {
+    expect(seedSql('http://192.168.1.7:8765', ['http://localhost:8765', 'http://192.168.1.7:8765'])).toContain(
+      `'http://192.168.1.7:8765/support/ticket', '["http://192.168.1.7:8765","http://localhost:8765"]'`,
+    );
+  });
+
+  it('refuses another origin that would break out of the SQL', () => {
+    expect(() => seedSql('http://localhost:8765', ["http://x'; --"])).toThrow('not a plain origin');
+  });
+
   it('allows the second product only somewhere else', () => {
     expect(sql).toContain(
       `('demo-elsewhere', 'Elsewhere', 'no-reply@example.com', 'https://elsewhere.example/support/ticket', '["https://elsewhere.example"]'`,
