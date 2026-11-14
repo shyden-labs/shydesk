@@ -6,7 +6,8 @@
  *   trusted input; a file goes in through the file input, WebDriver's way to
  *   the file chooser.
  * - phones: Appium's native layer, measured 2026-11-05/06 on the real phones:
- *   a real touch on the control, real key presses, and the phone's own photo
+ *   a real touch on the control, real key presses (on the iPhone, the viewer's
+ *   keys are its own controls: shyden-labs/shydesk#99), and the phone's own photo
  *   picker opening the "ShyDesk tests" album (iPhone) or the ShyDeskTests
  *   folder (Android) that holds only the test files.
  *
@@ -37,6 +38,8 @@ import {
   viewportPoint,
   type Box,
   ANDROID_KEYS,
+  IOS_KEY_CONTROLS,
+  iosPageOrigin,
   pinchOut,
   fingerSwipeLeft,
   type Fixture,
@@ -409,9 +412,24 @@ async function drawnCentre(label: string): Promise<{ x: number; y: number }> {
   return viewportPoint(box, viewport, label);
 }
 
-/** The phone gestures are measured on the real phones before they are written (shyden-labs/shydesk#99). */
-function notOnPhonesYet(on: Phone, what: string): never {
-  throw new Error(`${on}: ${what} is not written for phones yet; it waits on a measured run on the real phone (shyden-labs/shydesk#99)`);
+const PAGE_RECT = 'const r = arguments[0].getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height };';
+
+/**
+ * Where on the iPhone screen the middle of the element named `label` is drawn, in points. The page's
+ * origin is read from the viewer's "Close viewer" control, which the viewer always draws, as every
+ * iPhone gesture here is made in the viewer (shyden-labs/shydesk#99).
+ */
+async function onIosScreen(label: string): Promise<{ x: number; y: number }> {
+  const reference = IOS_KEY_CONTROLS.Escape;
+  const box = await driver().execute<Box>(PAGE_RECT, await named(label));
+  const page = await driver().execute<Box>(PAGE_RECT, await named(reference));
+  const screen = await native(async (): Promise<Box> => {
+    const selector = nativeFinder('ios', reference);
+    const control = driver().$(selector);
+    await control.waitForExist({ timeout: WAIT, timeoutMsg: `ios: the control named "${reference}" never appeared (${selector})` });
+    return { ...(await control.getLocation()), ...(await control.getSize()) };
+  });
+  return screenPoint(box, 1, iosPageOrigin(screen, page, reference));
 }
 
 /** Where on the Android screen the middle of the element named `label` is drawn, and the screen px per CSS px. */
@@ -435,12 +453,11 @@ function finger(id: string, from: { x: number; y: number }, to: { x: number; y: 
     .up();
 }
 
-/** A real zoom in over the element named `label`: one wheel notch on a desktop, a two-finger pinch out on Android. */
+/** A real zoom in over the element named `label`: one wheel notch on a desktop, a two-finger pinch out on a phone. */
 export async function zoomIn(label: string): Promise<void> {
   const on = phone();
-  if (on === 'ios') notOnPhonesYet(on, 'pinch zoom');
-  if (on === 'android') {
-    const { at, ratio } = await onAndroidScreen(label);
+  if (on !== undefined) {
+    const { at, ratio } = on === 'android' ? await onAndroidScreen(label) : { at: await onIosScreen(label), ratio: 1 };
     const [one, two] = pinchOut(at, ratio);
     await native(() => driver().actions([finger('one', one.from, one.to, 400), finger('two', two.from, two.to, 400)]));
     return;
@@ -449,12 +466,11 @@ export async function zoomIn(label: string): Promise<void> {
   await driver().action('wheel').scroll({ x: at.x, y: at.y, deltaX: 0, deltaY: -120, duration: 100 }).perform();
 }
 
-/** A real sideways move across the element named `label`, right to left: a mouse drag on a desktop, a finger swipe on Android. */
+/** A real sideways move across the element named `label`, right to left: a mouse drag on a desktop, a finger swipe on a phone. */
 export async function swipeLeft(label: string): Promise<void> {
   const on = phone();
-  if (on === 'ios') notOnPhonesYet(on, 'a finger swipe');
-  if (on === 'android') {
-    const { at, ratio } = await onAndroidScreen(label);
+  if (on !== undefined) {
+    const { at, ratio } = on === 'android' ? await onAndroidScreen(label) : { at: await onIosScreen(label), ratio: 1 };
     const path = fingerSwipeLeft(at, ratio);
     await native(() => finger('one', path.from, path.to, 300).perform());
     return;
@@ -471,14 +487,13 @@ export async function swipeLeft(label: string): Promise<void> {
 
 /**
  * A real press at the middle of where the element named `label` is drawn: a mouse click on a desktop, a
- * finger tap on Android. Whatever a person's press there would reach gets it, as a layer drawn over the
+ * finger tap on a phone. Whatever a person's press there would reach gets it, as a layer drawn over the
  * element does (shyden-labs/shydesk#108).
  */
 export async function clickMiddleOf(label: string): Promise<void> {
   const on = phone();
-  if (on === 'ios') notOnPhonesYet(on, 'a click on a drawn point');
-  if (on === 'android') {
-    const { at } = await onAndroidScreen(label);
+  if (on !== undefined) {
+    const at = on === 'android' ? (await onAndroidScreen(label)).at : await onIosScreen(label);
     await native(() => finger('one', at, at, 0).perform());
     return;
   }
@@ -491,10 +506,17 @@ export async function clickMiddleOf(label: string): Promise<void> {
     .perform();
 }
 
-/** A real key press, sent to whatever has focus: Android's own key event on the phone. */
+/**
+ * A real key press, sent to whatever has focus: Android's own key event on that phone. On the iPhone a
+ * key reaches the page only while a text field holds focus, so the viewer's key is pressed as its own
+ * on-screen control, a real tap (measured 2026-11-14, shyden-labs/shydesk#99).
+ */
 export async function press(key: ViewerKey): Promise<void> {
   const on = phone();
-  if (on === 'ios') notOnPhonesYet(on, `the ${key} key`);
+  if (on === 'ios') {
+    await tap(IOS_KEY_CONTROLS[key]);
+    return;
+  }
   if (on === 'android') {
     await native(() => driver().pressKeyCode(ANDROID_KEYS[key]));
     return;

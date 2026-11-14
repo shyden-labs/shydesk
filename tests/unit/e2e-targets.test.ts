@@ -32,6 +32,8 @@ import {
   swipeUp,
   centreInside,
   ANDROID_KEYS,
+  IOS_KEY_CONTROLS,
+  iosPageOrigin,
   pinchOut,
   fingerSwipeLeft,
   androidPageArea,
@@ -659,6 +661,29 @@ describe('phone gestures (shyden-labs/shydesk#99)', () => {
 
   it('rounds gesture points to whole screen pixels', () => {
     expect(fingerSwipeLeft({ x: 10, y: 20 }, 1.333)).toEqual({ from: { x: 143, y: 20 }, to: { x: -123, y: 20 } });
+  });
+});
+
+describe('the iPhone viewer gestures (shyden-labs/shydesk#99)', () => {
+  // Measured on the iPhone, 2026-11-14: a keyboard event reaches Safari's page only while a text field
+  // holds focus, so each viewer key is pressed as its own on-screen control there.
+  it("presses each viewer key's own control on the iPhone: Rotate right, Next, Previous and Close viewer", () => {
+    expect(IOS_KEY_CONTROLS).toEqual({ r: 'Rotate right', ArrowRight: 'Next', ArrowLeft: 'Previous', Escape: 'Close viewer' });
+  });
+
+  // Measured on the iPhone, 2026-11-14: "Harness button" drawn at 16,16 (90.5 x 48) on the page and at
+  // 16,84 (91 x 48) in the native tree, so the page starts 68 points down the screen.
+  it("puts the page's origin where a control's native rect lies against its page rect", () => {
+    expect(iosPageOrigin({ x: 16, y: 84, width: 91, height: 48 }, { x: 16, y: 16, width: 90.515625, height: 48 }, 'Close viewer')).toEqual({
+      x: 0,
+      y: 68,
+    });
+  });
+
+  it('refuses a control whose native size is not its page size, naming the control and both sizes', () => {
+    expect(() => iosPageOrigin({ x: 0, y: 84, width: 182, height: 96 }, { x: 0, y: 16, width: 91, height: 48 }, 'Close viewer')).toThrow(
+      'ios: "Close viewer" is 182 x 96 points on the screen but 91 x 48 px on the page, so the page is zoomed and its points cannot be worked out',
+    );
   });
 });
 

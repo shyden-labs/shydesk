@@ -240,8 +240,30 @@ export function viewportPoint(box: Box, viewport: { width: number; height: numbe
  */
 export const ANDROID_KEYS = { Escape: 111, ArrowLeft: 21, ArrowRight: 22, r: 46 } as const;
 
+/**
+ * The iPhone's real equivalent of each viewer key: its own on-screen control. A keyboard event reaches
+ * Safari's page only while a text field holds focus, and the viewer has none (measured 2026-11-14,
+ * shyden-labs/shydesk#99).
+ */
+export const IOS_KEY_CONTROLS = { r: 'Rotate right', ArrowRight: 'Next', ArrowLeft: 'Previous', Escape: 'Close viewer' } as const;
+
 type Point = { x: number; y: number };
 type Path = { from: Point; to: Point };
+
+/**
+ * Where Safari's page starts on the iPhone screen, in points: the control `name`'s native rect less its
+ * rect on the page. Safari's web views all span the whole screen, so they cannot say where the page
+ * starts (measured 2026-11-14, shyden-labs/shydesk#99). One page px is one point only while the page is
+ * not zoomed, so a control whose sizes differ by more than rounding is refused.
+ */
+export function iosPageOrigin(screen: Box, page: Box, name: string): Point {
+  if (Math.abs(screen.width - page.width) > 1 || Math.abs(screen.height - page.height) > 1) {
+    throw new Error(
+      `ios: "${name}" is ${String(screen.width)} x ${String(screen.height)} points on the screen but ${String(page.width)} x ${String(page.height)} px on the page, so the page is zoomed and its points cannot be worked out`,
+    );
+  }
+  return { x: Math.round(screen.x - page.x), y: Math.round(screen.y - page.y) };
+}
 
 /** A point `dx` CSS px sideways from `at`, in screen px at `ratio` screen px per CSS px. */
 function across(at: Point, dx: number, ratio: number): Point {
