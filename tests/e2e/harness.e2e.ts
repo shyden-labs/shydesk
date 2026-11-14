@@ -47,8 +47,17 @@ describe('the input helpers', () => {
     await eventsHolding('button-click:true');
     await type('Harness field', 'ok');
     const events = await eventsHolding('field-input:true:ok');
-    assert.equal(events.split(' ').filter((event) => event === 'field-keydown:true').length, 2, events);
-    ran('field-keydown:true x2');
+    // Each typed character's trusted keydown, then the input it made, in order; whatever the keyboard sends
+    // after the last character does not change the check (shyden-labs/shydesk#145).
+    process.stdout.write(`field-events: ${events}\n`);
+    const logged = events.split(' ');
+    const typed = logged.indexOf('field-input:true:ok');
+    assert.deepEqual(
+      logged.slice(typed - 3, typed + 1),
+      ['field-keydown:true:o', 'field-input:true:o', 'field-keydown:true:k', 'field-input:true:ok'],
+      events,
+    );
+    ran('field-keydown:true:o field-input:true:o field-keydown:true:k field-input:true:ok');
     await pickFile('Harness file', 'photo.jpg');
     await eventsHolding(`file-change:true:${String(size('photo.jpg'))}`);
     await eventsHolding(`file-read:${String(size('photo.jpg'))}`);

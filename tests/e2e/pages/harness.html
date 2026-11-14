@@ -37,7 +37,7 @@
       const field = document.querySelector('input[type=text]');
       const file = document.querySelector('input[type=file]');
       button.addEventListener('click', (event) => record(`button-click:${event.isTrusted}`));
-      field.addEventListener('keydown', (event) => record(`field-keydown:${event.isTrusted}`));
+      field.addEventListener('keydown', (event) => record(`field-keydown:${event.isTrusted}:${event.key}`));
       field.addEventListener('input', (event) => record(`field-input:${event.isTrusted}:${field.value}`));
       file.addEventListener('change', (event) => {
         record(`file-change:${event.isTrusted}:${[...file.files].map((picked) => picked.size).join(',')}`);
