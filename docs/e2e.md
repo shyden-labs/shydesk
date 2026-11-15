@@ -53,8 +53,6 @@ One-time set-up:
 Each run, with the phones unlocked and auto-lock off:
 
 ```sh
-adb reverse tcp:8765 tcp:8765
-adb reverse tcp:8787 tcp:8787
 E2E_TARGETS=android,ios E2E_ORIGIN=http://<this Mac's LAN address>:8765 \
   E2E_IOS_UDID=<xcrun xctrace list devices> E2E_ANDROID_SERIAL=<adb devices> \
   E2E_CHROMEDRIVER=<path> npm run test:e2e:device
@@ -67,3 +65,8 @@ The suite serves its pages on port 8765 and the local ShyDesk on 8787; the
 iPhone reaches both over the LAN, Android through `adb reverse` on localhost.
 Android must read localhost: Chrome keeps WebCodecs, and so video shrinking,
 from an insecure page, and a LAN http address is one (shyden-labs/shydesk#21).
+The run sets both forwards on `E2E_ANDROID_SERIAL` itself before any session
+starts, and stops at once naming a port adb does not then list. After each
+Android spec it lists them again: a lost forward stops the run naming the port
+and when it was last seen (shyden-labs/shydesk#153), instead of a connection
+refused in a later spec.
