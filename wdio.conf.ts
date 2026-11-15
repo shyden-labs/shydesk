@@ -34,6 +34,7 @@ import {
 import { capabilitiesFor, suiteOriginFor, targetOf, targetsFrom, type Target, type TargetEnv } from './tests/e2e/harness/targets.ts';
 import { driver } from './tests/e2e/harness/driver.ts';
 import { savePhoneScreen, supportPieceState } from './tests/e2e/harness/report.ts';
+import { FORWARD_PORTS, adbProblem, checkForwards, setForwards, type Adb } from './tests/e2e/harness/adb-forwards.ts';
 
 const RUNS = '.e2e-runs';
 const PAGES = 'tests/e2e/pages';
@@ -63,6 +64,20 @@ const appium = { hostname: '127.0.0.1', port: 4723, path: '/' };
 const onPhone = (target: Target): boolean => target === 'android' || target === 'ios';
 
 let server: Server | undefined;
+/**
+ * Stops the whole run naming `problem`: the launcher only ends a run for its own
+ * SevereServiceError class, and logs any other hook error. The class is loaded at
+ * run time because WebdriverIO's type declarations are not loaded (see driver.ts).
+ */
+async function stopRun(problem: string): Promise<never> {
+  const name = 'webdriverio';
+  const { SevereServiceError } = (await import(name)) as { SevereServiceError: new (message: string) => Error };
+  throw new SevereServiceError(problem);
+}
+const adb: Adb = (args) => execFileSync('adb', args, { encoding: 'utf8' });
+/** When each Android forward was last listed, and which workers run on Android (shyden-labs/shydesk#153). */
+const forwardsSeen = new Map<number, Date>();
+const androidWorkers = new Set<string>();
 let shydesk: ChildProcess | undefined;
 const counts = { passed: 0, failed: 0 };
 
@@ -86,6 +101,14 @@ export const config: Options.Testrunner & Capabilities.WithRequestedTestrunnerCa
   async onPrepare() {
     rmSync(RUNS, { recursive: true, force: true });
     mkdirSync(RUNS);
+    if (targets.includes('android')) {
+      const serial = process.env.E2E_ANDROID_SERIAL ?? '';
+      const problem = adbProblem(
+        serial,
+        () => setForwards(adb, serial, FORWARD_PORTS) ?? checkForwards(adb, serial, FORWARD_PORTS, forwardsSeen, new Date()),
+      );
+      if (problem !== undefined) await stopRun(problem);
+    }
     await startShydesk();
     server = createServer((request, response) => {
       // The server listens on the LAN for the iPhone, so nothing outside the pages folder is served.
@@ -116,6 +139,18 @@ export const config: Options.Testrunner & Capabilities.WithRequestedTestrunnerCa
         () => response.writeHead(404).end(),
       );
     }).listen(PORT, '0.0.0.0');
+  },
+
+  onWorkerStart(cid, capabilities) {
+    if (targetOf(capabilities as Record<string, unknown>) === 'android') androidWorkers.add(cid);
+  },
+
+  /** A lost Android forward stops the run here, naming the port, not as a refused page in the next spec. */
+  async onWorkerEnd(cid) {
+    if (!androidWorkers.has(cid)) return;
+    const serial = process.env.E2E_ANDROID_SERIAL ?? '';
+    const problem = adbProblem(serial, () => checkForwards(adb, serial, FORWARD_PORTS, forwardsSeen, new Date()));
+    if (problem !== undefined) await stopRun(problem);
   },
 
   /** Each target opens the suite where it reads it securely (shyden-labs/shydesk#21). */
