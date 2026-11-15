@@ -338,9 +338,15 @@ export async function type(label: string, text: string): Promise<void> {
   // Typing adds to what the field holds, such as a canned reply being edited.
   const before = String(await (await named(label)).getProperty('value'));
   if (on === 'ios') {
+    // A field that already holds the caret, as a canned reply leaves it at its end, is typed into as it
+    // is: a tap on it would move the caret, to the start (measured 2026-11-15, shyden-labs/shydesk#99).
+    const focused = await driver().execute<boolean>(
+      'const f = arguments[0]; return f.getRootNode().activeElement === f;',
+      await named(label),
+    );
     // The page receives trusted focus, keydown and input from the on-screen keyboard.
     await native(async () => {
-      await nativeTap(on, nativeFinder(on, label), `the field named "${label}"`);
+      if (!focused) await nativeTap(on, nativeFinder(on, label), `the field named "${label}"`);
       await driver().$(nativeFinder(on, label)).addValue(text);
     });
   } else {

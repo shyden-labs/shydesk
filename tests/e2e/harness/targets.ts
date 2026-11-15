@@ -253,16 +253,22 @@ type Path = { from: Point; to: Point };
 /**
  * Where Safari's page starts on the iPhone screen, in points: the control `name`'s native rect less its
  * rect on the page. Safari's web views all span the whole screen, so they cannot say where the page
- * starts (measured 2026-11-14, shyden-labs/shydesk#99). One page px is one point only while the page is
- * not zoomed, so a control whose sizes differ by more than rounding is refused.
+ * starts (measured 2026-11-14, shyden-labs/shydesk#99). The native rect is whole points with both
+ * edges rounded outward, up to two points over the page size (120 for 118.296875, measured 2026-11-15),
+ * so the middles are lined up. One page px is one point only while the page is not zoomed, so a control
+ * whose sizes differ by more than that rounding is refused.
  */
 export function iosPageOrigin(screen: Box, page: Box, name: string): Point {
-  if (Math.abs(screen.width - page.width) > 1 || Math.abs(screen.height - page.height) > 1) {
+  const rounding = (native: number, onPage: number): boolean => native - onPage >= -1 && native - onPage <= 2;
+  if (!rounding(screen.width, page.width) || !rounding(screen.height, page.height)) {
     throw new Error(
       `ios: "${name}" is ${String(screen.width)} x ${String(screen.height)} points on the screen but ${String(page.width)} x ${String(page.height)} px on the page, so the page is zoomed and its points cannot be worked out`,
     );
   }
-  return { x: Math.round(screen.x - page.x), y: Math.round(screen.y - page.y) };
+  return {
+    x: Math.round(screen.x + screen.width / 2 - (page.x + page.width / 2)),
+    y: Math.round(screen.y + screen.height / 2 - (page.y + page.height / 2)),
+  };
 }
 
 /** A point `dx` CSS px sideways from `at`, in screen px at `ratio` screen px per CSS px. */

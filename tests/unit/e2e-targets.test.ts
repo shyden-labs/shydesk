@@ -680,6 +680,23 @@ describe('the iPhone viewer gestures (shyden-labs/shydesk#99)', () => {
     });
   });
 
+  // Measured on the iPhone, 2026-11-15: the native frame is whole points rounded outward at both edges,
+  // so a 118.296875 px wide control came out 120 points wide; their middles still line up.
+  it('takes a native size up to two points over the page size, lining up the middles', () => {
+    expect(
+      iosPageOrigin({ x: 257, y: 84, width: 120, height: 44 }, { x: 257.703125, y: 16, width: 118.296875, height: 44 }, 'Close viewer'),
+    ).toEqual({
+      x: 0,
+      y: 68,
+    });
+  });
+
+  it('refuses a native size more than two points over the page size', () => {
+    expect(() => iosPageOrigin({ x: 0, y: 84, width: 121, height: 44 }, { x: 0, y: 16, width: 118.9, height: 44 }, 'Close viewer')).toThrow(
+      'ios: "Close viewer" is 121 x 44 points on the screen but 118.9 x 44 px on the page, so the page is zoomed and its points cannot be worked out',
+    );
+  });
+
   it('refuses a control whose native size is not its page size, naming the control and both sizes', () => {
     expect(() => iosPageOrigin({ x: 0, y: 84, width: 182, height: 96 }, { x: 0, y: 16, width: 91, height: 48 }, 'Close viewer')).toThrow(
       'ios: "Close viewer" is 182 x 96 points on the screen but 91 x 48 px on the page, so the page is zoomed and its points cannot be worked out',
