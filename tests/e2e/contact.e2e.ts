@@ -54,10 +54,14 @@ async function zoomedIn(): Promise<void> {
   );
 }
 
-/** Waits until the video named `label` is playing. */
+/**
+ * Waits until the video named `label` is playing. `paused` is read by a script: on the iPhone a
+ * property read goes through Safari's attribute atom, which gives null for a false boolean, so it never
+ * said false while the video played (measured 2026-11-15, shyden-labs/shydesk#99).
+ */
 async function videoPlaying(label: string): Promise<void> {
   const video = await named(label);
-  await driver().waitUntil(async () => (await video.getProperty('paused')) === false, {
+  await driver().waitUntil(async () => !(await driver().execute<boolean>('return arguments[0].paused;', video)), {
     timeout: WAIT,
     timeoutMsg: `"${label}" never started playing`,
   });
