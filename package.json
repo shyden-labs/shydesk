@@ -31,7 +31,7 @@
     "ajv": "8.20.0",
     "eslint": "10.14.0",
     "prettier": "3.9.10",
-    "swagger-ui-dist": "5.34.1",
+    "swagger-ui-dist": "5.35.0",
     "typescript": "6.0.3",
     "typescript-eslint": "8.72.1",
     "vitest": "5.1.0",
