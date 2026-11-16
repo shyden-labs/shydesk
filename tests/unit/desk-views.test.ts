@@ -46,6 +46,10 @@ const view = (over: Partial<TicketData> = {}): TicketData => ({
 const render = async (page: ReturnType<typeof listPage>): Promise<string> => String(await page);
 
 describe('listPage', () => {
+  it('names the ticket table, so assistive technology and the journeys find it', async () => {
+    expect(await render(listPage(list()))).toContain('<table aria-label="Tickets">');
+  });
+
   it('marks "All products" current when no product is chosen', async () => {
     const page = await render(listPage(list()));
     expect(page).toContain('<a href="/desk" aria-current="page">All products</a>');
@@ -144,21 +148,54 @@ describe('ticketPage', () => {
 describe('the queries', () => {
   it('starts the list from the first ticket with no cursor', async () => {
     const { db, statements } = standInDb();
-    await listTickets(db, ['shytalk'], {});
+    await listTickets(db, { products: ['shytalk'], role: 'rep' }, {});
     expect(statements[0]?.values.at(-1)).toBe(0);
   });
 
   it('asks nothing for no products', async () => {
     const { db, statements } = standInDb();
-    expect(await listTickets(db, [], {})).toEqual([]);
-    expect(await getTicket(db, [], 't1')).toBeNull();
-    expect(await getFile(db, [], 'a1')).toBeNull();
-    expect(await unreadCount(db, 'a@b.c', [])).toBe(0);
+    const none = { products: [], role: 'admin' as const };
+    expect(await listTickets(db, none, {})).toEqual([]);
+    expect(await getTicket(db, none, 't1')).toBeNull();
+    expect(await getFile(db, none, 'a1')).toBeNull();
+    expect(await unreadCount(db, 'a@b.c', none)).toBe(0);
     expect(statements).toEqual([]);
   });
 
   it('counts nothing if the count answers no row', async () => {
-    expect(await unreadCount(standInDb().db, 'a@b.c', ['shytalk'])).toBe(0);
+    expect(await unreadCount(standInDb().db, 'a@b.c', { products: ['shytalk'], role: 'rep' })).toBe(0);
+  });
+
+  // shyden-labs/shydesk#61 AC2: a rep never sees an appeal, not its ticket, its files, nor a count.
+  // The SQL itself is proven on real D1 in tests/integration/appeals.test.ts.
+  const NOT_APPEAL = "type_id IN (SELECT id FROM ticket_types WHERE kind != 'appeal')";
+  const asked = async (
+    role: 'admin' | 'rep',
+    ask: (db: ReturnType<typeof standInDb>['db'], scope: { products: string[]; role: 'admin' | 'rep' }) => Promise<unknown>,
+  ) => {
+    const { db, statements } = standInDb();
+    await ask(db, { products: ['shytalk'], role });
+    return statements[0]?.sql ?? '';
+  };
+
+  it("leaves appeals out of a rep's list, in SQL, and keeps them in the admin's", async () => {
+    expect(await asked('rep', (db, scope) => listTickets(db, scope, {}))).toContain(NOT_APPEAL);
+    expect(await asked('admin', (db, scope) => listTickets(db, scope, {}))).not.toContain('appeal');
+  });
+
+  it("leaves appeals out of a rep's ticket lookup and keeps them in the admin's", async () => {
+    expect(await asked('rep', (db, scope) => getTicket(db, scope, 't1'))).toContain(NOT_APPEAL);
+    expect(await asked('admin', (db, scope) => getTicket(db, scope, 't1'))).not.toContain('appeal');
+  });
+
+  it("leaves an appeal's files out of a rep's file lookup and keeps them in the admin's", async () => {
+    expect(await asked('rep', (db, scope) => getFile(db, scope, 'a1'))).toContain(`t.${NOT_APPEAL}`);
+    expect(await asked('admin', (db, scope) => getFile(db, scope, 'a1'))).not.toContain('appeal');
+  });
+
+  it("leaves appeals out of a rep's unread count and keeps them in the admin's", async () => {
+    expect(await asked('rep', (db, scope) => unreadCount(db, 'r@b.c', scope))).toContain(`t.${NOT_APPEAL}`);
+    expect(await asked('admin', (db, scope) => unreadCount(db, 'a@b.c', scope))).not.toContain('appeal');
   });
 
   it('gives an admin a staff row before marking read, and a rep none', async () => {

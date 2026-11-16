@@ -1,5 +1,6 @@
 import type { D1Database } from '@cloudflare/workers-types';
 import type { PunishmentRow } from '../db/types.ts';
+import { appealTypeId } from '../appeals/appeals.ts';
 import { getPunishments, reportTypeId, type PunishmentDef } from '../products.ts';
 import { offenderHistory, type OffenderHistory } from '../reports/history.ts';
 import type { Staff } from '../auth/staff.ts';
@@ -55,10 +56,25 @@ const COLUMNS =
   'id, product_id, type_id, status, customer_email, subject, category, fields_json, created_at, updated_at, seq, token_sealed';
 const marks = (values: unknown[]): string => values.map(() => '?').join(', ');
 
+/** Whose desk is asking: the products in scope, and whether appeals are theirs to see. */
+export interface Scope {
+  products: string[];
+  role: Staff['role'];
+}
+
+/**
+ * Appeals are the admin's alone (shyden-labs/shydesk#61): for a rep every query
+ * keeps only tickets whose type is not an appeal, so not even a count reaches
+ * them. A ticket of a type that is not found is left out too.
+ */
+const repSees = (scope: Scope, alias = ''): string =>
+  scope.role === 'admin' ? '' : ` AND ${alias}type_id IN (SELECT id FROM ticket_types WHERE kind != 'appeal')`;
+
 /** Tickets waiting on staff first, oldest first; then the rest, oldest first. */
-export async function listTickets(db: D1Database, products: string[], filter: TicketFilter): Promise<DeskTicket[]> {
+export async function listTickets(db: D1Database, scope: Scope, filter: TicketFilter): Promise<DeskTicket[]> {
+  const { products } = scope;
   if (products.length === 0) return [];
-  const conditions = [`product_id IN (${marks(products)})`];
+  const conditions = [`product_id IN (${marks(products)})${repSees(scope)}`];
   const values: unknown[] = [...products];
   if (filter.status !== undefined) {
     conditions.push('status = ?');
@@ -81,12 +97,13 @@ export async function listTickets(db: D1Database, products: string[], filter: Ti
 /** A ticket in scope with its thread and attachments, or null. */
 export async function getTicket(
   db: D1Database,
-  products: string[],
+  scope: Scope,
   id: string,
 ): Promise<{ ticket: DeskTicket; messages: DeskMessage[]; attachments: DeskAttachment[] } | null> {
+  const { products } = scope;
   if (products.length === 0) return null;
   const ticket = await db
-    .prepare(`SELECT ${COLUMNS} FROM tickets WHERE id = ? AND product_id IN (${marks(products)})`)
+    .prepare(`SELECT ${COLUMNS} FROM tickets WHERE id = ? AND product_id IN (${marks(products)})${repSees(scope)}`)
     .bind(id, ...products)
     .first<DeskTicket>();
   if (ticket === null) return null;
@@ -104,25 +121,27 @@ export async function getTicket(
 }
 
 /** A stored attachment on a ticket in scope, or null (shyden-labs/shydesk#25). */
-export async function getFile(db: D1Database, products: string[], id: string): Promise<StoredFile | null> {
+export async function getFile(db: D1Database, scope: Scope, id: string): Promise<StoredFile | null> {
+  const { products } = scope;
   if (products.length === 0) return null;
   return db
     .prepare(
       `SELECT a.r2_key, a.thumb_key, a.mime FROM attachments a JOIN tickets t ON t.id = a.ticket_id
-       WHERE a.id = ? AND a.state = 'stored' AND t.product_id IN (${marks(products)})`,
+       WHERE a.id = ? AND a.state = 'stored' AND t.product_id IN (${marks(products)})${repSees(scope, 't.')}`,
     )
     .bind(id, ...products)
     .first<StoredFile>();
 }
 
 /** Tickets waiting on staff, in scope, that changed since this person last opened them. */
-export async function unreadCount(db: D1Database, email: string, products: string[]): Promise<number> {
+export async function unreadCount(db: D1Database, email: string, scope: Scope): Promise<number> {
+  const { products } = scope;
   if (products.length === 0) return 0;
   const row = await db
     .prepare(
       `SELECT COUNT(*) AS unread FROM tickets t
        LEFT JOIN reads r ON r.ticket_id = t.id AND r.email = ?
-       WHERE t.status = 'open' AND t.product_id IN (${marks(products)}) AND t.seq > COALESCE(r.read_seq, -1)`,
+       WHERE t.status = 'open' AND t.product_id IN (${marks(products)})${repSees(scope, 't.')} AND t.seq > COALESCE(r.read_seq, -1)`,
     )
     .bind(email, ...products)
     .first<{ unread: number }>();
@@ -187,4 +206,27 @@ export async function reportPanel(db: D1Database, ticket: DeskTicket): Promise<R
     punishments,
     choices: await getPunishments(db, ticket.product_id),
   };
+}
+
+/** An appeal ticket's decision and the punishment it is about (shyden-labs/shydesk#61). */
+export interface AppealPanel {
+  state: string;
+  decided_by: string | null;
+  decided_at: number | null;
+  punishment_id: string;
+  label: string;
+  lifted_at: number | null;
+  report_ticket_id: string;
+}
+
+/** The appeal panel for an appeal ticket the admin opened; null on any other ticket. */
+export async function appealPanel(db: D1Database, ticket: DeskTicket): Promise<AppealPanel | null> {
+  if (ticket.type_id !== appealTypeId(ticket.product_id)) return null;
+  return db
+    .prepare(
+      `SELECT a.state, a.decided_by, a.decided_at, p.id AS punishment_id, p.label, p.lifted_at, p.report_ticket_id
+       FROM appeals a JOIN punishments p ON p.id = a.punishment_id WHERE a.ticket_id = ?`,
+    )
+    .bind(ticket.id)
+    .first<AppealPanel>();
 }

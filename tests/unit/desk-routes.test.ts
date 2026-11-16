@@ -92,7 +92,7 @@ function setup(w: World = {}) {
         { id: 'c2', type_id: 'other:type', name: 'Other type', body: 'Not for this ticket' },
       ];
     }
-    if (/FROM ticket_types/.test(sql))
+    if (/FROM ticket_types/.test(sql) && !/\btickets\b/.test(sql))
       return [
         {
           id: 'shytalk:support',
@@ -208,6 +208,18 @@ describe('the ticket list', () => {
     const page = await (await setup().get('/desk', ADMIN)).text();
     expect(page).toContain('Product yawelo-idle');
     expect(page).toContain('All products');
+  });
+
+  // shyden-labs/shydesk#61 AC2: a rep is never told appeals exist, not even as a type to filter by.
+  it("leaves the appeal type and appeal tickets out of a rep's list, in SQL, and keeps them in the admin's", async () => {
+    const rep = setup();
+    await rep.get('/desk');
+    expect(named(rep.statements, 'FROM ticket_types')[0]?.sql).toContain("AND kind != 'appeal'");
+    expect(named(rep.statements, 'FROM tickets')[0]?.sql).toContain("kind != 'appeal'");
+    const admin = setup();
+    await admin.get('/desk', ADMIN);
+    expect(named(admin.statements, 'FROM ticket_types')[0]?.sql).not.toContain('appeal');
+    expect(named(admin.statements, 'FROM tickets')[0]?.sql).not.toContain('appeal');
   });
 
   it('passes the status and type filters on', async () => {

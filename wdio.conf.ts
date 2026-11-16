@@ -44,6 +44,9 @@ const SHYDESK = shydeskOrigin(BASE);
 const STATE = join(RUNS, 'shydesk-state');
 const DEMO_PAGE = 'demo-host/public/index.html';
 const TICKET_PAGE = 'demo-host/public/support/ticket/index.html';
+const APPEAL_PAGE = 'demo-host/public/support/appeal/index.html';
+/** The demo pages the suite serves with the piece pointed at the local ShyDesk. */
+const DEMO_PAGES: Record<string, string> = { 'contact.html': DEMO_PAGE, 'support/ticket': TICKET_PAGE, 'support/appeal': APPEAL_PAGE };
 /** How long the local ShyDesk may take to answer /health before the run fails naming its log. */
 const SHYDESK_START_MS = 90_000;
 const TYPES: Record<string, string> = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript' };
@@ -118,12 +121,13 @@ export const config: Options.Testrunner & Capabilities.WithRequestedTestrunnerCa
       } catch {
         // A malformed address is not a page.
       }
-      if (path === 'contact.html' || path === 'support/ticket') {
+      const demo = DEMO_PAGES[path];
+      if (demo !== undefined) {
         const product = new URL(request.url ?? '/', 'http://x').searchParams.get('product') ?? 'demo';
         try {
           // The piece loads from the host the page was asked on: localhost for Android, the LAN for the iPhone.
           const local = shydeskOrigin(`http://${request.headers.host ?? ''}`);
-          const page = demoPage(readFileSync(path === 'contact.html' ? DEMO_PAGE : TICKET_PAGE, 'utf8'), local, product);
+          const page = demoPage(readFileSync(demo, 'utf8'), local, product);
           response.writeHead(200, { 'content-type': TYPES['.html'] }).end(page);
         } catch (error) {
           response.writeHead(400, { 'content-type': 'text/plain' }).end((error as Error).message);

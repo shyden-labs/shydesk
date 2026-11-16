@@ -247,6 +247,79 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /api/v1/products/{product}/appeals:
+    post:
+      operationId: createAppeal
+      summary: Sends a punished user's appeal from inside the product.
+      description: >-
+        Sent by the product's server, never its app, naming the punishment it
+        shows the user. One appeal per punishment: a second, or one after a
+        rejected appeal, is refused, and so is an appeal on a lifted
+        punishment. The appellant follows the appeal on the private ticket
+        link answered here. At most 120 appeals a minute per product.
+      parameters:
+        - name: product
+          in: path
+          required: true
+          description: The product id the key was made for.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewProductAppeal'
+      responses:
+        '201':
+          description: The appeal was made.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppealMade'
+        '400':
+          description: '`bad_request`: the body is not an appeal this schema allows.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: No key, or the key is unknown or revoked.
+          headers:
+            WWW-Authenticate:
+              schema:
+                type: string
+                const: Bearer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: '`not_found`: no such punishment in this product, or the key belongs to another product.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: >-
+            `already_appealed`: this punishment was appealed already, whatever
+            the outcome. `lifted`: the punishment is no longer active.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: '`rate_limited`: over 120 appeals in a minute.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: '`unavailable`: this ShyDesk cannot save appeals right now.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /support-api/config:
     get:
       operationId: getSupportConfig
@@ -500,6 +573,65 @@ paths:
         '411': { $ref: '#/components/responses/UploadError' }
         '413': { $ref: '#/components/responses/UploadError' }
         '422': { $ref: '#/components/responses/UploadError' }
+  /support-api/appeals:
+    get:
+      operationId: readAppeal
+      summary: The punishment an appeal link is for, and whether it can be appealed.
+      description: >-
+        Opened by the token in the ban notice link's fragment
+        (`#appeal=<token>`), sent only in the `ShyDesk-Appeal` header.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/ProductQuery'
+        - $ref: '#/components/parameters/AppealToken'
+      responses:
+        '200':
+          description: The punishment and whether it can still be appealed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppealView'
+        '404':
+          description: The link is not valid for this product.
+    post:
+      operationId: makeAppeal
+      summary: An appeal from the ban notice link.
+      description: >-
+        One appeal per punishment, as for the in-product appeal. At most 20
+        per network address per hour. The private ticket link is answered and
+        emailed to the appellant.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/ProductQuery'
+        - $ref: '#/components/parameters/AppealToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewAppeal'
+      responses:
+        '201':
+          description: The appeal was made.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [ticket_url, email_sent]
+                properties:
+                  ticket_url: { type: string }
+                  email_sent: { type: boolean }
+        '400':
+          description: The appeal could not be used; the answer says why, field by field.
+        '404':
+          description: The link is not valid for this product.
+        '409':
+          description: '`already_appealed` or `lifted`, as for the in-product appeal.'
+        '429':
+          description: Too many appeals for now.
+        '503':
+          description: Appeals cannot be taken right now.
 webhooks:
   punishment:
     post:
@@ -565,6 +697,13 @@ components:
       type: http
       scheme: bearer
       description: The product's API key, made on the ShyDesk admin screen. Only its hash is stored.
+    AppealToken:
+      name: ShyDesk-Appeal
+      in: header
+      required: true
+      description: The token from the ban notice link's fragment.
+      schema:
+        type: string
   responses:
     UploadOk:
       description: Done.
@@ -882,6 +1021,34 @@ components:
         report_ticket_id: { type: string }
         appeal_url: { type: string, description: 'Only on punishment.apply, when the product has an appeal page.' }
         issued_at: { type: integer, description: 'When the punishment was applied, Unix milliseconds.' }
+    NewAppeal:
+      type: object
+      required: [email, message]
+      properties:
+        email: { type: string, maxLength: 254 }
+        message: { type: string, minLength: 1, maxLength: 10000 }
+    NewProductAppeal:
+      type: object
+      required: [punishment_id, email, message]
+      properties:
+        punishment_id: { type: string, description: "ShyDesk's id for the punishment, as sent in its callback." }
+        email: { type: string, maxLength: 254 }
+        message: { type: string, minLength: 1, maxLength: 10000 }
+    AppealMade:
+      type: object
+      additionalProperties: false
+      required: [ticket_url]
+      properties:
+        ticket_url: { type: string, description: "The appellant's private ticket link." }
+    AppealView:
+      type: object
+      additionalProperties: false
+      required: [label, created_at, can_appeal]
+      properties:
+        label: { type: string }
+        created_at: { type: integer, description: 'When the punishment was applied, Unix milliseconds.' }
+        can_appeal: { type: boolean }
+        reason: { type: string, enum: [already_appealed, lifted], description: 'Why no appeal is taken, when it is not.' }
     FieldErrors:
       type: object
       additionalProperties: false

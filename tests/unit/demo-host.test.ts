@@ -34,6 +34,12 @@ describe('the demo host', () => {
     expect(seed.match(/ON CONFLICT \(id\) DO UPDATE/g)).toHaveLength(2);
   });
 
+  it('has an appeal page loading the piece in its appeal view (shyden-labs/shydesk#61)', () => {
+    const page = read('demo-host/public/support/appeal/index.html');
+    expect(page).toContain(`<script src="https://shydesk.${NON_PROD_SUBDOMAIN}.workers.dev/embed.js" defer></script>`);
+    expect(page).toContain('<shydesk-support product="demo" view="appeal" lang="en"></shydesk-support>');
+  });
+
   it('loads the piece from the Non-Prod ShyDesk for the demo product', () => {
     const page = read('demo-host/public/index.html');
     expect(page).toContain(`<script src="https://shydesk.${NON_PROD_SUBDOMAIN}.workers.dev/embed.js" defer></script>`);

@@ -300,3 +300,75 @@ describe('openapi/shydesk.v1.yaml for the customer API', () => {
     expect(check('/support-api/tickets', 'post', answer.status, answer.body)).toEqual([]);
   });
 });
+
+// Appeals (shyden-labs/shydesk#61): each answer of the in-product and the link
+// appeal paths matches the status and schema the spec gives it.
+const TOKEN_KEY = btoa(String.fromCharCode(...new Uint8Array(32).fill(6)));
+const APPEAL_PRODUCT = {
+  id: 'shytalk',
+  name: 'ShyTalk',
+  sender_address: 'no-reply@shytalk.app',
+  ticket_page_url: 'https://shytalk.app/support/ticket',
+  allowed_origins_json: '["https://shytalk.app"]',
+  monthly_email_share: 0,
+  attachments_keep_days: 30,
+  text_keep_days: 365,
+  created_at: 1,
+};
+
+async function appealsCall(url: string, init: RequestInit, w: { lifted?: boolean; counted?: number } = {}) {
+  const hash = await hashKey(KEY);
+  const answer: Answer = (sql, values) => {
+    if (sql.includes('FROM api_keys')) return values[0] === hash ? [{ product_id: 'shytalk', revoked_at: null }] : [];
+    if (sql.includes('RETURNING value')) return [{ value: w.counted ?? 1 }];
+    if (sql.includes('FROM products WHERE id = ?')) return values[0] === 'shytalk' ? [APPEAL_PRODUCT] : [];
+    if (sql.includes('FROM punishments p LEFT JOIN appeals')) {
+      return values[0] === 'p1' || values[0] === hashOfToken
+        ? [{ id: 'p1', product_id: 'shytalk', label: 'Ban', created_at: 2, lifted_at: w.lifted === true ? 3 : null, appealed: 0 }]
+        : [];
+    }
+    return [];
+  };
+  const response = await app.request(url, init, { DB: standInDb(answer).db, TICKET_TOKEN_KEY: TOKEN_KEY });
+  return { status: response.status, body: (await response.json()) as unknown };
+}
+
+const hashOfToken = await hashKey('link-token');
+const APPEAL = { punishment_id: 'p1', email: 'a@example.com', message: 'Please look again.' };
+const keyed = (body: unknown): RequestInit => ({
+  method: 'POST',
+  headers: { Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json' },
+  body: JSON.stringify(body),
+});
+const fromLink = (token: string, body?: unknown): RequestInit => ({
+  method: body === undefined ? 'GET' : 'POST',
+  headers: { Origin: 'https://shytalk.app', 'ShyDesk-Appeal': token, 'Content-Type': 'application/json' },
+  ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+});
+
+describe('openapi/shydesk.v1.yaml for appeals', () => {
+  const IN_PRODUCT = '/api/v1/products/{product}/appeals';
+  it.each([
+    ['an appeal', APPEAL, {}, 201],
+    ['a bad body', { punishment_id: 'p1' }, {}, 400],
+    ['an unknown punishment', { ...APPEAL, punishment_id: 'nope' }, {}, 404],
+    ['a lifted punishment', APPEAL, { lifted: true }, 409],
+    ['the 121st appeal in a minute', APPEAL, { counted: 121 }, 429],
+  ])('the in-product appeal answer to %s matches the spec', async (_case, body, w, status) => {
+    const answer = await appealsCall('/api/v1/products/shytalk/appeals', keyed(body), w);
+    expect(answer.status).toBe(status);
+    expect(check(IN_PRODUCT, 'post', answer.status, answer.body)).toEqual([]);
+  });
+
+  it('the appeal link view matches the spec', async () => {
+    const answer = await appealsCall('/support-api/appeals?product=shytalk', fromLink('link-token'), { lifted: true });
+    expect(answer.status).toBe(200);
+    expect(check('/support-api/appeals', 'get', 200, answer.body)).toEqual([]);
+  });
+
+  it('the appeal made from the link matches the spec', async () => {
+    const answer = await appealsCall('/support-api/appeals?product=shytalk', fromLink('link-token', APPEAL));
+    expect(answer.status).toBe(201);
+    expect(check('/support-api/appeals', 'post', 201, answer.body)).toEqual([]);
+  });
+});
