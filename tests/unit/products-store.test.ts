@@ -508,6 +508,17 @@ describe('Release 2 settings (shyden-labs/shydesk#58)', () => {
     expect(statements.map((x) => x.sql).join(' ')).not.toMatch(/SELECT[^;]*\bcallback_secret\b(?! IS NOT NULL)/);
   });
 
+  it('reads empty Release 2 settings for a product that does not exist', async () => {
+    const { db } = standInDb();
+    await expect(getModeration(db, 'ghost')).resolves.toEqual({
+      punishments: [],
+      reportReasons: [],
+      callbackUrl: null,
+      appealPageUrl: null,
+      hasSecret: false,
+    });
+  });
+
   it('reads empty Release 2 settings for a product with none set', async () => {
     const { db } = standInDb((sql) =>
       /FROM products/.test(sql) ? [{ punishments_json: '[]', callback_url: null, appeal_page_url: null, has_secret: 0 }] : [],

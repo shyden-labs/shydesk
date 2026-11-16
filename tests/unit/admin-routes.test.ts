@@ -600,14 +600,17 @@ describe('Release 2 settings (shyden-labs/shydesk#58)', () => {
     w.products = [
       {
         ...productRow('shytalk'),
-        punishments_json: JSON.stringify([{ key: 'ban-7d', label: 'Ban 7 days', duration_seconds: 604800 }]),
+        punishments_json: JSON.stringify([
+          { key: 'ban-7d', label: 'Ban 7 days', duration_seconds: 604800 },
+          { key: 'remove-room', label: 'Remove room', duration_seconds: null },
+        ]),
         callback_url: 'https://api.shytalk.example/punish',
         appeal_page_url: 'https://shytalk.example/appeal',
         has_secret: 1,
       },
     ];
     const page = await (await get('/admin/products/shytalk', ADMIN, setup(w).env)).text();
-    expect.soft(page).toContain('ban-7d; Ban 7 days; 604800');
+    expect.soft(page).toContain('ban-7d; Ban 7 days; 604800\nremove-room; Remove room; </textarea>');
     expect.soft(page).toContain('value="https://api.shytalk.example/punish"');
     expect.soft(page).toContain('value="https://shytalk.example/appeal"');
     expect.soft(page).toContain('A signing secret is set.');
