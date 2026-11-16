@@ -7,11 +7,14 @@ import type { D1Database } from '@cloudflare/workers-types';
  * Returns true while the count, this request included, is within `limit`.
  *
  * Keys name a sender's IP address or email (shyden-labs/shydesk#110), so each
- * call first deletes every row whose window has passed: no such row is kept
- * more than one window after its last use. Every caller uses a one-hour
- * window, so no sweep cuts another key's window short. Counters without a
+ * call first deletes every row whose window started over an hour ago: no such
+ * row is kept more than an hour after its last use. The sweep always waits the
+ * longest window, one hour, whatever the caller's own window, so a caller
+ * counting per minute (reports, shyden-labs/shydesk#59) never deletes an hour
+ * key's live row; a window longer than the hour is refused. Counters without a
  * window (`feed_seq`, stored bytes) have a NULL `window_start` and are kept.
  */
+const SWEEP_AFTER_SECONDS = 3600;
 const SWEEP = 'DELETE FROM counters WHERE window_start <= ?1';
 const COUNT = `INSERT INTO counters (key, value, window_start) VALUES (?1, 1, ?2)
   ON CONFLICT (key) DO UPDATE SET
@@ -20,8 +23,12 @@ const COUNT = `INSERT INTO counters (key, value, window_start) VALUES (?1, 1, ?2
   RETURNING value`;
 
 export async function hit(db: D1Database, key: string, limit: number, windowSeconds: number, now = Date.now()): Promise<boolean> {
+  if (windowSeconds > SWEEP_AFTER_SECONDS) throw new RangeError(`A rate window is at most ${String(SWEEP_AFTER_SECONDS)} seconds.`);
   const windowEnded = now - windowSeconds * 1000;
-  await db.prepare(SWEEP).bind(windowEnded).run();
+  await db
+    .prepare(SWEEP)
+    .bind(now - SWEEP_AFTER_SECONDS * 1000)
+    .run();
   const row = await db.prepare(COUNT).bind(key, now, windowEnded).first<{ value: number }>();
   return (row?.value ?? Number.POSITIVE_INFINITY) <= limit;
 }
