@@ -28,6 +28,7 @@ import {
   coverOver,
   steadyFrom,
   steadyLongEnough,
+  unsteadyReason,
   STEADY_MS,
   swipeUp,
   centreInside,
@@ -443,6 +444,24 @@ describe('steadyFrom', () => {
   it('counts a control steady once it has stayed put for STEADY_MS, and not a millisecond sooner', () => {
     expect(steadyLongEnough({ box, since: 1000 }, 1000 + STEADY_MS - 1)).toBe(false);
     expect(steadyLongEnough({ box, since: 1000 }, 1000 + STEADY_MS)).toBe(true);
+  });
+});
+
+describe('unsteadyReason (shyden-labs/shydesk#163 AC2)', () => {
+  const viewport = { width: 1280, height: 800 };
+
+  it('says a control stood still outside the window, where, and how far a scroll still had to go', () => {
+    const steady = { box: { x: 20, y: 900, width: 600, height: 80 }, since: 1000 };
+    expect(unsteadyReason('Reply', steady, viewport, 3500)).toBe(
+      '"Reply" stood still for 2500 ms outside the 1280 x 800 window, drawn at 20, 900 (600 x 80): it needed 540 px more scroll',
+    );
+  });
+
+  it('says a control inside the window was still moving, where it was last drawn, and for how short a time', () => {
+    const steady = { box: { x: 20, y: 400.4, width: 600, height: 80 }, since: 3400 };
+    expect(unsteadyReason('Reply', steady, viewport, 3500)).toBe(
+      `"Reply" never stopped moving inside the 1280 x 800 window: last drawn at 20, 400 (600 x 80), there for 100 ms of the ${String(STEADY_MS)} needed`,
+    );
   });
 });
 
