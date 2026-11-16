@@ -15,6 +15,14 @@ import {
   saveProduct,
   saveStaff,
   saveTicketType,
+  appealTypeId,
+  getModeration,
+  getPunishments,
+  reportTypeId,
+  rotateSecret,
+  saveCallback,
+  savePunishments,
+  saveReportReasons,
   type ProductInput,
 } from '../../src/products.ts';
 import { standInDb, type Answer } from './d1-stand-in.ts';
@@ -60,7 +68,8 @@ describe('saveProduct', () => {
   it('writes a valid product with its origins as JSON', async () => {
     const { db, statements } = standInDb();
     await saveProduct(db, PRODUCT, NOW);
-    expect(statements).toHaveLength(1);
+    // With its appeal ticket type, in one batch (shyden-labs/shydesk#58).
+    expect(statements.map((x) => x.method)).toEqual(['batch', 'batch']);
     expect(statements[0]?.sql).toMatch(/INSERT INTO products .* ON CONFLICT \(id\) DO UPDATE/s);
     expect(statements[0]?.values).toEqual([
       'shytalk',
@@ -350,5 +359,176 @@ describe('API keys', () => {
     await revokeApiKey(db, 'shytalk', 'h1', NOW);
     expect(statements[0]?.sql).toMatch(/UPDATE api_keys SET revoked_at = \? WHERE hash = \? AND product_id = \? AND revoked_at IS NULL/);
     expect(statements[0]?.values).toEqual([NOW, 'h1', 'shytalk']);
+  });
+});
+
+describe('Release 2 settings (shyden-labs/shydesk#58)', () => {
+  const BAN = { key: 'ban-7d', label: 'Ban 7 days', duration_seconds: 604800 };
+  const runs = <T extends { method: string }>(statements: T[]): T[] => statements.filter((x) => x.method === 'run' || x.method === 'batch');
+
+  it("creates the product's appeal ticket type with the product, keeping one already there", async () => {
+    const { db, statements } = standInDb();
+    await saveProduct(db, PRODUCT, NOW);
+    expect(statements[1]?.sql).toMatch(/INSERT INTO ticket_types .* ON CONFLICT \(id\) DO NOTHING/s);
+    expect(statements[1]?.values).toEqual(['shytalk:appeal', 'shytalk', 'appeal', 'Appeal', '[]', '[]', 1]);
+  });
+
+  it('names the report and appeal types after the product', () => {
+    expect(reportTypeId('shytalk')).toBe('shytalk:report');
+    expect(appealTypeId('shytalk')).toBe('shytalk:appeal');
+  });
+
+  it("saves a product's punishments as JSON", async () => {
+    const { db, statements } = standInDb(productsExist('shytalk'));
+    await savePunishments(db, 'shytalk', [BAN]);
+    const write = runs(statements)[0];
+    expect(write?.sql).toMatch(/UPDATE products SET punishments_json = \? WHERE id = \?/);
+    expect(write?.values).toEqual([JSON.stringify([BAN]), 'shytalk']);
+  });
+
+  it('refuses invalid punishments and writes nothing', async () => {
+    const { db, statements } = standInDb(productsExist('shytalk'));
+    await expect(savePunishments(db, 'shytalk', [{ ...BAN, duration_seconds: 59 }])).rejects.toBeInstanceOf(SettingsError);
+    expect(runs(statements)).toEqual([]);
+  });
+
+  it('refuses punishments for a missing product', async () => {
+    const { db, statements } = standInDb();
+    await expect(savePunishments(db, 'ghost', [BAN])).rejects.toMatchObject({ errors: ['No such product: ghost.'] });
+    expect(runs(statements)).toEqual([]);
+  });
+
+  it("reads a product's punishments back, or none for a missing product", async () => {
+    const { db } = standInDb((sql, values) =>
+      /FROM products/.test(sql) && values[0] === 'shytalk' ? [{ punishments_json: JSON.stringify([BAN]) }] : [],
+    );
+    await expect(getPunishments(db, 'shytalk')).resolves.toEqual([BAN]);
+    await expect(getPunishments(db, 'ghost')).resolves.toEqual([]);
+  });
+
+  it('saves the callback and appeal page addresses', async () => {
+    const { db, statements } = standInDb(productsExist('shytalk'));
+    await saveCallback(db, 'shytalk', 'https://api.shytalk.app/punish', 'https://shytalk.app/appeal');
+    const write = runs(statements)[0];
+    expect(write?.sql).toMatch(/UPDATE products SET callback_url = \?, appeal_page_url = \? WHERE id = \?/);
+    expect(write?.values).toEqual(['https://api.shytalk.app/punish', 'https://shytalk.app/appeal', 'shytalk']);
+  });
+
+  it('refuses http://shytalk.app/x and https://u:p@shytalk.app/x and writes nothing', async () => {
+    const { db, statements } = standInDb(productsExist('shytalk'));
+    await expect(saveCallback(db, 'shytalk', 'http://shytalk.app/x', 'https://shytalk.app/appeal')).rejects.toBeInstanceOf(SettingsError);
+    await expect(saveCallback(db, 'shytalk', 'https://u:p@shytalk.app/x', 'https://shytalk.app/appeal')).rejects.toBeInstanceOf(
+      SettingsError,
+    );
+    expect(runs(statements)).toEqual([]);
+  });
+
+  it('refuses a callback for a missing product', async () => {
+    const { db } = standInDb();
+    await expect(saveCallback(db, 'ghost', 'https://a.example/x', 'https://a.example/y')).rejects.toMatchObject({
+      errors: ['No such product: ghost.'],
+    });
+  });
+
+  it('returns 43 base64url characters as the new signing secret and stores that value', async () => {
+    const { db, statements } = standInDb(productsExist('shytalk'));
+    const secret = await rotateSecret(db, 'shytalk');
+    expect(secret).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    const write = runs(statements)[0];
+    expect(write?.sql).toMatch(/UPDATE products SET callback_secret = \? WHERE id = \?/);
+    expect(write?.values).toEqual([secret, 'shytalk']);
+  });
+
+  it('makes a different signing secret each time', async () => {
+    const { db } = standInDb(productsExist('shytalk'));
+    expect(await rotateSecret(db, 'shytalk')).not.toBe(await rotateSecret(db, 'shytalk'));
+  });
+
+  it('refuses a signing secret for a missing product and writes nothing', async () => {
+    const { db, statements } = standInDb();
+    await expect(rotateSecret(db, 'ghost')).rejects.toMatchObject({ errors: ['No such product: ghost.'] });
+    expect(runs(statements)).toEqual([]);
+  });
+
+  it("saves report reasons ['Cheating', 'Harassment'] as ticket type shytalk:report", async () => {
+    const { db, statements } = standInDb(productsExist('shytalk'));
+    await saveReportReasons(db, 'shytalk', ['Cheating', 'Harassment']);
+    const write = runs(statements)[0];
+    expect(write?.sql).toMatch(/INSERT INTO ticket_types .* ON CONFLICT \(id\) DO UPDATE SET reasons_json = excluded.reasons_json/s);
+    expect(write?.values).toEqual(['shytalk:report', 'shytalk', 'report', 'Report', '[]', '["Cheating","Harassment"]', 1]);
+  });
+
+  it('trims each report reason and drops blank lines', async () => {
+    const { db, statements } = standInDb(productsExist('shytalk'));
+    await saveReportReasons(db, 'shytalk', ['  Cheating ', '', '   ']);
+    expect(runs(statements)[0]?.values[5]).toBe('["Cheating"]');
+  });
+
+  it('refuses an empty reason list and writes nothing', async () => {
+    const { db, statements } = standInDb(productsExist('shytalk'));
+    await expect(saveReportReasons(db, 'shytalk', [])).rejects.toMatchObject({ errors: ['At least one report reason is required.'] });
+    await expect(saveReportReasons(db, 'shytalk', ['  '])).rejects.toMatchObject({ errors: ['At least one report reason is required.'] });
+    expect(runs(statements)).toEqual([]);
+  });
+
+  it('refuses a report reason listed twice', async () => {
+    const { db } = standInDb(productsExist('shytalk'));
+    await expect(saveReportReasons(db, 'shytalk', ['Cheating', 'Cheating'])).rejects.toMatchObject({
+      errors: ['Report reason "Cheating" is listed more than once.'],
+    });
+  });
+
+  it('refuses report reasons for a missing product', async () => {
+    const { db } = standInDb();
+    await expect(saveReportReasons(db, 'ghost', ['Cheating'])).rejects.toMatchObject({ errors: ['No such product: ghost.'] });
+  });
+
+  it("reads a product's Release 2 settings, saying only whether a secret exists", async () => {
+    const answer: Answer = (sql, values) => {
+      if (/FROM products/.test(sql) && values[0] === 'shytalk')
+        return [
+          {
+            punishments_json: JSON.stringify([BAN]),
+            callback_url: 'https://a.example/x',
+            appeal_page_url: 'https://a.example/y',
+            has_secret: 1,
+          },
+        ];
+      if (/FROM ticket_types/.test(sql) && values[0] === 'shytalk:report') return [{ reasons_json: '["Cheating"]' }];
+      return [];
+    };
+    const { db, statements } = standInDb(answer);
+    await expect(getModeration(db, 'shytalk')).resolves.toEqual({
+      punishments: [BAN],
+      reportReasons: ['Cheating'],
+      callbackUrl: 'https://a.example/x',
+      appealPageUrl: 'https://a.example/y',
+      hasSecret: true,
+    });
+    expect(statements.map((x) => x.sql).join(' ')).not.toMatch(/SELECT[^;]*\bcallback_secret\b(?! IS NOT NULL)/);
+  });
+
+  it('reads empty Release 2 settings for a product that does not exist', async () => {
+    const { db } = standInDb();
+    await expect(getModeration(db, 'ghost')).resolves.toEqual({
+      punishments: [],
+      reportReasons: [],
+      callbackUrl: null,
+      appealPageUrl: null,
+      hasSecret: false,
+    });
+  });
+
+  it('reads empty Release 2 settings for a product with none set', async () => {
+    const { db } = standInDb((sql) =>
+      /FROM products/.test(sql) ? [{ punishments_json: '[]', callback_url: null, appeal_page_url: null, has_secret: 0 }] : [],
+    );
+    await expect(getModeration(db, 'shytalk')).resolves.toEqual({
+      punishments: [],
+      reportReasons: [],
+      callbackUrl: null,
+      appealPageUrl: null,
+      hasSecret: false,
+    });
   });
 });

@@ -119,7 +119,14 @@ const PRODUCT_COLUMNS =
 /** Adds a product, or updates it in place keeping when it was created. Throws SettingsError. */
 export async function saveProduct(db: D1Database, p: ProductInput, now = Date.now()): Promise<void> {
   refuseIfAny(validateProduct(p));
-  await db
+  // The product's appeal ticket type comes with it (shyden-labs/shydesk#58), in the same batch.
+  const appealType = db
+    .prepare(
+      `INSERT INTO ticket_types (id, product_id, kind, name, fields_json, reasons_json, enabled) VALUES (?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT (id) DO NOTHING`,
+    )
+    .bind(appealTypeId(p.id), p.id, 'appeal', 'Appeal', '[]', '[]', 1);
+  const product = db
     .prepare(
       `INSERT INTO products (${PRODUCT_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (id) DO UPDATE SET name = excluded.name, sender_address = excluded.sender_address,
@@ -137,8 +144,8 @@ export async function saveProduct(db: D1Database, p: ProductInput, now = Date.no
       p.attachmentsKeepDays,
       p.textKeepDays,
       now,
-    )
-    .run();
+    );
+  await db.batch([product, appealType]);
 }
 
 export async function getProduct(db: D1Database, id: string): Promise<Product | null> {
@@ -349,4 +356,144 @@ export async function revokeApiKey(db: D1Database, productId: string, hash: stri
     .prepare('UPDATE api_keys SET revoked_at = ? WHERE hash = ? AND product_id = ? AND revoked_at IS NULL')
     .bind(now, hash, productId)
     .run();
+}
+
+/*
+ * Release 2 settings (shyden-labs/shydesk#58; Release 2 plan Task 2): each product's
+ * punishments, report reasons, callback address, appeal page and signing secret.
+ */
+
+/** A punishment a rep can apply on a report, as the product's server understands it. */
+export interface PunishmentDef {
+  key: string;
+  label: string;
+  /** How long it lasts, or null for one with no end. */
+  duration_seconds: number | null;
+}
+
+const PUNISHMENT_KEY = /^[a-z0-9-]{1,32}$/;
+const MIN_DURATION = 60;
+const MAX_DURATION = 31_536_000;
+
+/** Every rule the list breaks, in list order; empty when it is valid. */
+export function validatePunishments(list: PunishmentDef[]): string[] {
+  const seen = new Set<string>();
+  return list.flatMap((p) => {
+    const errors: string[] = [];
+    if (!PUNISHMENT_KEY.test(p.key)) errors.push(`Punishment key "${p.key}" must be 1 to 32 lowercase letters, digits or hyphens.`);
+    else if (seen.has(p.key)) errors.push(`Punishment key "${p.key}" is used more than once.`);
+    seen.add(p.key);
+    const label = p.label.trim();
+    if (label.length < 1 || label.length > 60) errors.push(`Punishment "${p.key}" needs a label of 1 to 60 characters.`);
+    const d = p.duration_seconds;
+    if (d !== null && !(Number.isInteger(d) && d >= MIN_DURATION && d <= MAX_DURATION)) {
+      errors.push(`Punishment "${p.key}" must last ${MIN_DURATION} to ${MAX_DURATION} seconds (one year), or be left blank for no end.`);
+    }
+    return errors;
+  });
+}
+
+/** True for an https address with no user name, password or #fragment. */
+const isPlainHttps = (address: string): boolean => {
+  const url = parse(address);
+  return url !== null && url.protocol === 'https:' && url.username === '' && url.password === '' && !address.includes('#');
+};
+
+/** Every rule the two addresses break; empty when both are valid. */
+export function validateCallback(url: string, appealPageUrl: string): string[] {
+  const errors: string[] = [];
+  if (!isPlainHttps(url)) errors.push('Callback URL must be an https address with no user name, password or #fragment.');
+  if (!isPlainHttps(appealPageUrl)) errors.push('Appeal page URL must be an https address with no user name, password or #fragment.');
+  return errors;
+}
+
+/** Each product's report type: its `reasons_json` is the list a report must pick from. */
+export const reportTypeId = (productId: string): string => `${productId}:report`;
+/** Each product's appeal type, made with the product; it has no reasons. */
+export const appealTypeId = (productId: string): string => `${productId}:appeal`;
+
+/** Replaces a product's punishments. Throws SettingsError. */
+export async function savePunishments(db: D1Database, productId: string, list: PunishmentDef[]): Promise<void> {
+  const errors = await missingProducts(db, [productId]);
+  errors.push(...validatePunishments(list));
+  refuseIfAny(errors);
+  const stored = list.map((p) => ({ key: p.key, label: p.label.trim(), duration_seconds: p.duration_seconds }));
+  await db.prepare('UPDATE products SET punishments_json = ? WHERE id = ?').bind(JSON.stringify(stored), productId).run();
+}
+
+interface ModerationRow {
+  punishments_json: string;
+  callback_url: string | null;
+  appeal_page_url: string | null;
+  has_secret: number;
+}
+
+/** A product's punishments; none for a missing product. */
+export async function getPunishments(db: D1Database, productId: string): Promise<PunishmentDef[]> {
+  const row = await db.prepare('SELECT punishments_json FROM products WHERE id = ?').bind(productId).first<{ punishments_json: string }>();
+  return row ? (JSON.parse(row.punishments_json) as PunishmentDef[]) : [];
+}
+
+/** Sets where punishments are sent and the product's appeal page. Throws SettingsError. */
+export async function saveCallback(db: D1Database, productId: string, url: string, appealPageUrl: string): Promise<void> {
+  const errors = await missingProducts(db, [productId]);
+  errors.push(...validateCallback(url, appealPageUrl));
+  refuseIfAny(errors);
+  await db.prepare('UPDATE products SET callback_url = ?, appeal_page_url = ? WHERE id = ?').bind(url, appealPageUrl, productId).run();
+}
+
+/**
+ * Makes a new signing secret for the product's callback: 32 random bytes, base64url.
+ * It is returned once, for the admin to put in the product's server. It is stored as it
+ * is, because ShyDesk signs each callback with it. Throws SettingsError.
+ */
+export async function rotateSecret(db: D1Database, productId: string): Promise<string> {
+  refuseIfAny(await missingProducts(db, [productId]));
+  const secret = base64url(crypto.getRandomValues(new Uint8Array(32)));
+  await db.prepare('UPDATE products SET callback_secret = ? WHERE id = ?').bind(secret, productId).run();
+  return secret;
+}
+
+/** Saves the reasons a report must pick from as the product's report type. Throws SettingsError. */
+export async function saveReportReasons(db: D1Database, productId: string, reasons: string[]): Promise<void> {
+  const errors = await missingProducts(db, [productId]);
+  const list = reasons.map((r) => r.trim()).filter((r) => r !== '');
+  if (list.length === 0) errors.push('At least one report reason is required.');
+  const twice = list.filter((r, i) => list.indexOf(r) !== i);
+  for (const r of new Set(twice)) errors.push(`Report reason "${r}" is listed more than once.`);
+  refuseIfAny(errors);
+  await db
+    .prepare(
+      `INSERT INTO ticket_types (id, product_id, kind, name, fields_json, reasons_json, enabled) VALUES (?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT (id) DO UPDATE SET reasons_json = excluded.reasons_json`,
+    )
+    .bind(reportTypeId(productId), productId, 'report', 'Report', '[]', JSON.stringify(list), 1)
+    .run();
+}
+
+/** A product's Release 2 settings as the admin screen shows them: never the secret itself. */
+export interface Moderation {
+  punishments: PunishmentDef[];
+  reportReasons: string[];
+  callbackUrl: string | null;
+  appealPageUrl: string | null;
+  hasSecret: boolean;
+}
+
+export async function getModeration(db: D1Database, productId: string): Promise<Moderation> {
+  const row = await db
+    .prepare('SELECT punishments_json, callback_url, appeal_page_url, callback_secret IS NOT NULL AS has_secret FROM products WHERE id = ?')
+    .bind(productId)
+    .first<ModerationRow>();
+  const type = await db
+    .prepare('SELECT reasons_json FROM ticket_types WHERE id = ? AND product_id = ?')
+    .bind(reportTypeId(productId), productId)
+    .first<{ reasons_json: string }>();
+  return {
+    punishments: row ? (JSON.parse(row.punishments_json) as PunishmentDef[]) : [],
+    reportReasons: type ? (JSON.parse(type.reasons_json) as string[]) : [],
+    callbackUrl: row?.callback_url ?? null,
+    appealPageUrl: row?.appeal_page_url ?? null,
+    hasSecret: row?.has_secret === 1,
+  };
 }
