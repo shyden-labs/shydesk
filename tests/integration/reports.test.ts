@@ -2,7 +2,7 @@
 // Task 3): a report sent through the API is read back through it, with the
 // subject's earlier report of the same product in its history and nothing from
 // another product; an upload grant counts down in SQL and stops at its last file.
-import { describe, expect, inject, it } from 'vitest';
+import { beforeAll, describe, expect, inject, it } from 'vitest';
 import { apiRoutes } from '../../src/api/routes.ts';
 import { createApiKey, saveProduct, saveReportReasons } from '../../src/products.ts';
 import { createGrant, grantLive, useGrant } from '../../src/reports/grants.ts';
@@ -50,10 +50,19 @@ const report = (reason: string, itemId: string) => ({
   reason,
 });
 
+// Each product takes about 2 s to set up over D1's REST API (measured on CI run
+// 43802312471), so all are made once here, under the hook's limit, and each test
+// stays inside the 10 s test limit.
+const keys: Record<string, string> = {};
+beforeAll(async () => {
+  for (const id of ['it-rep-a', 'it-rep-b', 'it-rep-c', 'it-rep-d', 'it-rep-e']) keys[id] = await product(id);
+});
+const keyOf = (id: string): string => keys[id] ?? '';
+
 describe('reports', () => {
   it("reads a report back with the subject's earlier report in this product only", async () => {
-    const keyA = await product('it-rep-a');
-    const keyB = await product('it-rep-b');
+    const keyA = keyOf('it-rep-a');
+    const keyB = keyOf('it-rep-b');
     const earlier = await send('POST', '/api/v1/products/it-rep-a/reports', keyA, report('Cheating', 'm1'));
     expect(earlier.status).toBe(202);
     // The same subject id reported in another product must not show in this product's history.
@@ -82,14 +91,14 @@ describe('reports', () => {
   });
 
   it("answers 404 for another product's report read with that product's key", async () => {
-    const keyC = await product('it-rep-c');
-    const keyD = await product('it-rep-d');
+    const keyC = keyOf('it-rep-c');
+    const keyD = keyOf('it-rep-d');
     const sent = await send('POST', '/api/v1/products/it-rep-c/reports', keyC, report('Cheating', 'm4'));
     expect((await send('GET', `/api/v1/products/it-rep-d/reports/${String(sent.body.report_id)}`, keyD)).status).toBe(404);
   });
 
   it('refuses a reason the product does not list', async () => {
-    const key = await product('it-rep-e');
+    const key = keyOf('it-rep-e');
     const answer = await send('POST', '/api/v1/products/it-rep-e/reports', key, report('Spam', 'm5'));
     expect(answer).toEqual({ status: 422, body: { error: 'unknown_reason' } });
   });
