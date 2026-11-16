@@ -86,6 +86,167 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /api/v1/products/{product}/upload-grants:
+    post:
+      operationId: createUploadGrant
+      summary: A short-lived grant for the product's app to upload report evidence.
+      description: >-
+        The product's server asks for a grant and hands it to its app, which
+        uploads the files straight to ShyDesk through the /support-api/uploads
+        routes, sending `Authorization: Grant <grant>` in place of an allowed
+        origin. Each upload started uses one of the grant's files; it expires
+        15 minutes after it was made. Only its hash is stored.
+      parameters:
+        - name: product
+          in: path
+          required: true
+          description: The product id the key was made for.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UploadGrantRequest'
+      responses:
+        '201':
+          description: The grant, shown once.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadGrant'
+        '400':
+          description: '`count` is not a whole number from 1 to 10.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: No key, or the key is unknown or revoked.
+          headers:
+            WWW-Authenticate:
+              schema:
+                type: string
+                const: Bearer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: The key belongs to another product.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/products/{product}/reports:
+    post:
+      operationId: createReport
+      summary: Sends a user's report from the product's server.
+      description: >-
+        Sent by the product's server, never its app, after it has checked the
+        reporter's session. ShyDesk takes `reporter_id` as the server asserts it
+        and sends no email. The reporter is told "received" by the product and
+        nothing more. At most 120 reports a minute per product.
+      parameters:
+        - name: product
+          in: path
+          required: true
+          description: The product id the key was made for.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewReport'
+      responses:
+        '202':
+          description: Received.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportAccepted'
+        '400':
+          description: The body is not a report this schema allows.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: No key, or the key is unknown or revoked.
+          headers:
+            WWW-Authenticate:
+              schema:
+                type: string
+                const: Bearer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: The key belongs to another product.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: >-
+            `unknown_reason`: the reason is not one of the product's report
+            reasons. `unknown_upload`: an upload is not a finished, unused upload
+            of this product.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: '`rate_limited`: over 120 reports in a minute.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/products/{product}/reports/{id}:
+    get:
+      operationId: getReport
+      summary: One report, with the reported user's earlier reports and punishments in this product.
+      parameters:
+        - name: product
+          in: path
+          required: true
+          description: The product id the key was made for.
+          schema:
+            type: string
+        - name: id
+          in: path
+          required: true
+          description: The `report_id` the report was received under.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The report and its history.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportView'
+        '401':
+          description: No key, or the key is unknown or revoked.
+          headers:
+            WWW-Authenticate:
+              schema:
+                type: string
+                const: Bearer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: The key belongs to another product, or there is no such report of this product.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /support-api/config:
     get:
       operationId: getSupportConfig
@@ -248,7 +409,10 @@ paths:
       summary: Starts an attachment upload in parts.
       description: >-
         No per-file size limit: only the free storage can refuse it here. Limited
-        to 30 starts per network address and 300 per product per hour.
+        to 30 starts per network address and 300 per product per hour. A
+        product's app may send `Authorization: Grant <grant>` (from
+        /api/v1/products/{product}/upload-grants) in place of an allowed origin;
+        each start uses one of its files, and a used up or expired grant gets 404.
       security: []
       parameters:
         - $ref: '#/components/parameters/ProductQuery'
@@ -545,6 +709,108 @@ components:
             properties:
               n: { type: integer, minimum: 1 }
               etag: { type: string }
+    UploadGrantRequest:
+      type: object
+      additionalProperties: false
+      required: [count]
+      properties:
+        count:
+          type: integer
+          minimum: 1
+          maximum: 10
+          description: How many files the app may upload with it.
+    UploadGrant:
+      type: object
+      additionalProperties: false
+      required: [grant, expires_at]
+      properties:
+        grant:
+          type: string
+          pattern: '^[A-Za-z0-9_-]{43}$'
+        expires_at:
+          type: integer
+          description: Unix time in milliseconds when it stops being accepted.
+    ReportItem:
+      type: object
+      additionalProperties: false
+      required: [kind, id]
+      properties:
+        kind: { type: string, minLength: 1, maxLength: 200, description: 'What was reported: player, room, message...' }
+        id: { type: string, minLength: 1, maxLength: 200 }
+    NewReport:
+      type: object
+      additionalProperties: false
+      required: [reporter_id, item, subject_user_id, reason]
+      properties:
+        reporter_id: { type: string, minLength: 1, maxLength: 200, description: 'The reporting user, as the product server asserts it.' }
+        item: { $ref: '#/components/schemas/ReportItem' }
+        subject_user_id: { type: string, minLength: 1, maxLength: 200, description: 'The user the report is about.' }
+        reason: { type: string, minLength: 1, maxLength: 200, description: "One of the product's report reasons, set on the admin screen." }
+        note: { type: string, maxLength: 5000 }
+        context:
+          type: object
+          description: What the app fills in itself; at most 16000 characters as JSON.
+        upload_ids:
+          type: array
+          maxItems: 10
+          items: { type: string, minLength: 1, maxLength: 200 }
+          description: Finished uploads made under this product's upload grants.
+    ReportAccepted:
+      type: object
+      additionalProperties: false
+      required: [report_id]
+      properties:
+        report_id: { type: string }
+    ReportView:
+      type: object
+      additionalProperties: false
+      required: [report, history]
+      properties:
+        report:
+          type: object
+          additionalProperties: false
+          required: [id, status, created_at, reporter_id, item, subject_user_id, reason, note, context]
+          properties:
+            id: { type: string }
+            status: { type: string, enum: [open, waiting, closed] }
+            created_at: { type: integer }
+            reporter_id: { type: string }
+            item: { $ref: '#/components/schemas/ReportItem' }
+            subject_user_id: { type: string }
+            reason: { type: string }
+            note: { type: [string, 'null'] }
+            context: { type: object }
+        history:
+          type: object
+          additionalProperties: false
+          required: [reports, punishments]
+          description: The same user's other reports and punishments in this product only, newest first, 50 of each.
+          properties:
+            reports:
+              type: array
+              maxItems: 50
+              items:
+                type: object
+                additionalProperties: false
+                required: [ticket_id, reason, created_at, status]
+                properties:
+                  ticket_id: { type: string }
+                  reason: { type: string }
+                  created_at: { type: integer }
+                  status: { type: string, enum: [open, waiting, closed] }
+            punishments:
+              type: array
+              maxItems: 50
+              items:
+                type: object
+                additionalProperties: false
+                required: [id, label, created_at, send_state, lifted_at]
+                properties:
+                  id: { type: string }
+                  label: { type: string }
+                  created_at: { type: integer }
+                  send_state: { type: string, enum: [sending, applied, failed] }
+                  lifted_at: { type: [integer, 'null'] }
     FieldErrors:
       type: object
       additionalProperties: false

@@ -1,7 +1,6 @@
 import type { R2Bucket } from '@cloudflare/workers-types';
 import { Hono, type Context } from 'hono';
 import { MESSAGES } from '../customer/messages.ts';
-import { requireProductOrigin } from '../customer/origin.ts';
 import { UNATTACHED_EXPIRES_MS, UPLOAD_ABANDONED_MS } from '../desk/overdue.ts';
 import type { Env } from '../env.ts';
 import { hit } from '../limits.ts';
@@ -9,6 +8,7 @@ import type { Product } from '../products.ts';
 import { addStoredWithin, FREE_STORAGE_BYTES, STORED_BYTES, storedBytes } from '../storage.ts';
 import { mp4DurationMs } from './mp4.ts';
 import { sniff } from './sniff.ts';
+import { requireOriginOrGrant } from './access.ts';
 
 /**
  * Attachment uploads, straight from the browser to ShyDesk (shyden-labs/shydesk#20;
@@ -21,6 +21,9 @@ import { sniff } from './sniff.ts';
  * - `PUT /support-api/uploads/:id/parts/:n?product=<id>`: one part's raw bytes.
  * - `POST /support-api/uploads/:id/complete?product=<id>`: `{ parts: [{ n, etag }] }`.
  * - `PUT /support-api/uploads/:thumbId?product=<id>`: the preview, after `complete`.
+ *
+ * A product's app may call them with an upload grant instead of from an allowed
+ * origin (shyden-labs/shydesk#59, `requireOriginOrGrant`).
  */
 
 export const PART_SIZE = 8 * 1024 * 1024;
@@ -167,7 +170,7 @@ function parsedParts(body: unknown, expected: number): { partNumber: number; eta
 
 export function uploadRoutes(): Hono<UploadEnv> {
   const app = new Hono<UploadEnv>();
-  app.use('/support-api/uploads/*', requireProductOrigin());
+  app.use('/support-api/uploads/*', requireOriginOrGrant());
 
   app.post('/support-api/uploads', async (c) => {
     const body = await bodyOf(c);
