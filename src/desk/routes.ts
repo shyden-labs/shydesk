@@ -9,7 +9,16 @@ import { ticketLink } from '../tickets/create.ts';
 import { openToken } from '../tickets/seal.ts';
 import { changeStatus, type TimerEnv } from '../tickets/status.ts';
 import { streamFile } from '../uploads/serve.ts';
-import { getFile, getTicket, listTickets, markRead, unreadCount, type DeskTicket } from './queries.ts';
+import {
+  PunishmentNotFound,
+  PunishmentRefused,
+  applyPunishment,
+  findPunishment,
+  liftPunishment,
+  resendPunishment,
+} from '../punishments/apply.ts';
+import type { Fetcher as CallbackFetcher } from '../punishments/send.ts';
+import { getFile, getTicket, listTickets, markRead, reportPanel, unreadCount, type DeskTicket } from './queries.ts';
 import { listPage, ticketPage } from './views.ts';
 
 /**
@@ -27,6 +36,8 @@ export interface DeskBindings extends StaffEnv, TimerEnv, MailEnv {
 
 export interface DeskDeps {
   deliver: Deliver;
+  /** How punishments reach the product (shyden-labs/shydesk#60); `fetch` unless a test stands in. */
+  fetcher?: CallbackFetcher;
 }
 
 type DeskEnv = { Bindings: DeskBindings; Variables: { staff: Staff } };
@@ -111,8 +122,60 @@ export function deskRoutes(deps: DeskDeps, jwks?: JWTVerifyGetKey): Hono<DeskEnv
     const canned: Canned[] = (await listCanned(c.env.DB, found.ticket.product_id)).filter(
       (one) => one.typeId === null || one.typeId === found.ticket.type_id,
     );
-    return c.html(ticketPage({ ...found, canned, mail: reference(c, 'mail'), error: reference(c, 'error') }));
+    return c.html(
+      ticketPage({
+        ...found,
+        canned,
+        mail: reference(c, 'mail'),
+        error: reference(c, 'error'),
+        report: await reportPanel(c.env.DB, found.ticket),
+        punishment: reference(c, 'punishment'),
+        isAdmin: staff.role === 'admin',
+      }),
+    );
   });
+
+  // Release 2 punishments (shyden-labs/shydesk#60). Out of scope, and a rep lifting, is 404.
+  const punishmentAction = async (c: DeskContext, act: () => Promise<{ report_ticket_id: string; state: string }>, back: string) => {
+    try {
+      const done = await act();
+      return c.redirect(`/desk/tickets/${done.report_ticket_id}?punishment=${done.state}`, 303);
+    } catch (error) {
+      if (error instanceof PunishmentNotFound) return c.notFound();
+      if (error instanceof PunishmentRefused) return c.redirect(`/desk/tickets/${back}?error=${error.code}`, 303);
+      throw error;
+    }
+  };
+
+  app.post('/desk/tickets/:id/punish', async (c) => {
+    const ticketId = c.req.param('id');
+    const form = await c.req.parseBody();
+    const key = typeof form.key === 'string' ? form.key : '';
+    return punishmentAction(
+      c,
+      async () => {
+        const row = await applyPunishment(c.env, c.var.staff, ticketId, key, deps.fetcher);
+        return { report_ticket_id: row.report_ticket_id, state: row.send_state };
+      },
+      ticketId,
+    );
+  });
+
+  for (const [action, run] of [
+    ['resend', resendPunishment],
+    ['lift', liftPunishment],
+  ] as const) {
+    app.post(`/desk/punishments/:id/${action}`, async (c) => {
+      const staff = c.var.staff;
+      const found = await findPunishment(c.env.DB, staff, c.req.param('id'));
+      if (found === null) return c.notFound();
+      return punishmentAction(
+        c,
+        async () => ({ report_ticket_id: found.report_ticket_id, state: await run(c.env, staff, found.id, deps.fetcher) }),
+        found.report_ticket_id,
+      );
+    });
+  }
 
   app.post('/desk/tickets/:id/reply', async (c) => {
     const staff = c.var.staff;
