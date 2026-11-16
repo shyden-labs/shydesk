@@ -18,9 +18,16 @@ import {
   saveStaff,
   saveTicketType,
   supportTypeId,
+  appealTypeId,
+  getModeration,
+  reportTypeId,
+  rotateSecret,
+  saveCallback,
+  savePunishments,
+  saveReportReasons,
   type ProductInput,
 } from '../../src/products.ts';
-import { restD1 } from './d1.ts';
+import { query, restD1 } from './d1.ts';
 
 const db = restD1(inject('databaseId'));
 
@@ -106,5 +113,62 @@ describe('API keys', () => {
     expect((await listApiKeys(db, 'it-k1'))[0]?.revokedAt).toBeNull();
     await revokeApiKey(db, 'it-k1', await hashKey(key), 3000);
     expect((await listApiKeys(db, 'it-k1'))[0]?.revokedAt).toBe(3000);
+  });
+});
+
+describe('Release 2 settings (shyden-labs/shydesk#58)', () => {
+  const id = inject('databaseId');
+  const typeRow = async (typeId: string) =>
+    (await query(id, 'SELECT id, product_id, kind, name, reasons_json FROM ticket_types WHERE id = ?', [typeId]))[0]?.results ?? [];
+  const secretOf = async (productId: string) =>
+    ((await query(id, 'SELECT callback_secret FROM products WHERE id = ?', [productId]))[0]?.results ?? [])[0]?.callback_secret;
+
+  it('creates the appeal type with the product, once, and keeps it on a second save', async () => {
+    await saveProduct(db, product('it-r2a'), 1000);
+    await saveProduct(db, { ...product('it-r2a'), name: 'Renamed' }, 2000);
+    expect(await typeRow(appealTypeId('it-r2a'))).toEqual([
+      { id: 'it-r2a:appeal', product_id: 'it-r2a', kind: 'appeal', name: 'Appeal', reasons_json: '[]' },
+    ]);
+  });
+
+  it('round-trips punishments, the callback, report reasons and whether a secret exists', async () => {
+    await saveProduct(db, product('it-r2b'), 1000);
+    await expect(getModeration(db, 'it-r2b')).resolves.toEqual({
+      punishments: [],
+      reportReasons: [],
+      callbackUrl: null,
+      appealPageUrl: null,
+      hasSecret: false,
+    });
+    const punishments = [
+      { key: 'ban-7d', label: 'Ban 7 days', duration_seconds: 604800 },
+      { key: 'remove-room', label: 'Remove room', duration_seconds: null },
+    ];
+    await savePunishments(db, 'it-r2b', punishments);
+    await saveCallback(db, 'it-r2b', 'https://api.it-r2b.example/punish', 'https://it-r2b.example/appeal');
+    await saveReportReasons(db, 'it-r2b', ['Cheating', 'Harassment']);
+    await saveReportReasons(db, 'it-r2b', ['Cheating', 'Spam']);
+    const secret = await rotateSecret(db, 'it-r2b');
+    await expect(getModeration(db, 'it-r2b')).resolves.toEqual({
+      punishments,
+      reportReasons: ['Cheating', 'Spam'],
+      callbackUrl: 'https://api.it-r2b.example/punish',
+      appealPageUrl: 'https://it-r2b.example/appeal',
+      hasSecret: true,
+    });
+    expect(await typeRow(reportTypeId('it-r2b'))).toEqual([
+      { id: 'it-r2b:report', product_id: 'it-r2b', kind: 'report', name: 'Report', reasons_json: '["Cheating","Spam"]' },
+    ]);
+    expect(await secretOf('it-r2b')).toBe(secret);
+  });
+
+  it('changes the stored secret on rotation and touches no other product', async () => {
+    await saveProduct(db, product('it-r2c'), 1000);
+    await saveProduct(db, product('it-r2d'), 1000);
+    const first = await rotateSecret(db, 'it-r2c');
+    const second = await rotateSecret(db, 'it-r2c');
+    expect(second).not.toBe(first);
+    expect(await secretOf('it-r2c')).toBe(second);
+    expect(await secretOf('it-r2d')).toBeNull();
   });
 });

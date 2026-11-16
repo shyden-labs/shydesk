@@ -6,6 +6,7 @@ import { requireStaff, type Staff, type StaffEnv } from '../auth/staff.ts';
 import {
   SettingsError,
   createApiKey,
+  getModeration,
   getProduct,
   getTicketType,
   listApiKeys,
@@ -13,12 +14,17 @@ import {
   listProducts,
   listStaff,
   revokeApiKey,
+  rotateSecret,
+  saveCallback,
   saveCanned,
+  savePunishments,
   saveProduct,
+  saveReportReasons,
   saveStaff,
   saveTicketType,
   type Product,
   type ProductInput,
+  type PunishmentDef,
   type SupportField,
 } from '../products.ts';
 import { productPage, productsPage, staffPage, type Health, type ProductForm, type ProductPageData } from './views.ts';
@@ -103,6 +109,33 @@ export function parseFields(textarea: string): SupportField[] {
   return fields;
 }
 
+const PUNISHMENT_LINE = 'write key; label; seconds, or leave seconds blank for no end.';
+
+/**
+ * Reads the punishments textarea: one per line, `key; label; seconds`, seconds blank
+ * for no end (shyden-labs/shydesk#58). A duration that is not a number is kept as NaN,
+ * so validation names it. Throws SettingsError naming each line that is not three parts.
+ */
+export function parsePunishments(textarea: string): PunishmentDef[] {
+  const errors: string[] = [];
+  const list: PunishmentDef[] = [];
+  textarea.split('\n').forEach((line, i) => {
+    if (line.trim() === '') return;
+    const parts = line.split(';').map((p) => p.trim());
+    if (parts.length !== 3) {
+      errors.push(`Line ${i + 1}: ${PUNISHMENT_LINE}`);
+      return;
+    }
+    const [key = '', label = '', seconds = ''] = parts;
+    list.push({ key, label, duration_seconds: seconds === '' ? null : Number(seconds) });
+  });
+  if (errors.length > 0) throw new SettingsError(errors);
+  return list;
+}
+
+/** One report reason per line; blank lines are dropped by the store. */
+const parseReasons = (textarea: string): string[] => textarea.split('\n');
+
 /** Runs a write; a refused one answers `refused(errors)` with 400 instead. */
 async function attempt(write: () => Promise<Response>, refused: (errors: string[]) => Promise<Response>) {
   try {
@@ -132,6 +165,7 @@ export function adminRoutes(jwks?: JWTVerifyGetKey): Hono<AdminEnv> {
     type: await getTicketType(c.env.DB, product.id),
     canned: await listCanned(c.env.DB, product.id),
     keys: await listApiKeys(c.env.DB, product.id),
+    moderation: await getModeration(c.env.DB, product.id),
   });
 
   const renderProduct = async (c: Context<AdminEnv>, product: Product, extra: Partial<ProductPageData>, status: 200 | 400) =>
@@ -222,6 +256,55 @@ export function adminRoutes(jwks?: JWTVerifyGetKey): Hono<AdminEnv> {
     if (product instanceof Response) return product;
     await revokeApiKey(c.env.DB, product.id, c.req.param('hash'));
     return c.redirect(`/admin/products/${product.id}`, 303);
+  });
+
+  app.post('/admin/products/:id/punishments', async (c) => {
+    const product = await productOr404(c, c.req.param('id'));
+    if (product instanceof Response) return product;
+    const punishments = text(await c.req.parseBody(), 'punishments');
+    return attempt(
+      async () => {
+        await savePunishments(c.env.DB, product.id, parsePunishments(punishments));
+        return c.redirect(`/admin/products/${product.id}`, 303);
+      },
+      (errors) => renderProduct(c, product, { moderationForm: { punishments }, errors: { punishments: errors } }, 400),
+    );
+  });
+
+  app.post('/admin/products/:id/report-reasons', async (c) => {
+    const product = await productOr404(c, c.req.param('id'));
+    if (product instanceof Response) return product;
+    const reasons = text(await c.req.parseBody(), 'reasons');
+    return attempt(
+      async () => {
+        await saveReportReasons(c.env.DB, product.id, parseReasons(reasons));
+        return c.redirect(`/admin/products/${product.id}`, 303);
+      },
+      (errors) => renderProduct(c, product, { moderationForm: { reasons }, errors: { reasons: errors } }, 400),
+    );
+  });
+
+  app.post('/admin/products/:id/callback', async (c) => {
+    const product = await productOr404(c, c.req.param('id'));
+    if (product instanceof Response) return product;
+    const body = await c.req.parseBody();
+    const callbackUrl = text(body, 'callbackUrl').trim();
+    const appealPageUrl = text(body, 'appealPageUrl').trim();
+    return attempt(
+      async () => {
+        await saveCallback(c.env.DB, product.id, callbackUrl, appealPageUrl);
+        return c.redirect(`/admin/products/${product.id}`, 303);
+      },
+      (errors) => renderProduct(c, product, { moderationForm: { callbackUrl, appealPageUrl }, errors: { callback: errors } }, 400),
+    );
+  });
+
+  app.post('/admin/products/:id/signing-secret', async (c) => {
+    const product = await productOr404(c, c.req.param('id'));
+    if (product instanceof Response) return product;
+    const newSecret = await rotateSecret(c.env.DB, product.id);
+    // Shown on this response only: never redirected to.
+    return renderProduct(c, product, { newSecret }, 200);
   });
 
   app.get('/admin/staff', async (c) => c.html(staffPage(await listStaff(c.env.DB), await listProducts(c.env.DB))));

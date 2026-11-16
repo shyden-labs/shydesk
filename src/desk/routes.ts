@@ -2,6 +2,7 @@ import type { Fetcher, R2Bucket } from '@cloudflare/workers-types';
 import { Hono, type Context } from 'hono';
 import { csrf } from 'hono/csrf';
 import type { JWTVerifyGetKey } from 'jose';
+import { AppealNotFound, AppealRefused, decideAppeal } from '../appeals/appeals.ts';
 import { requireStaff, scope, type Staff, type StaffEnv } from '../auth/staff.ts';
 import { sendNoReply, type Deliver, type MailEnv, type NoticeResult } from '../mail/notify.ts';
 import { getProduct, listCanned, listProducts, type Canned } from '../products.ts';
@@ -9,7 +10,16 @@ import { ticketLink } from '../tickets/create.ts';
 import { openToken } from '../tickets/seal.ts';
 import { changeStatus, type TimerEnv } from '../tickets/status.ts';
 import { streamFile } from '../uploads/serve.ts';
-import { getFile, getTicket, listTickets, markRead, unreadCount, type DeskTicket } from './queries.ts';
+import {
+  PunishmentNotFound,
+  PunishmentRefused,
+  applyPunishment,
+  findPunishment,
+  liftPunishment,
+  resendPunishment,
+} from '../punishments/apply.ts';
+import type { Fetcher as CallbackFetcher } from '../punishments/send.ts';
+import { appealPanel, getFile, getTicket, listTickets, markRead, reportPanel, unreadCount, type DeskTicket } from './queries.ts';
 import { listPage, ticketPage } from './views.ts';
 
 /**
@@ -27,6 +37,8 @@ export interface DeskBindings extends StaffEnv, TimerEnv, MailEnv {
 
 export interface DeskDeps {
   deliver: Deliver;
+  /** How punishments reach the product (shyden-labs/shydesk#60); `fetch` unless a test stands in. */
+  fetcher?: CallbackFetcher;
 }
 
 type DeskEnv = { Bindings: DeskBindings; Variables: { staff: Staff } };
@@ -82,7 +94,7 @@ export function deskRoutes(deps: DeskDeps, jwks?: JWTVerifyGetKey): Hono<DeskEnv
       inScope.length === 0
         ? { results: [] }
         : await c.env.DB.prepare(
-            `SELECT id, name FROM ticket_types WHERE product_id IN (${inScope.map(() => '?').join(', ')}) ORDER BY name`,
+            `SELECT id, name FROM ticket_types WHERE product_id IN (${inScope.map(() => '?').join(', ')})${staff.role === 'admin' ? '' : " AND kind != 'appeal'"} ORDER BY name`,
           )
             .bind(...inScope)
             .all<{ id: string; name: string }>();
@@ -94,29 +106,105 @@ export function deskRoutes(deps: DeskDeps, jwks?: JWTVerifyGetKey): Hono<DeskEnv
         status,
         typeId,
         types,
-        tickets: await listTickets(c.env.DB, inScope, { status, typeId, cursor }),
+        tickets: await listTickets(c.env.DB, { products: inScope, role: staff.role }, { status, typeId, cursor }),
         cursor,
         productNames: new Map(allProducts.map((p) => [p.id, p.name])),
       }),
     );
   });
 
-  app.get('/desk/api/unread', async (c) => c.json({ count: await unreadCount(c.env.DB, c.var.staff.email, c.var.staff.products) }));
+  app.get('/desk/api/unread', async (c) => c.json({ count: await unreadCount(c.env.DB, c.var.staff.email, c.var.staff) }));
 
   app.get('/desk/tickets/:id', async (c) => {
     const staff = c.var.staff;
-    const found = await getTicket(c.env.DB, staff.products, c.req.param('id'));
+    const found = await getTicket(c.env.DB, staff, c.req.param('id'));
     if (found === null) return c.notFound();
     await markRead(c.env.DB, staff, found.ticket.id);
     const canned: Canned[] = (await listCanned(c.env.DB, found.ticket.product_id)).filter(
       (one) => one.typeId === null || one.typeId === found.ticket.type_id,
     );
-    return c.html(ticketPage({ ...found, canned, mail: reference(c, 'mail'), error: reference(c, 'error') }));
+    return c.html(
+      ticketPage({
+        ...found,
+        canned,
+        mail: reference(c, 'mail'),
+        error: reference(c, 'error'),
+        report: await reportPanel(c.env.DB, found.ticket),
+        punishment: reference(c, 'punishment'),
+        // A rep never gets here with an appeal: getTicket leaves appeals out for them in SQL.
+        appeal: await appealPanel(c.env.DB, found.ticket),
+        appealOutcome: reference(c, 'appeal'),
+        isAdmin: staff.role === 'admin',
+      }),
+    );
+  });
+
+  // Release 2 punishments (shyden-labs/shydesk#60). Out of scope, and a rep lifting, is 404.
+  const punishmentAction = async (c: DeskContext, act: () => Promise<{ report_ticket_id: string; state: string }>, back: string) => {
+    try {
+      const done = await act();
+      return c.redirect(`/desk/tickets/${done.report_ticket_id}?punishment=${done.state}`, 303);
+    } catch (error) {
+      if (error instanceof PunishmentNotFound) return c.notFound();
+      if (error instanceof PunishmentRefused) return c.redirect(`/desk/tickets/${back}?error=${error.code}`, 303);
+      throw error;
+    }
+  };
+
+  app.post('/desk/tickets/:id/punish', async (c) => {
+    const ticketId = c.req.param('id');
+    const form = await c.req.parseBody();
+    const key = typeof form.key === 'string' ? form.key : '';
+    return punishmentAction(
+      c,
+      async () => {
+        const row = await applyPunishment(c.env, c.var.staff, ticketId, key, deps.fetcher);
+        return { report_ticket_id: row.report_ticket_id, state: row.send_state };
+      },
+      ticketId,
+    );
+  });
+
+  for (const [action, run] of [
+    ['resend', resendPunishment],
+    ['lift', liftPunishment],
+  ] as const) {
+    app.post(`/desk/punishments/:id/${action}`, async (c) => {
+      const staff = c.var.staff;
+      const found = await findPunishment(c.env.DB, staff, c.req.param('id'));
+      if (found === null) return c.notFound();
+      return punishmentAction(
+        c,
+        async () => ({ report_ticket_id: found.report_ticket_id, state: await run(c.env, staff, found.id, deps.fetcher) }),
+        found.report_ticket_id,
+      );
+    });
+  }
+
+  // Release 2 appeals (shyden-labs/shydesk#61): the admin's alone; for anyone else, 404.
+  app.post('/desk/tickets/:id/appeal', async (c) => {
+    const ticketId = c.req.param('id');
+    const form = await c.req.parseBody();
+    const outcome = form.outcome;
+    if (outcome !== 'upheld' && outcome !== 'rejected') {
+      // Said only on the admin's own appeals, so a rep still learns nothing.
+      const found = c.var.staff.role === 'admin' ? await getTicket(c.env.DB, c.var.staff, ticketId) : null;
+      if (found === null || (await appealPanel(c.env.DB, found.ticket)) === null) return c.notFound();
+      return c.redirect(`/desk/tickets/${ticketId}?error=unknown_outcome`, 303);
+    }
+    try {
+      const done = await decideAppeal(c.env, c.var.staff, ticketId, outcome, deps.fetcher);
+      return c.redirect(`/desk/tickets/${ticketId}?appeal=${done}`, 303);
+    } catch (error) {
+      if (error instanceof AppealNotFound) return c.notFound();
+      if (error instanceof AppealRefused) return c.redirect(`/desk/tickets/${ticketId}?error=${error.code}`, 303);
+      throw error;
+    }
   });
 
   app.post('/desk/tickets/:id/reply', async (c) => {
     const staff = c.var.staff;
-    const found = await getTicket(c.env.DB, staff.products, c.req.param('id'));
+    const found = await getTicket(c.env.DB, staff, c.req.param('id'));
     if (found === null) return c.notFound();
     const { ticket } = found;
     const form = await c.req.parseBody();
@@ -133,19 +221,19 @@ export function deskRoutes(deps: DeskDeps, jwks?: JWTVerifyGetKey): Hono<DeskEnv
 
   // Read only (shyden-labs/shydesk#25 AC2): no route here or anywhere changes a stored file.
   app.get('/desk/files/:id', async (c) => {
-    const file = await getFile(c.env.DB, c.var.staff.products, c.req.param('id'));
+    const file = await getFile(c.env.DB, c.var.staff, c.req.param('id'));
     const served = file === null ? null : await streamFile(c, c.env.FILES, file.r2_key, file.mime);
     return served ?? c.notFound();
   });
 
   app.get('/desk/files/:id/thumb', async (c) => {
-    const file = await getFile(c.env.DB, c.var.staff.products, c.req.param('id'));
+    const file = await getFile(c.env.DB, c.var.staff, c.req.param('id'));
     const served = file === null ? null : await streamFile(c, c.env.FILES, file.thumb_key);
     return served ?? c.notFound();
   });
 
   app.post('/desk/tickets/:id/close', async (c) => {
-    const found = await getTicket(c.env.DB, c.var.staff.products, c.req.param('id'));
+    const found = await getTicket(c.env.DB, c.var.staff, c.req.param('id'));
     if (found === null) return c.notFound();
     await changeStatus(c.env, found.ticket.id, 'closed', Date.now());
     return c.redirect(`/desk/tickets/${found.ticket.id}`, 303);

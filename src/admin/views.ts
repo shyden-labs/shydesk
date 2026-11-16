@@ -1,7 +1,7 @@
 import { html } from 'hono/html';
 import type { HtmlEscapedString } from 'hono/utils/html';
 import { overdueLine, type Overdue } from '../desk/overdue.ts';
-import type { ApiKeySummary, Canned, Product, StaffInput, SupportField, TicketType } from '../products.ts';
+import type { ApiKeySummary, Canned, Moderation, Product, PunishmentDef, StaffInput, SupportField, TicketType } from '../products.ts';
 
 /**
  * The admin settings pages (shyden-labs/shydesk#17). Plain server-rendered
@@ -176,11 +176,73 @@ export interface ProductPageData {
   supportForm?: { name: string; fields: string };
   canned: Canned[];
   keys: ApiKeySummary[];
+  /** Release 2 settings (shyden-labs/shydesk#58): never the signing secret itself. */
+  moderation: Moderation;
+  /** What was typed in a refused Release 2 form. */
+  moderationForm?: { punishments?: string; reasons?: string; callbackUrl?: string; appealPageUrl?: string };
   /** Errors, by the form they belong to. */
-  errors?: { product?: string[]; support?: string[]; canned?: string[]; keys?: string[] };
+  errors?: {
+    product?: string[];
+    support?: string[];
+    canned?: string[];
+    keys?: string[];
+    punishments?: string[];
+    reasons?: string[];
+    callback?: string[];
+  };
   /** A key just made: shown on this one page and never again. */
   newKey?: string;
+  /** A signing secret just made: shown on this one page and never again. */
+  newSecret?: string;
 }
+
+/** One punishment per line, as the punishments textarea shows it. */
+export const punishmentsToText = (list: PunishmentDef[]): string =>
+  list.map((p) => [p.key, p.label, p.duration_seconds === null ? '' : String(p.duration_seconds)].join('; ')).join('\n');
+
+/** Punishments, report reasons, the callback and its signing secret (shyden-labs/shydesk#58). */
+const moderationSection = (d: ProductPageData): Page => {
+  const id = d.product.id;
+  const m = d.moderation;
+  const f = d.moderationForm ?? {};
+  return html`<h2>Reports and punishments</h2>
+    ${errorList(d.errors?.punishments ?? [])}
+    <form method="post" action="/admin/products/${id}/punishments">
+      <label for="punishments">Punishments, one per line: key; label; seconds it lasts, blank for no end</label>
+      <textarea id="punishments" name="punishments" rows="4">${f.punishments ?? punishmentsToText(m.punishments)}</textarea>
+      <button type="submit">Save punishments</button>
+    </form>
+
+    ${errorList(d.errors?.reasons ?? [])}
+    <form method="post" action="/admin/products/${id}/report-reasons">
+      <label for="reasons">Report reasons, one per line</label>
+      <textarea id="reasons" name="reasons" rows="4">${f.reasons ?? m.reportReasons.join('\n')}</textarea>
+      <button type="submit">Save report reasons</button>
+    </form>
+
+    ${errorList(d.errors?.callback ?? [])}
+    <form method="post" action="/admin/products/${id}/callback">
+      <label for="callbackUrl">Callback URL on the product's server</label>
+      <input id="callbackUrl" name="callbackUrl" type="url" value="${f.callbackUrl ?? m.callbackUrl ?? ''}" required />
+      <label for="appealPageUrl">Appeal page URL</label>
+      <input id="appealPageUrl" name="appealPageUrl" type="url" value="${f.appealPageUrl ?? m.appealPageUrl ?? ''}" required />
+      <button type="submit">Save callback</button>
+    </form>
+
+    <h3>Signing secret</h3>
+    ${
+      d.newSecret
+        ? html`<div role="status">
+            <p>New signing secret, shown once. Put it in the product server's secret settings now; it is not shown again.</p>
+            <output id="newSecret">${d.newSecret}</output>
+          </div>`
+        : ''
+    }
+    <p>${m.hasSecret ? 'A signing secret is set.' : 'No signing secret yet.'}</p>
+    <form method="post" action="/admin/products/${id}/signing-secret">
+      <button type="submit">${m.hasSecret ? 'Rotate signing secret' : 'Create signing secret'}</button>
+    </form>`;
+};
 
 /** A product's settings: the product, its support fields, canned replies and API keys. */
 export const productPage = (d: ProductPageData): Page => {
@@ -251,7 +313,9 @@ export const productPage = (d: ProductPageData): Page => {
         <label for="keyLabel">Label</label>
         <input id="keyLabel" name="label" required />
         <button type="submit">Create API key</button>
-      </form>`,
+      </form>
+
+      ${moderationSection(d)}`,
   );
 };
 

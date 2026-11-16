@@ -34,4 +34,20 @@ describe('hit', () => {
     expect(statements[1]?.sql).toMatch(/INSERT INTO counters[\s\S]*ON CONFLICT[\s\S]*RETURNING value/);
     expect(statements[1]?.values).toEqual(['contact:ip:203.0.113.9', NOW, NOW - 3_600_000]);
   });
+
+  // Reports count per minute (shyden-labs/shydesk#59) while every other key counts per
+  // hour: a one-minute caller must not delete an hour key's live row, so the sweep
+  // always waits a whole hour, and only the count uses the caller's own window.
+  it("sweeps only rows an hour old for a one-minute caller, and counts that caller's minute", async () => {
+    const { db, statements } = standInDb(() => [{ value: 1 }]);
+    await hit(db, 'reports:shytalk', 120, 60, NOW);
+    expect(statements[0]?.values).toEqual([NOW - 3_600_000]);
+    expect(statements[1]?.values).toEqual(['reports:shytalk', NOW, NOW - 60_000]);
+  });
+
+  it('refuses a window longer than the hour the sweep waits', async () => {
+    const { db, statements } = standInDb(() => [{ value: 1 }]);
+    await expect(hit(db, 'k', 1, 3601, NOW)).rejects.toThrow(RangeError);
+    expect(statements).toEqual([]);
+  });
 });

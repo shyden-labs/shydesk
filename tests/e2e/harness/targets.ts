@@ -506,6 +506,22 @@ export function steadyLongEnough(steady: Steady, now: number): boolean {
 }
 
 /**
+ * Why a control never became pressable: it stood still outside the window, or
+ * it was still moving. One message once said "never stopped moving" for both,
+ * with no positions (Safari, run 43815980050, shyden-labs/shydesk#163).
+ */
+export function unsteadyReason(label: string, steady: Steady, viewport: { width: number; height: number }, now: number): string {
+  const b = steady.box;
+  const window = `${String(viewport.width)} x ${String(viewport.height)} window`;
+  const at = `drawn at ${String(Math.round(b.x))}, ${String(Math.round(b.y))} (${String(Math.round(b.width))} x ${String(Math.round(b.height))})`;
+  const still = now - steady.since;
+  const delta = scrollNeeded(b, viewport);
+  if (delta !== 0)
+    return `"${label}" stood still for ${String(still)} ms outside the ${window}, ${at}: it needed ${String(delta)} px more scroll`;
+  return `"${label}" never stopped moving inside the ${window}: last ${at}, there for ${String(still)} ms of the ${String(STEADY_MS)} needed`;
+}
+
+/**
  * A real finger swipe up the middle of the page area, from 70% to 30% of its
  * height, which scrolls the page down by about 40% of that area. A phone's
  * native tree leaves out controls drawn below the screen, so a control that is

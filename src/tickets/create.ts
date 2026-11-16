@@ -1,4 +1,4 @@
-import type { D1Database } from '@cloudflare/workers-types';
+import type { D1Database, D1PreparedStatement } from '@cloudflare/workers-types';
 import { sealToken } from './seal.ts';
 import { hashKey } from '../products.ts';
 
@@ -50,9 +50,16 @@ export async function refuseUnusable(db: D1Database, productId: string, ids: str
   if (results.length !== ids.length) throw new AttachmentError('An attachment could not be found. Upload it again.');
 }
 
-export async function createTicket(db: D1Database, t: NewTicket): Promise<{ id: string; token: string }> {
+/**
+ * The statements that write a new ticket, for a caller that adds its own to
+ * the same batch (an appeal's row, shyden-labs/shydesk#61). Attachments are
+ * the caller's to check first with `refuseUnusable`.
+ */
+export async function ticketStatements(
+  db: D1Database,
+  t: NewTicket,
+): Promise<{ id: string; token: string; statements: D1PreparedStatement[] }> {
   const attachmentIds = [...new Set(t.attachmentIds)];
-  if (attachmentIds.length > 0) await refuseUnusable(db, t.productId, attachmentIds);
   const id = crypto.randomUUID();
   const messageId = crypto.randomUUID();
   const token = newToken();
@@ -89,6 +96,13 @@ export async function createTicket(db: D1Database, t: NewTicket): Promise<{ id: 
         .bind(id, messageId, ...attachmentIds, t.productId),
     );
   }
+  return { id, token, statements };
+}
+
+export async function createTicket(db: D1Database, t: NewTicket): Promise<{ id: string; token: string }> {
+  const attachmentIds = [...new Set(t.attachmentIds)];
+  if (attachmentIds.length > 0) await refuseUnusable(db, t.productId, attachmentIds);
+  const { id, token, statements } = await ticketStatements(db, { ...t, attachmentIds });
   await db.batch(statements);
   return { id, token };
 }

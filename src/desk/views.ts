@@ -1,7 +1,16 @@
 import { html } from 'hono/html';
 import type { HtmlEscapedString } from 'hono/utils/html';
 import type { Canned } from '../products.ts';
-import { PAGE_SIZE, fillCanned, type DeskAttachment, type DeskMessage, type DeskTicket } from './queries.ts';
+import type { PunishmentRow } from '../db/types.ts';
+import {
+  PAGE_SIZE,
+  fillCanned,
+  type AppealPanel,
+  type DeskAttachment,
+  type DeskMessage,
+  type DeskTicket,
+  type ReportPanel,
+} from './queries.ts';
 
 /**
  * The staff desk's pages (shyden-labs/shydesk#24). Server-rendered HTML: every
@@ -17,6 +26,30 @@ const MAIL_LINES: Record<string, string> = {
   failed: 'Reply saved, but the email could not be sent. The customer will see it on their private link.',
   'share-used-up': "Reply saved, but this product's monthly email share is used up. The customer will see it on their private link.",
   'no-link': 'Reply saved, but this ticket has no private link on record, so no email went.',
+};
+
+/** What the page says after a punishment was sent, or why an action was refused (shyden-labs/shydesk#60). */
+const PUNISHMENT_LINES: Record<string, string> = {
+  applied: 'The product applied it.',
+  failed: 'The punishment was recorded, but the product did not apply it.',
+};
+const PUNISHMENT_ERRORS: Record<string, string> = {
+  unknown_punishment: "Pick one of the product's punishments.",
+  no_token_key: 'Punishments cannot be sent: TICKET_TOKEN_KEY is not set on this ShyDesk.',
+  nothing_to_send: 'There is nothing to send again.',
+  already_lifted: 'That punishment is already lifted.',
+};
+
+/** What the page says after an appeal was decided, or why a decision was refused (shyden-labs/shydesk#61). */
+const APPEAL_LINES: Record<string, string> = {
+  applied: 'Appeal upheld: the product lifted the punishment.',
+  failed: 'Appeal upheld and the punishment lifted here, but the product did not apply the lift. Send it again from the report.',
+  upheld: 'Appeal upheld. The punishment was already lifted.',
+  rejected: 'Appeal rejected. No further appeal is taken.',
+};
+const APPEAL_ERRORS: Record<string, string> = {
+  already_decided: 'This appeal was already decided.',
+  unknown_outcome: 'Choose to uphold or reject the appeal.',
 };
 
 const when = (ms: number): string => new Date(ms).toISOString().slice(0, 16).replace('T', ' ');
@@ -152,7 +185,7 @@ export const listPage = (d: ListData): Page =>
         d.tickets.length === 0
           ? html`<p>No tickets here.</p>`
           : html`<div class="table">
-              <table>
+              <table aria-label="Ticket list">
                 <thead>
                   <tr>
                     <th scope="col">Subject</th>
@@ -214,10 +247,102 @@ export interface TicketData {
   canned: Canned[];
   mail: string | undefined;
   error: string | undefined;
+  /** A report's details, history and punishments; absent on other tickets. */
+  report?: ReportPanel | null;
+  /** The outcome of the last punishment sent, from the redirect. */
+  punishment?: string | undefined;
+  /** An appeal's decision and the punishment it is about; only ever given to the admin. */
+  appeal?: AppealPanel | null;
+  /** The outcome of the last appeal decision, from the redirect. */
+  appealOutcome?: string | undefined;
+  isAdmin?: boolean;
 }
 
+const stateLine = (p: PunishmentRow): string => {
+  const sent = `${p.label}: ${p.send_state}${p.send_error === null ? '' : ` (${p.send_error})`}`;
+  if (p.lifted_at === null) return sent;
+  const lift = `lift ${p.lift_state ?? 'sending'}${p.lift_error === null ? '' : ` (${p.lift_error})`}`;
+  return `${sent}, lifted by ${p.lifted_by ?? ''}, ${lift}`;
+};
+
+/** The report panel: what was reported, the subject's history here, and the punishments. */
+const reportSection = (r: ReportPanel, ticketId: string, isAdmin: boolean): Page =>
+  html`<section aria-label="Report">
+    <h2>Report</h2>
+    <p>Reported by ${r.reporter_id} · ${r.item_kind} ${r.item_id} · About ${r.subject_user_id} · ${r.reason}</p>
+    <h3>Earlier in this product</h3>
+    ${
+      r.history.reports.length === 0 && r.history.punishments.length === 0
+        ? html`<p>Nothing earlier.</p>`
+        : html`<ul>
+            ${r.history.reports.map((h) => html`<li>Report: ${h.reason} · ${h.status} · ${when(h.created_at)}</li>`)}
+            ${r.history.punishments.map((h) => html`<li>Punishment: ${h.label} · ${h.send_state}${h.lifted_at === null ? '' : ' · lifted'}</li>`)}
+          </ul>`
+    }
+    <h3>Punishments</h3>
+    <ul>
+      ${r.punishments.map(
+        (p) =>
+          html`<li>
+            ${stateLine(p)}
+            ${
+              (p.send_state === 'failed' && p.lifted_at === null) || (isAdmin && p.lift_state === 'failed')
+                ? html`<form method="post" action="/desk/punishments/${p.id}/resend" style="display:inline">
+                    <button type="submit">Send again</button>
+                  </form>`
+                : ''
+            }
+            ${
+              isAdmin && p.lifted_at === null
+                ? html`<form method="post" action="/desk/punishments/${p.id}/lift" style="display:inline">
+                    <button type="submit">Lift</button>
+                  </form>`
+                : ''
+            }
+          </li>`,
+      )}
+    </ul>
+    ${
+      r.choices.length === 0
+        ? html`<p>This product has no punishments set.</p>`
+        : html`<form method="post" action="/desk/tickets/${ticketId}/punish">
+            <label for="punishmentKey">Punishment</label>
+            <select id="punishmentKey" name="key">
+              ${r.choices.map((p) => html`<option value="${p.key}">${p.label}</option>`)}
+            </select>
+            <button type="submit">Apply punishment</button>
+          </form>`
+    }
+  </section>`;
+
+const DECIDED: Record<string, string> = { upheld: 'Upheld', rejected: 'Rejected' };
+
+/** The appeal panel: the punishment appealed, and the decision or the buttons to make it. */
+const appealSection = (a: AppealPanel, ticketId: string): Page =>
+  html`<section aria-label="Appeal">
+    <h2>Appeal of ${a.label}</h2>
+    <p><a href="/desk/tickets/${a.report_ticket_id}">Open the report</a></p>
+    ${
+      a.state === 'open'
+        ? html`<p>Waiting for a decision.</p>
+            <form method="post" action="/desk/tickets/${ticketId}/appeal">
+              <button type="submit" name="outcome" value="upheld">Uphold and lift</button>
+              <button type="submit" name="outcome" value="rejected">Reject</button>
+            </form>`
+        : html`<p>${DECIDED[a.state] ?? a.state} by ${a.decided_by ?? ''}, ${a.decided_at === null ? '' : when(a.decided_at)}.</p>`
+    }
+  </section>`;
+
 export const ticketPage = (d: TicketData): Page => {
-  const line = d.error === 'empty' ? 'Enter a reply.' : d.mail === undefined ? undefined : MAIL_LINES[d.mail];
+  // The first that applies: an empty reply, a refused punishment action, a punishment sent, a reply's email.
+  const line =
+    d.error === 'empty'
+      ? 'Enter a reply.'
+      : (PUNISHMENT_ERRORS[d.error ?? ''] ??
+        APPEAL_ERRORS[d.error ?? ''] ??
+        PUNISHMENT_LINES[d.punishment ?? ''] ??
+        APPEAL_LINES[d.appealOutcome ?? ''] ??
+        MAIL_LINES[d.mail ?? '']);
   const values = { customer_email: d.ticket.customer_email, ticket_subject: d.ticket.subject };
   const order = shownOrder(d.messages, d.attachments);
   return layout(
@@ -232,6 +357,8 @@ export const ticketPage = (d: TicketData): Page => {
               <dd>${value}</dd>`,
         )}
       </dl>
+      ${d.report ? reportSection(d.report, d.ticket.id, d.isAdmin === true) : ''}
+      ${d.appeal && d.isAdmin === true ? appealSection(d.appeal, d.ticket.id) : ''}
       <section role="log" aria-label="Conversation">
         ${d.messages.map(
           (m) =>

@@ -7,7 +7,9 @@ import {
   wranglerDevArgs,
   NON_PROD_SHYDESK,
   SEEDED_TICKET_TOKEN,
+  seededAppealToken,
 } from '../../tests/e2e/harness/local-shydesk.ts';
+import { TARGETS } from '../../tests/e2e/harness/targets.ts';
 
 // The e2e suite runs this branch's ShyDesk locally (shyden-labs/shydesk#19):
 // a demo product allowed on the suite's own origin, one allowed only
@@ -32,6 +34,22 @@ describe('seedSql', () => {
     expect(sql).toContain(`'${await hashKey(SEEDED_TICKET_TOKEN)}'`);
     expect(sql).toMatch(/INSERT INTO attachments[^;]*'deleted'/);
     expect(sql).not.toContain(SEEDED_TICKET_TOKEN);
+  });
+
+  // shyden-labs/shydesk#61: each target appeals its own punishment, as every target runs against one seeded ShyDesk.
+  it('seeds a report and one active, unappealed punishment per target, found by its appeal token alone', async () => {
+    expect(sql).toMatch(/INSERT INTO ticket_types[^;]*'demo:report', 'demo', 'report'/);
+    expect(sql).toMatch(/INSERT INTO tickets[^;]*'seeded-report', 'demo', 'demo:report'/);
+    for (const target of TARGETS) {
+      const token = seededAppealToken(target);
+      expect(token).toBe(`e2e-appeal-${target}`);
+      expect(sql).toMatch(
+        new RegExp(`INSERT INTO punishments[^;]*'seeded-ban-${target}', 'demo', 'seeded-report'[^;]*'${await hashKey(token)}'`),
+      );
+      expect(sql).not.toContain(token);
+    }
+    expect(sql).not.toContain('INSERT INTO appeals');
+    expect(sql).not.toMatch(/lifted_at/);
   });
 
   it('allows the demo product only on the suite origin, with its ticket page there', () => {

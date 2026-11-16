@@ -7,6 +7,7 @@
  * served with its piece pointed at this ShyDesk.
  */
 import { createHash } from 'node:crypto';
+import { TARGETS, type Target } from './targets.ts';
 
 /** The ShyDesk the demo page loads the piece from when deployed. */
 export const NON_PROD_SHYDESK = 'https://shydesk.shydesk-non-prod.workers.dev';
@@ -36,6 +37,11 @@ export function shydeskOrigin(suiteOrigin: string): string {
   return url.origin;
 }
 
+/** The ban notice token of the seeded punishment `target` appeals (shyden-labs/shydesk#61): one each, as all share one ShyDesk. */
+const sha256 = (text: string): string => createHash('sha256').update(text).digest('hex');
+
+export const seededAppealToken = (target: Target): string => `e2e-appeal-${target}`;
+
 /** The seed for the local D1, after the migrations; the demo product is also allowed on `otherOrigins`. */
 export function seedSql(suiteOrigin: string, otherOrigins: readonly string[] = []): string {
   const allowed = [...new Set([suiteOrigin, ...otherOrigins])];
@@ -49,9 +55,15 @@ export function seedSql(suiteOrigin: string, otherOrigins: readonly string[] = [
     product('demo-elsewhere', 'Elsewhere', ['https://elsewhere.example']),
     `INSERT INTO ticket_types (id, product_id, kind, name, fields_json, reasons_json, enabled) VALUES ('demo:support', 'demo', 'support', 'Support', '${fields}', '[]', 1);`,
     `INSERT INTO ticket_types (id, product_id, kind, name, fields_json, reasons_json, enabled) VALUES ('demo-elsewhere:support', 'demo-elsewhere', 'support', 'Support', '[]', '[]', 1);`,
-    `INSERT INTO tickets (id, product_id, type_id, status, customer_email, subject, category, fields_json, token_hash, created_at, updated_at, seq) VALUES ('seeded', 'demo', 'demo:support', 'closed', 'e2e@example.com', 'Seeded', 'bug', '{}', '${createHash('sha256').update(SEEDED_TICKET_TOKEN).digest('hex')}', 0, 0, 0);`,
+    `INSERT INTO tickets (id, product_id, type_id, status, customer_email, subject, category, fields_json, token_hash, created_at, updated_at, seq) VALUES ('seeded', 'demo', 'demo:support', 'closed', 'e2e@example.com', 'Seeded', 'bug', '{}', '${sha256(SEEDED_TICKET_TOKEN)}', 0, 0, 0);`,
     `INSERT INTO messages (id, ticket_id, author, staff_email, body, created_at) VALUES ('seeded-message', 'seeded', 'customer', NULL, 'See the attached photo.', 0);`,
     `INSERT INTO attachments (id, product_id, ticket_id, message_id, r2_key, thumb_key, mime, bytes, state, created_at) VALUES ('seeded-photo', 'demo', 'seeded', 'seeded-message', 'gone', 'gone-thumb', 'image/jpeg', 1, 'deleted', 0);`,
+    `INSERT INTO ticket_types (id, product_id, kind, name, fields_json, reasons_json, enabled) VALUES ('demo:report', 'demo', 'report', 'Report', '[]', '["Cheating"]', 1);`,
+    `INSERT INTO tickets (id, product_id, type_id, status, customer_email, subject, category, fields_json, token_hash, created_at, updated_at, seq) VALUES ('seeded-report', 'demo', 'demo:report', 'closed', '', 'Cheating: player p-2', 'Cheating', '{}', '${sha256('e2e-unused-report-token')}', 0, 0, 0);`,
+    ...TARGETS.map(
+      (target) =>
+        `INSERT INTO punishments (id, product_id, report_ticket_id, subject_user_id, punishment_key, label, duration_seconds, applied_by, created_at, send_state, appeal_token_hash) VALUES ('seeded-ban-${target}', 'demo', 'seeded-report', 'p-2', 'ban-7d', 'Ban 7 days', 604800, '${E2E_REP}', 0, 'applied', '${sha256(seededAppealToken(target))}');`,
+    ),
     `INSERT INTO staff (email, role, created_at) VALUES ('${E2E_REP}', 'rep', 0);`,
     `INSERT INTO staff_products (email, product_id) VALUES ('${E2E_REP}', 'demo'), ('${E2E_REP}', 'demo-elsewhere');`,
     `INSERT INTO canned_replies (id, product_id, type_id, name, body) VALUES ('thanks', 'demo', NULL, 'Thanks', 'Hello {{customer_email}}, about {{ticket_subject}}.');`,

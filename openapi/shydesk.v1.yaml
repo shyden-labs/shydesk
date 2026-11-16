@@ -86,6 +86,240 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /api/v1/products/{product}/upload-grants:
+    post:
+      operationId: createUploadGrant
+      summary: A short-lived grant for the product's app to upload report evidence.
+      description: >-
+        The product's server asks for a grant and hands it to its app, which
+        uploads the files straight to ShyDesk through the /support-api/uploads
+        routes, sending `Authorization: Grant <grant>` in place of an allowed
+        origin. Each upload started uses one of the grant's files; it expires
+        15 minutes after it was made. Only its hash is stored.
+      parameters:
+        - name: product
+          in: path
+          required: true
+          description: The product id the key was made for.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UploadGrantRequest'
+      responses:
+        '201':
+          description: The grant, shown once.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadGrant'
+        '400':
+          description: '`count` is not a whole number from 1 to 10.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: No key, or the key is unknown or revoked.
+          headers:
+            WWW-Authenticate:
+              schema:
+                type: string
+                const: Bearer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: The key belongs to another product.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/products/{product}/reports:
+    post:
+      operationId: createReport
+      summary: Sends a user's report from the product's server.
+      description: >-
+        Sent by the product's server, never its app, after it has checked the
+        reporter's session. ShyDesk takes `reporter_id` as the server asserts it
+        and sends no email. The reporter is told "received" by the product and
+        nothing more. At most 120 reports a minute per product.
+      parameters:
+        - name: product
+          in: path
+          required: true
+          description: The product id the key was made for.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewReport'
+      responses:
+        '202':
+          description: Received.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportAccepted'
+        '400':
+          description: The body is not a report this schema allows.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: No key, or the key is unknown or revoked.
+          headers:
+            WWW-Authenticate:
+              schema:
+                type: string
+                const: Bearer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: The key belongs to another product.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: >-
+            `unknown_reason`: the reason is not one of the product's report
+            reasons. `unknown_upload`: an upload is not a finished, unused upload
+            of this product.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: '`rate_limited`: over 120 reports in a minute.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/products/{product}/reports/{id}:
+    get:
+      operationId: getReport
+      summary: One report, with the reported user's earlier reports and punishments in this product.
+      parameters:
+        - name: product
+          in: path
+          required: true
+          description: The product id the key was made for.
+          schema:
+            type: string
+        - name: id
+          in: path
+          required: true
+          description: The `report_id` the report was received under.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The report and its history.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportView'
+        '401':
+          description: No key, or the key is unknown or revoked.
+          headers:
+            WWW-Authenticate:
+              schema:
+                type: string
+                const: Bearer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: The key belongs to another product, or there is no such report of this product.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/products/{product}/appeals:
+    post:
+      operationId: createAppeal
+      summary: Sends a punished user's appeal from inside the product.
+      description: >-
+        Sent by the product's server, never its app, naming the punishment it
+        shows the user. One appeal per punishment: a second, or one after a
+        rejected appeal, is refused, and so is an appeal on a lifted
+        punishment. The appellant follows the appeal on the private ticket
+        link answered here. At most 120 appeals a minute per product.
+      parameters:
+        - name: product
+          in: path
+          required: true
+          description: The product id the key was made for.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewProductAppeal'
+      responses:
+        '201':
+          description: The appeal was made.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppealMade'
+        '400':
+          description: '`bad_request`: the body is not an appeal this schema allows.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: No key, or the key is unknown or revoked.
+          headers:
+            WWW-Authenticate:
+              schema:
+                type: string
+                const: Bearer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: '`not_found`: no such punishment in this product, or the key belongs to another product.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: >-
+            `already_appealed`: this punishment was appealed already, whatever
+            the outcome. `lifted`: the punishment is no longer active.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: '`rate_limited`: over 120 appeals in a minute.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: '`unavailable`: this ShyDesk cannot save appeals right now.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /support-api/config:
     get:
       operationId: getSupportConfig
@@ -248,7 +482,10 @@ paths:
       summary: Starts an attachment upload in parts.
       description: >-
         No per-file size limit: only the free storage can refuse it here. Limited
-        to 30 starts per network address and 300 per product per hour.
+        to 30 starts per network address and 300 per product per hour. A
+        product's app may send `Authorization: Grant <grant>` (from
+        /api/v1/products/{product}/upload-grants) in place of an allowed origin;
+        each start uses one of its files, and a used up or expired grant gets 404.
       security: []
       parameters:
         - $ref: '#/components/parameters/ProductQuery'
@@ -336,6 +573,116 @@ paths:
         '411': { $ref: '#/components/responses/UploadError' }
         '413': { $ref: '#/components/responses/UploadError' }
         '422': { $ref: '#/components/responses/UploadError' }
+  /support-api/appeals:
+    get:
+      operationId: readAppeal
+      summary: The punishment an appeal link is for, and whether it can be appealed.
+      description: >-
+        Opened by the token in the ban notice link's fragment
+        (`#appeal=<token>`), sent only in the `ShyDesk-Appeal` header.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/ProductQuery'
+        - $ref: '#/components/parameters/AppealToken'
+      responses:
+        '200':
+          description: The punishment and whether it can still be appealed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppealView'
+        '404':
+          description: The link is not valid for this product.
+    post:
+      operationId: makeAppeal
+      summary: An appeal from the ban notice link.
+      description: >-
+        One appeal per punishment, as for the in-product appeal. At most 20
+        per network address per hour. The private ticket link is answered and
+        emailed to the appellant.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/ProductQuery'
+        - $ref: '#/components/parameters/AppealToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewAppeal'
+      responses:
+        '201':
+          description: The appeal was made.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [ticket_url, email_sent]
+                properties:
+                  ticket_url: { type: string }
+                  email_sent: { type: boolean }
+        '400':
+          description: The appeal could not be used; the answer says why, field by field.
+        '404':
+          description: The link is not valid for this product.
+        '409':
+          description: '`already_appealed` or `lifted`, as for the in-product appeal.'
+        '429':
+          description: Too many appeals for now.
+        '503':
+          description: Appeals cannot be taken right now.
+webhooks:
+  punishment:
+    post:
+      operationId: punishmentCallback
+      summary: ShyDesk tells the product's server to apply or lift a punishment.
+      description: >-
+        Sent to the product's callback URL, set on the ShyDesk admin screen, when
+        a rep applies one of the product's punishments to a report, when the
+        admin lifts one, and when a person presses "Send again" after a failed
+        send. To verify it: read `ShyDesk-Timestamp` (Unix seconds) and
+        `ShyDesk-Signature`; refuse a timestamp more than 300 seconds from your
+        clock; compute `v1=` and the lowercase hex HMAC-SHA256 of
+        `timestamp + "." + raw body`, keyed by the product's signing secret as
+        UTF-8 text, and compare it in constant time (ShyDesk's own `verify` in
+        src/punishments/sign.ts does exactly this). Replays: the same
+        `punishment_id` and `type` may arrive again; apply it once and answer the
+        first result again. ShyDesk waits 10 seconds, never retries by itself,
+        and shows the outcome on the ticket. `appeal_url`, when the product has
+        an appeal page, is that page with the appeal token in the fragment
+        (`#appeal=<token>`), to show in the ban notice.
+      parameters:
+        - name: ShyDesk-Timestamp
+          in: header
+          required: true
+          schema: { type: string, pattern: '^[0-9]+$' }
+        - name: ShyDesk-Signature
+          in: header
+          required: true
+          schema: { type: string, pattern: '^v1=[0-9a-f]{64}$' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PunishmentCallback'
+      responses:
+        '200':
+          description: Applied. Anything but `applied` true is shown as failed.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [applied]
+                properties:
+                  applied: { type: boolean }
+        default:
+          description: Not applied; `error` is shown on the ticket next to the status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 components:
   parameters:
     ProductQuery:
@@ -350,6 +697,13 @@ components:
       type: http
       scheme: bearer
       description: The product's API key, made on the ShyDesk admin screen. Only its hash is stored.
+    AppealToken:
+      name: ShyDesk-Appeal
+      in: header
+      required: true
+      description: The token from the ban notice link's fragment.
+      schema:
+        type: string
   responses:
     UploadOk:
       description: Done.
@@ -545,6 +899,156 @@ components:
             properties:
               n: { type: integer, minimum: 1 }
               etag: { type: string }
+    UploadGrantRequest:
+      type: object
+      additionalProperties: false
+      required: [count]
+      properties:
+        count:
+          type: integer
+          minimum: 1
+          maximum: 10
+          description: How many files the app may upload with it.
+    UploadGrant:
+      type: object
+      additionalProperties: false
+      required: [grant, expires_at]
+      properties:
+        grant:
+          type: string
+          pattern: '^[A-Za-z0-9_-]{43}$'
+        expires_at:
+          type: integer
+          description: Unix time in milliseconds when it stops being accepted.
+    ReportItem:
+      type: object
+      additionalProperties: false
+      required: [kind, id]
+      properties:
+        kind: { type: string, minLength: 1, maxLength: 200, description: 'What was reported: player, room, message...' }
+        id: { type: string, minLength: 1, maxLength: 200 }
+    NewReport:
+      type: object
+      additionalProperties: false
+      required: [reporter_id, item, subject_user_id, reason]
+      properties:
+        reporter_id: { type: string, minLength: 1, maxLength: 200, description: 'The reporting user, as the product server asserts it.' }
+        item: { $ref: '#/components/schemas/ReportItem' }
+        subject_user_id: { type: string, minLength: 1, maxLength: 200, description: 'The user the report is about.' }
+        reason: { type: string, minLength: 1, maxLength: 200, description: "One of the product's report reasons, set on the admin screen." }
+        note: { type: string, maxLength: 5000 }
+        context:
+          type: object
+          description: What the app fills in itself; at most 16000 characters as JSON.
+        upload_ids:
+          type: array
+          maxItems: 10
+          items: { type: string, minLength: 1, maxLength: 200 }
+          description: Finished uploads made under this product's upload grants.
+    ReportAccepted:
+      type: object
+      additionalProperties: false
+      required: [report_id]
+      properties:
+        report_id: { type: string }
+    ReportView:
+      type: object
+      additionalProperties: false
+      required: [report, history]
+      properties:
+        report:
+          type: object
+          additionalProperties: false
+          required: [id, status, created_at, reporter_id, item, subject_user_id, reason, note, context]
+          properties:
+            id: { type: string }
+            status: { type: string, enum: [open, waiting, closed] }
+            created_at: { type: integer }
+            reporter_id: { type: string }
+            item: { $ref: '#/components/schemas/ReportItem' }
+            subject_user_id: { type: string }
+            reason: { type: string }
+            note: { type: [string, 'null'] }
+            context: { type: object }
+        history:
+          type: object
+          additionalProperties: false
+          required: [reports, punishments]
+          description: The same user's other reports and punishments in this product only, newest first, 50 of each.
+          properties:
+            reports:
+              type: array
+              maxItems: 50
+              items:
+                type: object
+                additionalProperties: false
+                required: [ticket_id, reason, created_at, status]
+                properties:
+                  ticket_id: { type: string }
+                  reason: { type: string }
+                  created_at: { type: integer }
+                  status: { type: string, enum: [open, waiting, closed] }
+            punishments:
+              type: array
+              maxItems: 50
+              items:
+                type: object
+                additionalProperties: false
+                required: [id, label, created_at, send_state, lifted_at]
+                properties:
+                  id: { type: string }
+                  label: { type: string }
+                  created_at: { type: integer }
+                  send_state: { type: string, enum: [sending, applied, failed] }
+                  lifted_at: { type: [integer, 'null'] }
+    PunishmentCallback:
+      type: object
+      additionalProperties: false
+      required: [type, punishment_id, product, subject_user_id, punishment, report_ticket_id, issued_at]
+      properties:
+        type: { type: string, enum: [punishment.apply, punishment.lift] }
+        punishment_id: { type: string, description: "ShyDesk's id for this punishment: the idempotency key." }
+        product: { type: string }
+        subject_user_id: { type: string }
+        punishment:
+          type: object
+          additionalProperties: false
+          required: [key, label, duration_seconds]
+          properties:
+            key: { type: string }
+            label: { type: string }
+            duration_seconds: { type: [integer, 'null'], description: 'Null for a punishment with no end.' }
+        report_ticket_id: { type: string }
+        appeal_url: { type: string, description: 'Only on punishment.apply, when the product has an appeal page.' }
+        issued_at: { type: integer, description: 'When the punishment was applied, Unix milliseconds.' }
+    NewAppeal:
+      type: object
+      required: [email, message]
+      properties:
+        email: { type: string, maxLength: 254 }
+        message: { type: string, minLength: 1, maxLength: 10000 }
+    NewProductAppeal:
+      type: object
+      required: [punishment_id, email, message]
+      properties:
+        punishment_id: { type: string, description: "ShyDesk's id for the punishment, as sent in its callback." }
+        email: { type: string, maxLength: 254 }
+        message: { type: string, minLength: 1, maxLength: 10000 }
+    AppealMade:
+      type: object
+      additionalProperties: false
+      required: [ticket_url]
+      properties:
+        ticket_url: { type: string, description: "The appellant's private ticket link." }
+    AppealView:
+      type: object
+      additionalProperties: false
+      required: [label, created_at, can_appeal]
+      properties:
+        label: { type: string }
+        created_at: { type: integer, description: 'When the punishment was applied, Unix milliseconds.' }
+        can_appeal: { type: boolean }
+        reason: { type: string, enum: [already_appealed, lifted], description: 'Why no appeal is taken, when it is not.' }
     FieldErrors:
       type: object
       additionalProperties: false
