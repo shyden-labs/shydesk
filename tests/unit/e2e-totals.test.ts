@@ -76,6 +76,10 @@ describe('suiteCount', () => {
     ).toBe(3);
   });
 
+  it('counts a spec file with no tests as none', () => {
+    expect(suiteCount([{ name: 'd.e2e.ts', text: "describe('d', () => {});\n" }])).toBe(0);
+  });
+
   it('refuses a spec file whose tests cannot be counted by reading it, naming the file', () => {
     expect(() => suiteCount([{ name: 'c.e2e.ts', text: "  it.each([1, 2])('x %s', async () => {});\n" }])).toThrow(
       'c.e2e.ts: it.each cannot be counted by reading the file; write one it() per case',
