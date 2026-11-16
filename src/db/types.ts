@@ -1,4 +1,5 @@
-// One row type per table in migrations/0001_release_1.sql (shyden-labs/shydesk#15).
+// One row type per table in migrations/0001_release_1.sql (shyden-labs/shydesk#15),
+// with the columns that 0002_upload_received_bytes.sql and 0003_ticket_token_sealed.sql add.
 // Times are Unix epoch milliseconds; *_json columns hold JSON text.
 
 export type TicketKind = 'support' | 'report' | 'appeal';
@@ -54,6 +55,8 @@ export interface TicketRow {
   updated_at: number;
   closed_at: number | null;
   seq: number;
+  // migrations/0003_ticket_token_sealed.sql: the token, encrypted; null on tickets from before it.
+  token_sealed: string | null;
 }
 
 export interface MessageRow {
@@ -79,6 +82,8 @@ export interface AttachmentRow {
   state: AttachmentState;
   created_at: number;
   deleted_at: number | null;
+  // migrations/0002_upload_received_bytes.sql: bytes a pending upload has sent so far.
+  received_bytes: number;
 }
 
 export interface CannedReplyRow {
