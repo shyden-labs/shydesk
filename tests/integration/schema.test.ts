@@ -34,6 +34,10 @@ describe('tables', () => {
       'attachments_keep_days',
       'text_keep_days',
       'created_at',
+      'punishments_json',
+      'callback_url',
+      'callback_secret',
+      'appeal_page_url',
     ]);
   });
   it('ticket_types', async () => {
@@ -96,6 +100,73 @@ describe('tables', () => {
   it('reads', async () => {
     expect(await columnsOf('reads')).toEqual(['email', 'ticket_id', 'read_seq']);
   });
+  // Release 2 (shyden-labs/shydesk#57).
+  it('reports', async () => {
+    expect(await columnsOf('reports')).toEqual([
+      'ticket_id',
+      'product_id',
+      'reporter_id',
+      'item_kind',
+      'item_id',
+      'subject_user_id',
+      'reason',
+      'context_json',
+    ]);
+  });
+  it('punishments', async () => {
+    expect(await columnsOf('punishments')).toEqual([
+      'id',
+      'product_id',
+      'report_ticket_id',
+      'subject_user_id',
+      'punishment_key',
+      'label',
+      'duration_seconds',
+      'applied_by',
+      'created_at',
+      'send_state',
+      'send_error',
+      'appeal_token_hash',
+      'lifted_at',
+      'lifted_by',
+      'lift_state',
+      'lift_error',
+    ]);
+  });
+  it('appeals', async () => {
+    expect(await columnsOf('appeals')).toEqual(['punishment_id', 'ticket_id', 'state', 'decided_by', 'decided_at']);
+  });
+  it('legal_holds', async () => {
+    expect(await columnsOf('legal_holds')).toEqual([
+      'id',
+      'ticket_id',
+      'attachment_id',
+      'reason',
+      'csam',
+      'note',
+      'placed_by',
+      'placed_at',
+      'basis_at',
+      'renewals',
+      'order_pending',
+      'no_report_reason',
+      'lifted_at',
+      'lifted_by',
+    ]);
+  });
+  it('legal_hold_events', async () => {
+    expect(await columnsOf('legal_hold_events')).toEqual(['hold_id', 'at', 'by', 'action', 'detail']);
+  });
+  it('authority_reports', async () => {
+    expect(await columnsOf('authority_reports')).toEqual([
+      'ticket_id',
+      'reported_to',
+      'reported_at',
+      'reference',
+      'recorded_by',
+      'recorded_at',
+    ]);
+  });
 });
 
 describe('indexes', () => {
@@ -141,5 +212,33 @@ describe('CHECK constraints', () => {
   });
   it('refuses a staff member whose role is not admin or rep', async () => {
     await expect(staff('owner@example.test', 'owner')).rejects.toThrow(/CHECK constraint failed/);
+  });
+});
+
+describe('one appeal per punishment (shyden-labs/shydesk#57)', () => {
+  beforeAll(async () => {
+    await query(
+      db,
+      `INSERT INTO products (id, name, sender_address, ticket_page_url, allowed_origins_json, monthly_email_share, created_at)
+         VALUES ('p2', 'Product', 'no-reply@example.test', 'https://example.test/support', '[]', 100, 0);
+       INSERT INTO ticket_types (id, product_id, kind, name, fields_json, reasons_json, enabled)
+         VALUES ('t2r', 'p2', 'report', 'Report', '[]', '[]', 1), ('t2a', 'p2', 'appeal', 'Appeal', '[]', '[]', 1);
+       INSERT INTO tickets (id, product_id, type_id, status, customer_email, subject, category, fields_json, token_hash, created_at, updated_at, seq)
+         VALUES ('r1', 'p2', 't2r', 'open', 'a@example.test', 'Report', 'spam', '{}', 'hash-r1', 0, 0, 1),
+                ('a1', 'p2', 't2a', 'open', 'a@example.test', 'Appeal', 'appeal', '{}', 'hash-a1', 0, 0, 2),
+                ('a2', 'p2', 't2a', 'open', 'a@example.test', 'Appeal', 'appeal', '{}', 'hash-a2', 0, 0, 3);
+       INSERT INTO punishments (id, product_id, report_ticket_id, subject_user_id, punishment_key, label, applied_by, created_at, send_state, appeal_token_hash)
+         VALUES ('pun1', 'p2', 'r1', 'user-1', 'ban', 'Ban', 'rep@example.test', 0, 'applied', 'appeal-hash-1');`,
+    );
+  });
+
+  const appeal = (ticketId: string) =>
+    query(db, `INSERT INTO appeals (punishment_id, ticket_id, state) VALUES ('pun1', ?, 'open')`, [ticketId]);
+
+  it('keeps the first appeal for a punishment and refuses a second on a constraint', async () => {
+    await appeal('a1');
+    expect.soft(await rows(`SELECT ticket_id FROM appeals WHERE punishment_id = 'pun1'`)).toEqual([{ ticket_id: 'a1' }]);
+    await expect.soft(appeal('a2')).rejects.toThrow(/UNIQUE constraint failed: appeals\.punishment_id/);
+    expect.soft(await rows(`SELECT ticket_id FROM appeals WHERE punishment_id = 'pun1'`)).toEqual([{ ticket_id: 'a1' }]);
   });
 });

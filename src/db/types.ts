@@ -1,4 +1,5 @@
-// One row type per table in migrations/0001_release_1.sql (shyden-labs/shydesk#15).
+// One row type per table in migrations/0001_release_1.sql (shyden-labs/shydesk#15)
+// and migrations/0004_release_2.sql (shyden-labs/shydesk#57).
 // Times are Unix epoch milliseconds; *_json columns hold JSON text.
 
 export type TicketKind = 'support' | 'report' | 'appeal';
@@ -17,6 +18,11 @@ export interface ProductRow {
   attachments_keep_days: number;
   text_keep_days: number;
   created_at: number;
+  // Release 2 (migrations/0004_release_2.sql).
+  punishments_json: string;
+  callback_url: string | null;
+  callback_secret: string | null;
+  appeal_page_url: string | null;
 }
 
 export interface TicketTypeRow {
@@ -107,4 +113,84 @@ export interface ReadRow {
   email: string;
   ticket_id: string;
   read_seq: number;
+}
+
+// Release 2 (shyden-labs/shydesk#57).
+
+export type SendState = 'sending' | 'applied' | 'failed';
+export type AppealState = 'open' | 'upheld' | 'rejected';
+export type LegalHoldReason = 'crime_unreported' | 'reported' | 'preservation';
+export type LegalHoldAction = 'placed' | 'renewed' | 'order' | 'reported' | 'no_report' | 'lifted';
+
+export interface ReportRow {
+  ticket_id: string;
+  product_id: string;
+  reporter_id: string;
+  item_kind: string;
+  item_id: string;
+  subject_user_id: string;
+  reason: string;
+  context_json: string;
+}
+
+export interface PunishmentRow {
+  id: string;
+  product_id: string;
+  report_ticket_id: string;
+  subject_user_id: string;
+  punishment_key: string;
+  label: string;
+  duration_seconds: number | null;
+  applied_by: string;
+  created_at: number;
+  send_state: SendState;
+  send_error: string | null;
+  appeal_token_hash: string;
+  lifted_at: number | null;
+  lifted_by: string | null;
+  lift_state: SendState | null;
+  lift_error: string | null;
+}
+
+export interface AppealRow {
+  punishment_id: string;
+  ticket_id: string;
+  state: AppealState;
+  decided_by: string | null;
+  decided_at: number | null;
+}
+
+export interface LegalHoldRow {
+  id: string;
+  ticket_id: string;
+  attachment_id: string | null;
+  reason: LegalHoldReason;
+  csam: 0 | 1;
+  note: string;
+  placed_by: string;
+  placed_at: number;
+  // The report date ('reported') or the request date ('preservation'); null for 'crime_unreported'.
+  basis_at: number | null;
+  renewals: number;
+  order_pending: 0 | 1;
+  no_report_reason: string | null;
+  lifted_at: number | null;
+  lifted_by: string | null;
+}
+
+export interface HoldEventRow {
+  hold_id: string;
+  at: number;
+  by: string;
+  action: LegalHoldAction;
+  detail: string;
+}
+
+export interface AuthorityReportRow {
+  ticket_id: string;
+  reported_to: string;
+  reported_at: number;
+  reference: string;
+  recorded_by: string;
+  recorded_at: number;
 }
