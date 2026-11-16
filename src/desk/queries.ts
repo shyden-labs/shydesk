@@ -1,4 +1,7 @@
 import type { D1Database } from '@cloudflare/workers-types';
+import type { PunishmentRow } from '../db/types.ts';
+import { getPunishments, reportTypeId, type PunishmentDef } from '../products.ts';
+import { offenderHistory, type OffenderHistory } from '../reports/history.ts';
 import type { Staff } from '../auth/staff.ts';
 import type { StoredFile } from '../uploads/serve.ts';
 
@@ -148,4 +151,40 @@ export async function markRead(db: D1Database, staff: Staff, ticketId: string, n
 /** A canned reply's text with its placeholders filled; an unknown placeholder stays as typed. */
 export function fillCanned(body: string, values: { customer_email: string; ticket_subject: string }): string {
   return body.replace(/\{\{(customer_email|ticket_subject)\}\}/g, (_match, name: 'customer_email' | 'ticket_subject') => values[name]);
+}
+
+/** What a report ticket's page shows besides its thread (shyden-labs/shydesk#60). */
+export interface ReportPanel {
+  reporter_id: string;
+  item_kind: string;
+  item_id: string;
+  subject_user_id: string;
+  reason: string;
+  history: OffenderHistory;
+  punishments: PunishmentRow[];
+  choices: PunishmentDef[];
+}
+
+/**
+ * The report behind a ticket already found in scope, with the subject's history
+ * in this product, this report's punishments newest first, and the product's
+ * punishments to pick from; null when the ticket is not a report.
+ */
+export async function reportPanel(db: D1Database, ticket: DeskTicket): Promise<ReportPanel | null> {
+  if (ticket.type_id !== reportTypeId(ticket.product_id)) return null;
+  const report = await db
+    .prepare('SELECT reporter_id, item_kind, item_id, subject_user_id, reason FROM reports WHERE ticket_id = ?')
+    .bind(ticket.id)
+    .first<{ reporter_id: string; item_kind: string; item_id: string; subject_user_id: string; reason: string }>();
+  if (report === null) return null;
+  const { results: punishments } = await db
+    .prepare('SELECT * FROM punishments WHERE report_ticket_id = ? ORDER BY created_at DESC')
+    .bind(ticket.id)
+    .all<PunishmentRow>();
+  return {
+    ...report,
+    history: await offenderHistory(db, ticket.product_id, report.subject_user_id, ticket.id),
+    punishments,
+    choices: await getPunishments(db, ticket.product_id),
+  };
 }

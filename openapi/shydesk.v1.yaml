@@ -500,6 +500,57 @@ paths:
         '411': { $ref: '#/components/responses/UploadError' }
         '413': { $ref: '#/components/responses/UploadError' }
         '422': { $ref: '#/components/responses/UploadError' }
+webhooks:
+  punishment:
+    post:
+      operationId: punishmentCallback
+      summary: ShyDesk tells the product's server to apply or lift a punishment.
+      description: >-
+        Sent to the product's callback URL, set on the ShyDesk admin screen, when
+        a rep applies one of the product's punishments to a report, when the
+        admin lifts one, and when a person presses "Send again" after a failed
+        send. To verify it: read `ShyDesk-Timestamp` (Unix seconds) and
+        `ShyDesk-Signature`; refuse a timestamp more than 300 seconds from your
+        clock; compute `v1=` and the lowercase hex HMAC-SHA256 of
+        `timestamp + "." + raw body`, keyed by the product's signing secret as
+        UTF-8 text, and compare it in constant time (ShyDesk's own `verify` in
+        src/punishments/sign.ts does exactly this). Replays: the same
+        `punishment_id` and `type` may arrive again; apply it once and answer the
+        first result again. ShyDesk waits 10 seconds, never retries by itself,
+        and shows the outcome on the ticket. `appeal_url`, when the product has
+        an appeal page, is that page with the appeal token in the fragment
+        (`#appeal=<token>`), to show in the ban notice.
+      parameters:
+        - name: ShyDesk-Timestamp
+          in: header
+          required: true
+          schema: { type: string, pattern: '^[0-9]+$' }
+        - name: ShyDesk-Signature
+          in: header
+          required: true
+          schema: { type: string, pattern: '^v1=[0-9a-f]{64}$' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PunishmentCallback'
+      responses:
+        '200':
+          description: Applied. Anything but `applied` true is shown as failed.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [applied]
+                properties:
+                  applied: { type: boolean }
+        default:
+          description: Not applied; `error` is shown on the ticket next to the status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 components:
   parameters:
     ProductQuery:
@@ -811,6 +862,26 @@ components:
                   created_at: { type: integer }
                   send_state: { type: string, enum: [sending, applied, failed] }
                   lifted_at: { type: [integer, 'null'] }
+    PunishmentCallback:
+      type: object
+      additionalProperties: false
+      required: [type, punishment_id, product, subject_user_id, punishment, report_ticket_id, issued_at]
+      properties:
+        type: { type: string, enum: [punishment.apply, punishment.lift] }
+        punishment_id: { type: string, description: "ShyDesk's id for this punishment: the idempotency key." }
+        product: { type: string }
+        subject_user_id: { type: string }
+        punishment:
+          type: object
+          additionalProperties: false
+          required: [key, label, duration_seconds]
+          properties:
+            key: { type: string }
+            label: { type: string }
+            duration_seconds: { type: [integer, 'null'], description: 'Null for a punishment with no end.' }
+        report_ticket_id: { type: string }
+        appeal_url: { type: string, description: 'Only on punishment.apply, when the product has an appeal page.' }
+        issued_at: { type: integer, description: 'When the punishment was applied, Unix milliseconds.' }
     FieldErrors:
       type: object
       additionalProperties: false
