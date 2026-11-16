@@ -18,8 +18,10 @@ page (`demo-host/public/index.html`) with its piece loaded from that ShyDesk;
 `?product=demo-elsewhere` names a product allowed only on another origin. The
 local ShyDesk's log is `.e2e-runs/shydesk.log`.
 
-Each run prints the total per target and fails naming any target that ran fewer
-tests (`scripts/e2e-totals.ts`).
+Each run prints the total per target and the suite's count (read from the spec
+files), and fails naming any target that ran fewer tests than another or than
+the whole suite (`scripts/e2e-totals.ts`). The browsers run in CI and the
+phones on this Mac, so each run is held to the suite's full count on its own.
 
 ## Desktop (CI)
 

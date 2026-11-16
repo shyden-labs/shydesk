@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
-import { byTarget, formatTotals, main, readRuns, totalsProblems, type TargetRun } from '../../scripts/e2e-totals.ts';
+import { byTarget, formatTotals, main, readRuns, suiteCount, totalsProblems, type TargetRun } from '../../scripts/e2e-totals.ts';
 
 // The run files are stood in: a unit test reads nothing from disk here.
 vi.mock('node:fs', () => ({ readdirSync: vi.fn(), readFileSync: vi.fn() }));
@@ -17,34 +17,73 @@ const run = (target: string, passed: number, failed = 0, skipped = 0): TargetRun
 
 describe('totalsProblems', () => {
   it('passes equal totals with nothing skipped', () => {
-    expect(totalsProblems([run('chromium', 10), run('firefox', 9, 1), run('android', 10)])).toEqual([]);
+    expect(totalsProblems([run('chromium', 10), run('firefox', 9, 1), run('android', 10)], 10)).toEqual([]);
   });
 
   it('counts a failed test in the total, so a red test is not a short run', () => {
-    expect(totalsProblems([run('chromium', 10), run('ios', 7, 3)])).toEqual([]);
+    expect(totalsProblems([run('chromium', 10), run('ios', 7, 3)], 10)).toEqual([]);
   });
 
   it('names a target that ran fewer tests than the others', () => {
-    expect(totalsProblems([run('chromium', 10), run('firefox', 10), run('ios', 9)])).toEqual(['ios ran 9 tests; another target ran 10']);
+    expect(totalsProblems([run('chromium', 10), run('firefox', 10), run('ios', 9)], 10)).toEqual(['ios ran 9 tests; the suite has 10']);
   });
 
   it('names every short target', () => {
-    expect(totalsProblems([run('chromium', 10), run('android', 8), run('ios', 9)])).toEqual([
-      'android ran 8 tests; another target ran 10',
-      'ios ran 9 tests; another target ran 10',
+    expect(totalsProblems([run('chromium', 10), run('android', 8), run('ios', 9)], 10)).toEqual([
+      'android ran 8 tests; the suite has 10',
+      'ios ran 9 tests; the suite has 10',
     ]);
   });
 
   it('names a target that skipped a test, even when its total matches', () => {
-    expect(totalsProblems([run('chromium', 10), run('safari', 9, 0, 1)])).toEqual(['safari skipped 1 test']);
+    expect(totalsProblems([run('chromium', 10), run('safari', 9, 0, 1)], 10)).toEqual(['safari skipped 1 test']);
   });
 
   it('names a target that ran no tests', () => {
-    expect(totalsProblems([run('chromium', 0)])).toEqual(['chromium ran no tests']);
+    expect(totalsProblems([run('chromium', 0)], 10)).toEqual(['chromium ran no tests']);
   });
 
   it('fails when no target reported at all', () => {
-    expect(totalsProblems([])).toEqual(['no target reported a run']);
+    expect(totalsProblems([], 10)).toEqual(['no target reported a run']);
+  });
+
+  it('names targets that ran fewer tests than the suite has, even when they agree with each other', () => {
+    expect(totalsProblems([run('android', 3), run('ios', 3)], 4)).toEqual([
+      'android ran 3 tests; the suite has 4',
+      'ios ran 3 tests; the suite has 4',
+    ]);
+  });
+
+  it('names a target that ran more tests than the suite was counted to have, so a miscount cannot hide a short run', () => {
+    expect(totalsProblems([run('chromium', 5)], 4)).toEqual(['chromium ran 5 tests; the suite was counted at 4']);
+  });
+
+  it('still names a target behind another when a miscount put the suite below both', () => {
+    expect(totalsProblems([run('chromium', 5), run('firefox', 4)], 4)).toEqual([
+      'chromium ran 5 tests; the suite was counted at 4',
+      'firefox ran 4 tests; another target ran 5',
+    ]);
+  });
+});
+
+describe('suiteCount', () => {
+  it('counts every test in every spec file', () => {
+    expect(
+      suiteCount([
+        { name: 'a.e2e.ts', text: "describe('a', () => {\n  it('one', async () => {});\n  it(\"two\", async () => {});\n});\n" },
+        { name: 'b.e2e.ts', text: "describe('b', () => {\n  it(`three`, async () => {});\n});\n" },
+      ]),
+    ).toBe(3);
+  });
+
+  it('counts a spec file with no tests as none', () => {
+    expect(suiteCount([{ name: 'd.e2e.ts', text: "describe('d', () => {});\n" }])).toBe(0);
+  });
+
+  it('refuses a spec file whose tests cannot be counted by reading it, naming the file', () => {
+    expect(() => suiteCount([{ name: 'c.e2e.ts', text: "  it.each([1, 2])('x %s', async () => {});\n" }])).toThrow(
+      'c.e2e.ts: it.each cannot be counted by reading the file; write one it() per case',
+    );
   });
 });
 
@@ -104,30 +143,45 @@ describe('main', () => {
     vi.restoreAllMocks();
   });
 
+  /** A suite folder of one spec file with `count` tests, and a runs folder of `files`. */
+  const folders = (count: number, files: Record<string, TargetRun>): void => {
+    dir.mockImplementation((path: string) => (path === 'suite' ? ['one.e2e.ts', 'helper.ts'] : Object.keys(files)));
+    read.mockImplementation((path: string) => {
+      if (path === 'suite/one.e2e.ts') return "  it('t', async () => {});\n".repeat(count);
+      const file = files[path.replace('runs/', '')];
+      if (file === undefined) throw new Error(`read ${path}`);
+      return JSON.stringify(file);
+    });
+  };
+
   it("adds each target's spec-file runs together before comparing", () => {
-    dir.mockReturnValue(['ios-0-0.json', 'ios-0-1.json', 'android-1-0.json']);
-    read.mockImplementation((path: string) => JSON.stringify(path.includes('android') ? run('android', 10) : run('ios', 5)));
-    expect(main(['runs'])).toBe(0);
-    expect(out).toHaveBeenCalledWith('e2e-totals: android 10 · ios 10\n');
+    folders(10, { 'ios-0-0.json': run('ios', 5), 'ios-0-1.json': run('ios', 5), 'android-1-0.json': run('android', 10) });
+    expect(main(['runs', 'suite'])).toBe(0);
+    expect(out).toHaveBeenCalledWith('e2e-totals: android 10 · ios 10 (suite 10)\n');
   });
 
-  it('prints the totals and exits 0 when they agree', () => {
-    dir.mockReturnValue(['a.json', 'b.json']);
-    read.mockImplementation((path: string) => JSON.stringify(run(path.includes('a.json') ? 'android' : 'ios', 10)));
-    expect(main(['runs'])).toBe(0);
-    expect(out).toHaveBeenCalledWith('e2e-totals: android 10 · ios 10\n');
+  it('prints the totals and exits 0 when they agree with the suite', () => {
+    folders(10, { 'a.json': run('android', 10), 'b.json': run('ios', 10) });
+    expect(main(['runs', 'suite'])).toBe(0);
+    expect(out).toHaveBeenCalledWith('e2e-totals: android 10 · ios 10 (suite 10)\n');
     expect(err).not.toHaveBeenCalled();
   });
 
-  it('prints each problem and exits 1 when they differ', () => {
-    dir.mockReturnValue(['a.json', 'b.json']);
-    read.mockImplementation((path: string) => JSON.stringify(path.includes('a.json') ? run('android', 10) : run('ios', 9)));
-    expect(main(['runs'])).toBe(1);
-    expect(out).toHaveBeenCalledWith('e2e-totals: android 10 · ios 9\n');
-    expect(err).toHaveBeenCalledWith('e2e-totals: ios ran 9 tests; another target ran 10\n');
+  it('prints each problem and exits 1 when a target is short', () => {
+    folders(10, { 'a.json': run('android', 10), 'b.json': run('ios', 9) });
+    expect(main(['runs', 'suite'])).toBe(1);
+    expect(out).toHaveBeenCalledWith('e2e-totals: android 10 · ios 9 (suite 10)\n');
+    expect(err).toHaveBeenCalledWith('e2e-totals: ios ran 9 tests; the suite has 10\n');
   });
 
-  it.each([[[]], [['a', 'b']]])('refuses %j as arguments', (args) => {
-    expect(() => main(args)).toThrow('usage: node scripts/e2e-totals.ts <folder of run files>');
+  it('exits 1 when the targets agree with each other but are short of the suite', () => {
+    folders(4, { 'a.json': run('android', 3), 'b.json': run('ios', 3) });
+    expect(main(['runs', 'suite'])).toBe(1);
+    expect(err).toHaveBeenCalledWith('e2e-totals: android ran 3 tests; the suite has 4\n');
+    expect(err).toHaveBeenCalledWith('e2e-totals: ios ran 3 tests; the suite has 4\n');
+  });
+
+  it.each([[[]], [['a']], [['a', 'b', 'c']]])('refuses %j as arguments', (args) => {
+    expect(() => main(args)).toThrow('usage: node scripts/e2e-totals.ts <folder of run files> <folder of spec files>');
   });
 });
