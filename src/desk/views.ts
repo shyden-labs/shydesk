@@ -262,7 +262,7 @@ const reportSection = (r: ReportPanel, ticketId: string, isAdmin: boolean): Page
           html`<li>
             ${stateLine(p)}
             ${
-              p.send_state === 'failed' || (isAdmin && p.lift_state === 'failed')
+              (p.send_state === 'failed' && p.lifted_at === null) || (isAdmin && p.lift_state === 'failed')
                 ? html`<form method="post" action="/desk/punishments/${p.id}/resend" style="display:inline">
                     <button type="submit">Send again</button>
                   </form>`

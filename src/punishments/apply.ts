@@ -174,6 +174,8 @@ export async function resendPunishment(
     await env.DB.prepare("UPDATE punishments SET lift_state = 'sending', lift_error = NULL WHERE id = ?").bind(row.id).run();
     return send(env.DB, target, row, 'punishment.lift', null, fetcher, now);
   }
+  // A lifted punishment's apply is never sent again: it would put back what the admin took off.
+  if (row.lifted_at !== null) throw new PunishmentRefused('already_lifted');
   if (row.send_state !== 'failed') throw new PunishmentRefused('nothing_to_send');
   const tokenKey = tokenKeyOf(env);
   await env.DB.prepare("UPDATE punishments SET send_state = 'sending', send_error = NULL WHERE id = ?").bind(row.id).run();

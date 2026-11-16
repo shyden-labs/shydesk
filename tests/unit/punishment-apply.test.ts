@@ -158,6 +158,16 @@ describe('resendPunishment', () => {
     expect(bodies[0]?.appeal_url).toBe(`https://shytalk.example/appeal#appeal=${await appealToken(KEY, 'pun-1')}`);
   });
 
+  it('never re-sends the apply of a punishment the admin has lifted, for anyone', async () => {
+    const lifted = stored({ lifted_at: NOW, lifted_by: 'admin@example.com', lift_state: 'applied', lift_error: null });
+    for (const who of [REP, ADMIN]) {
+      const { env, statements, bodies, fetcher } = setup({ punishments: { 'pun-1': lifted } });
+      await expect(resendPunishment(env, who, 'pun-1', fetcher, NOW)).rejects.toMatchObject({ code: 'already_lifted' });
+      expect(writes(statements)).toEqual([]);
+      expect(bodies).toEqual([]);
+    }
+  });
+
   it('sends nothing for a punishment that did not fail', async () => {
     const { env, bodies, fetcher } = setup({ punishments: { 'pun-1': stored({ send_state: 'applied', send_error: null }) } });
     await expect(resendPunishment(env, REP, 'pun-1', fetcher, NOW)).rejects.toMatchObject({ code: 'nothing_to_send' });

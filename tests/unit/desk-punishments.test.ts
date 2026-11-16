@@ -190,6 +190,12 @@ describe('a report ticket on the desk', () => {
     expect(await (await setup(applied).get('/desk/tickets/r1', REP)).text()).not.toContain('/lift');
   });
 
+  it('offers no "Send again" for the failed apply of a lifted punishment', async () => {
+    const lifted = [punishment({ lifted_at: 9, lifted_by: ADMIN, lift_state: 'applied', lift_error: null })];
+    expect(await (await setup(lifted).get('/desk/tickets/r1', REP)).text()).not.toContain('/resend');
+    expect(await (await setup(lifted).get('/desk/tickets/r1', ADMIN)).text()).not.toContain('/resend');
+  });
+
   it('offers a rep no "Send again" for a failed lift, which only the admin re-sends', async () => {
     const lifted = [
       punishment({ send_state: 'applied', send_error: null, lifted_at: 9, lifted_by: ADMIN, lift_state: 'failed', lift_error: 'timeout' }),
