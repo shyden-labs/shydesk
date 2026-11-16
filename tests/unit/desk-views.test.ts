@@ -140,6 +140,22 @@ describe('ticketPage', () => {
     expect(closed).toContain('Closed ·');
   });
 
+  // shyden-labs/shydesk#61: the appeal panel is drawn for the admin alone, whatever it is given.
+  it('draws the appeal panel for the admin and never for anyone else', async () => {
+    const appeal = {
+      state: 'open',
+      decided_by: null,
+      decided_at: null,
+      punishment_id: 'p1',
+      label: 'Ban',
+      lifted_at: null,
+      report_ticket_id: 'r1',
+    };
+    expect(await render(ticketPage(view({ appeal, isAdmin: true })))).toContain('aria-label="Appeal"');
+    expect(await render(ticketPage(view({ appeal, isAdmin: false })))).not.toContain('aria-label="Appeal"');
+    expect(await render(ticketPage(view({ appeal })))).not.toContain('aria-label="Appeal"');
+  });
+
   it('shows a status it has no name for as stored', async () => {
     expect(await render(ticketPage(view({ ticket: { ...ticket, status: 'odd' } })))).toContain('odd ·');
   });

@@ -131,8 +131,8 @@ export function deskRoutes(deps: DeskDeps, jwks?: JWTVerifyGetKey): Hono<DeskEnv
         error: reference(c, 'error'),
         report: await reportPanel(c.env.DB, found.ticket),
         punishment: reference(c, 'punishment'),
-        // getTicket already leaves appeals out for a rep; the panel is the admin's alone.
-        appeal: staff.role === 'admin' ? await appealPanel(c.env.DB, found.ticket) : null,
+        // A rep never gets here with an appeal: getTicket leaves appeals out for them in SQL.
+        appeal: await appealPanel(c.env.DB, found.ticket),
         appealOutcome: reference(c, 'appeal'),
         isAdmin: staff.role === 'admin',
       }),
