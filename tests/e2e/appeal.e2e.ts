@@ -47,8 +47,8 @@ describe('the appeal view', () => {
     await openPage(`${desk.origin}/health`);
     await driver().setCookies({ name: 'CF_Authorization', value: process.env.E2E_REP_TOKEN ?? '', path: '/' });
     await openPage(`${desk.origin}/desk?product=demo`);
-    await textHolding('Tickets', 'Cheating: player p-2');
-    const listed = await textHolding('Tickets', '');
+    await textHolding('Ticket list', 'Cheating: player p-2');
+    const listed = await textHolding('Ticket list', '');
     assert.ok(!listed.includes('Appeal'), `the rep's desk listed an appeal: ${listed}`);
   });
 });

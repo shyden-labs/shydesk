@@ -185,7 +185,7 @@ export const listPage = (d: ListData): Page =>
         d.tickets.length === 0
           ? html`<p>No tickets here.</p>`
           : html`<div class="table">
-              <table aria-label="Tickets">
+              <table aria-label="Ticket list">
                 <thead>
                   <tr>
                     <th scope="col">Subject</th>

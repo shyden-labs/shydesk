@@ -47,7 +47,7 @@ const render = async (page: ReturnType<typeof listPage>): Promise<string> => Str
 
 describe('listPage', () => {
   it('names the ticket table, so assistive technology and the journeys find it', async () => {
-    expect(await render(listPage(list()))).toContain('<table aria-label="Tickets">');
+    expect(await render(listPage(list()))).toContain('<table aria-label="Ticket list">');
   });
 
   it('marks "All products" current when no product is chosen', async () => {
