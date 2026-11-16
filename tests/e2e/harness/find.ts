@@ -165,3 +165,20 @@ export async function named(label: string): Promise<Element> {
     await new Promise((resolve) => setTimeout(resolve, LOOK_AGAIN_MS));
   }
 }
+
+/** How long a journey waits for the page to show what it expects. */
+export const JOURNEY_WAIT = 20_000;
+
+/** The text of the element named `label` once it holds `expected`, or a failure showing what it held. */
+export async function textHolding(label: string, expected: string, timeout = JOURNEY_WAIT): Promise<string> {
+  const element = await named(label);
+  let text = '';
+  await driver().waitUntil(
+    async () => {
+      text = await element.getText();
+      return text.includes(expected);
+    },
+    { timeout, timeoutMsg: `"${label}" never held "${expected}"; it held "${text}"` },
+  );
+  return text;
+}

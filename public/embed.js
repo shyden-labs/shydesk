@@ -62,6 +62,13 @@
     wrongType: 'Only photos and MP4 videos can be attached.',
     tooMany: 'Attach up to 10 files.',
     notUploaded: 'The file could not be uploaded. Try again.',
+    decision: 'Decision',
+    appealTitle: 'Appeal this decision',
+    sendAppeal: 'Send appeal',
+    appealSent: 'Appeal sent. Keep this private link to follow it:',
+    appealFailed: 'The appeal could not be sent. Try again.',
+    already_appealed: 'An appeal for this decision was already sent.',
+    lifted: 'This decision is no longer in force.',
   };
 
   /** @type {Record<string, string>} */
@@ -171,6 +178,10 @@
 
     async load() {
       this.tell(TEXT.loading);
+      if (this.getAttribute('view') === 'appeal') {
+        await this.loadAppeal();
+        return;
+      }
       if (this.getAttribute('view') === 'ticket') {
         await this.loadTicket();
         return;
@@ -452,6 +463,119 @@
     }
 
     /** The header carrying the link's token: it goes in no URL, so no server log holds it. */
+    /** The ban notice token, read from the fragment and sent only in its own header (shyden-labs/shydesk#61). */
+    get appealToken() {
+      return new URLSearchParams(location.hash.slice(1)).get('appeal') ?? '';
+    }
+
+    /**
+     * What ShyDesk said about an appeal, as a line for the customer: its named refusal, or `fallback`.
+     * @param {string | undefined} code
+     * @param {string} fallback
+     */
+    appealLine(code, fallback) {
+      return code === 'already_appealed' || code === 'lifted' ? TEXT[code] : fallback;
+    }
+
+    /** The appeal view: the decision a ban notice names, and one appeal of it (shyden-labs/shydesk#61). */
+    async loadAppeal() {
+      /** @type {{ label: string, can_appeal: boolean, reason?: string } | null} */
+      let decision = null;
+      try {
+        const answer = await fetch(this.endpoint('appeals'), { headers: { 'ShyDesk-Appeal': this.appealToken } });
+        if (answer.status === 404) {
+          this.tell(TEXT.linkInvalid);
+          return;
+        }
+        if (answer.ok) {
+          const raw = /** @type {unknown} */ (await answer.json());
+          decision = /** @type {{ label: string, can_appeal: boolean, reason?: string }} */ (raw);
+        }
+      } catch {
+        // Said below, as for any answer that is not the decision.
+      }
+      if (decision === null) {
+        this.tell(TEXT.cannotLoad);
+        return;
+      }
+      this.shadow.insertBefore(
+        make('section', { class: 'panel', 'aria-label': TEXT.decision }, [
+          make('h2', {}, [TEXT.appealTitle]),
+          make('p', {}, [decision.label]),
+        ]),
+        this.statusLine,
+      );
+      if (!decision.can_appeal) {
+        this.tell(this.appealLine(decision.reason, TEXT.cannotLoad));
+        return;
+      }
+
+      const email = /** @type {HTMLInputElement} */ (make('input', { type: 'email', autocomplete: 'email', required: '' }));
+      const words = /** @type {HTMLTextAreaElement} */ (make('textarea', { maxlength: '10000', required: '' }));
+      const emailError = make('span', { class: 'error', id: 'shydesk-appeal-email-error' });
+      const wordsError = make('span', { class: 'error', id: 'shydesk-appeal-message-error' });
+      email.setAttribute('aria-describedby', emailError.id);
+      words.setAttribute('aria-describedby', wordsError.id);
+      const button = /** @type {HTMLButtonElement} */ (make('button', { type: 'submit' }, [TEXT.sendAppeal]));
+      const form = make('form', { class: 'panel', novalidate: '' }, [
+        make('div', { class: 'field' }, [make('label', {}, [TEXT.email, email]), emailError]),
+        make('div', { class: 'field' }, [make('label', {}, [TEXT.message, words]), wordsError]),
+        button,
+      ]);
+      form.addEventListener('submit', (event) => {
+        event.preventDefault();
+        void this.sendAppeal(form, button, email.value, words.value, { email: emailError, message: wordsError });
+      });
+      this.shadow.insertBefore(form, this.statusLine);
+      this.tell('');
+    }
+
+    /**
+     * Sends the appeal once and shows how it went: the private link, each field's error, or why it was refused.
+     * @param {HTMLElement} form
+     * @param {HTMLButtonElement} button
+     * @param {string} email
+     * @param {string} message
+     * @param {Record<string, HTMLElement>} errors
+     */
+    async sendAppeal(form, button, email, message, errors) {
+      for (const line of Object.values(errors)) line.textContent = '';
+      button.disabled = true;
+      this.tell(TEXT.sending);
+      /** @type {Response} */
+      let answer;
+      try {
+        answer = await fetch(this.endpoint('appeals'), {
+          method: 'POST',
+          headers: { 'ShyDesk-Appeal': this.appealToken, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, message }),
+        });
+      } catch {
+        button.disabled = false;
+        this.tell(TEXT.appealFailed);
+        return;
+      }
+      const raw = /** @type {unknown} */ (await answer.json().catch(() => ({})));
+      const body = /** @type {{ ticket_url?: string, email_sent?: boolean, errors?: Record<string, string>, error?: string }} */ (raw);
+      if (answer.status === 201 && typeof body.ticket_url === 'string') {
+        form.hidden = true;
+        const link = make('a', { href: body.ticket_url, 'aria-label': TEXT.privateLink }, [body.ticket_url]);
+        this.shadow.insertBefore(make('div', { class: 'panel' }, [make('p', {}, [TEXT.appealSent]), link]), this.statusLine);
+        this.tell(body.email_sent === true ? TEXT.mailed : TEXT.notMailed);
+        return;
+      }
+      button.disabled = false;
+      if (body.errors !== undefined) {
+        for (const [field, line] of Object.entries(body.errors)) {
+          const shown = errors[field];
+          if (shown !== undefined) shown.textContent = line;
+        }
+        this.tell(TEXT.fixFields);
+        return;
+      }
+      this.tell(this.appealLine(body.error, body.error ?? TEXT.appealFailed));
+    }
+
     ticketHeaders() {
       return { Authorization: `Ticket ${new URLSearchParams(location.hash.slice(1)).get('t') ?? ''}` };
     }

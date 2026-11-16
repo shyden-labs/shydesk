@@ -3,9 +3,12 @@
 // marking read, for staff with a row and for the first admin, who has none.
 import { beforeAll, describe, expect, inject, it } from 'vitest';
 import type { Staff } from '../../src/auth/staff.ts';
-import { getFile, getTicket, listTickets, markRead, unreadCount } from '../../src/desk/queries.ts';
+import { getFile, getTicket, listTickets, markRead, unreadCount, type Scope } from '../../src/desk/queries.ts';
 import { saveProduct, saveStaff, saveTicketType, supportTypeId } from '../../src/products.ts';
 import { restD1 } from './d1.ts';
+
+const asRep = (products: string[]): Scope => ({ products, role: 'rep' });
+const asAdmin = (products: string[]): Scope => ({ products, role: 'admin' });
 
 const db = restD1(inject('databaseId'));
 const REP = 'desk-rep@example.com';
@@ -53,34 +56,34 @@ beforeAll(async () => {
 
 describe('listTickets', () => {
   it('lists waiting-on-staff tickets first, oldest first, then the rest oldest first', async () => {
-    const tickets = await listTickets(db, ['desk-a'], {});
+    const tickets = await listTickets(db, asRep(['desk-a']), {});
     expect(tickets.map((t) => t.id)).toEqual(['d-open-old', 'd-open-new', 'd-closed', 'd-waiting-old']);
   });
 
   it('holds only the products asked for', async () => {
-    expect((await listTickets(db, ['desk-b'], {})).map((t) => t.id)).toEqual(['d-theirs']);
+    expect((await listTickets(db, asRep(['desk-b']), {})).map((t) => t.id)).toEqual(['d-theirs']);
   });
 
   it('is empty for no products', async () => {
-    expect(await listTickets(db, [], {})).toEqual([]);
+    expect(await listTickets(db, asRep([]), {})).toEqual([]);
   });
 
   it('filters by status and by type', async () => {
-    expect((await listTickets(db, ['desk-a'], { status: 'waiting' })).map((t) => t.id)).toEqual(['d-waiting-old']);
-    expect(await listTickets(db, ['desk-a'], { typeId: 'desk-a:no-such-type' })).toEqual([]);
-    expect(await listTickets(db, ['desk-a'], { typeId: supportTypeId('desk-a'), status: 'closed' })).toHaveLength(1);
+    expect((await listTickets(db, asRep(['desk-a']), { status: 'waiting' })).map((t) => t.id)).toEqual(['d-waiting-old']);
+    expect(await listTickets(db, asRep(['desk-a']), { typeId: 'desk-a:no-such-type' })).toEqual([]);
+    expect(await listTickets(db, asRep(['desk-a']), { typeId: supportTypeId('desk-a'), status: 'closed' })).toHaveLength(1);
   });
 
   it('moves on by the cursor', async () => {
-    expect((await listTickets(db, ['desk-a'], { cursor: 3 })).map((t) => t.id)).toEqual(['d-waiting-old']);
+    expect((await listTickets(db, asRep(['desk-a']), { cursor: 3 })).map((t) => t.id)).toEqual(['d-waiting-old']);
   });
 });
 
 describe('getTicket', () => {
   it('finds a ticket in scope, and nothing out of it', async () => {
-    expect((await getTicket(db, ['desk-a'], 'd-open-new'))?.ticket.subject).toBe('Subject d-open-new');
-    expect(await getTicket(db, ['desk-a'], 'd-theirs')).toBeNull();
-    expect(await getTicket(db, [], 'd-theirs')).toBeNull();
+    expect((await getTicket(db, asRep(['desk-a']), 'd-open-new'))?.ticket.subject).toBe('Subject d-open-new');
+    expect(await getTicket(db, asRep(['desk-a']), 'd-theirs')).toBeNull();
+    expect(await getTicket(db, asRep([]), 'd-theirs')).toBeNull();
   });
 });
 
@@ -102,7 +105,7 @@ describe('getFile', () => {
   }, 60_000);
 
   it('finds a stored file on a ticket in scope, with its keys and type', async () => {
-    expect(await getFile(db, ['desk-a'], 'df-stored')).toEqual({
+    expect(await getFile(db, asRep(['desk-a']), 'df-stored')).toEqual({
       r2_key: 'key-df-stored',
       thumb_key: 'thumb-df-stored',
       mime: 'image/jpeg',
@@ -110,42 +113,42 @@ describe('getFile', () => {
   });
 
   it('finds nothing removed, still uploading, or on another product, nor anything for no products', async () => {
-    expect(await getFile(db, ['desk-a'], 'df-deleted')).toBeNull();
-    expect(await getFile(db, ['desk-a'], 'df-pending')).toBeNull();
-    expect(await getFile(db, ['desk-a'], 'df-theirs')).toBeNull();
-    expect(await getFile(db, [], 'df-stored')).toBeNull();
+    expect(await getFile(db, asRep(['desk-a']), 'df-deleted')).toBeNull();
+    expect(await getFile(db, asRep(['desk-a']), 'df-pending')).toBeNull();
+    expect(await getFile(db, asRep(['desk-a']), 'df-theirs')).toBeNull();
+    expect(await getFile(db, asRep([]), 'df-stored')).toBeNull();
   });
 });
 
 describe('unread', () => {
   it('counts tickets waiting on staff in scope that this person has not seen since they changed', async () => {
-    expect(await unreadCount(db, REP, ['desk-a'])).toBe(2);
+    expect(await unreadCount(db, REP, asRep(['desk-a']))).toBe(2);
     await markRead(db, rep, 'd-open-new');
-    expect(await unreadCount(db, REP, ['desk-a'])).toBe(1);
+    expect(await unreadCount(db, REP, asRep(['desk-a']))).toBe(1);
   });
 
   it('counts a ticket again once it changes after being read', async () => {
     await markRead(db, rep, 'd-open-old');
-    expect(await unreadCount(db, REP, ['desk-a'])).toBe(0);
+    expect(await unreadCount(db, REP, asRep(['desk-a']))).toBe(0);
     await db.prepare('UPDATE tickets SET seq = 99 WHERE id = ?').bind('d-open-old').run();
-    expect(await unreadCount(db, REP, ['desk-a'])).toBe(1);
+    expect(await unreadCount(db, REP, asRep(['desk-a']))).toBe(1);
   });
 
   it('is 0 for no products', async () => {
-    expect(await unreadCount(db, REP, [])).toBe(0);
+    expect(await unreadCount(db, REP, asRep([]))).toBe(0);
   });
 
   it('never counts another product', async () => {
-    expect(await unreadCount(db, REP, ['desk-b'])).toBe(1);
+    expect(await unreadCount(db, REP, asRep(['desk-b']))).toBe(1);
     // Others' reads count for nothing: both open tickets are still unread for someone who has opened none.
-    expect(await unreadCount(db, 'desk-other@example.com', ['desk-a'])).toBe(2);
+    expect(await unreadCount(db, 'desk-other@example.com', asRep(['desk-a']))).toBe(2);
   });
 
   it('marks read for the first admin, who has no staff row', async () => {
-    const before = await unreadCount(db, firstAdmin.email, ['desk-b']);
+    const before = await unreadCount(db, firstAdmin.email, asAdmin(['desk-b']));
     expect(before).toBe(1);
     await markRead(db, firstAdmin, 'd-theirs');
-    expect(await unreadCount(db, firstAdmin.email, ['desk-b'])).toBe(0);
+    expect(await unreadCount(db, firstAdmin.email, asAdmin(['desk-b']))).toBe(0);
     const row = await db.prepare('SELECT role FROM staff WHERE email = ?').bind(firstAdmin.email).first<{ role: string }>();
     expect(row?.role).toBe('admin');
   });

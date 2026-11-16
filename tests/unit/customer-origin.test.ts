@@ -57,6 +57,22 @@ describe('requireProductOrigin', () => {
     expect(response.headers.get('Vary')).toBe('Origin');
   });
 
+  // shyden-labs/shydesk#61: the appeal token travels in its own header, allowed on the appeals path alone.
+  it('adds the ShyDesk-Appeal header to a preflight for the appeals path, and only there', async () => {
+    const { call } = appWith();
+    const preflight = (path: string, origin: string) =>
+      call(path, { method: 'OPTIONS', ...from(origin, { 'Access-Control-Request-Method': 'POST' }) });
+    const appeals = await preflight('/support-api/appeals?product=shytalk', 'https://shytalk.app');
+    expect(appeals.status).toBe(204);
+    expect(appeals.headers.get('Access-Control-Allow-Headers')).toBe('Content-Type, Authorization, ShyDesk-Appeal');
+    const elsewhere = await preflight('/support-api/appeals/more?product=shytalk', 'https://shytalk.app');
+    expect(elsewhere.headers.get('Access-Control-Allow-Headers')).toBe('Content-Type, Authorization');
+    const stranger = await preflight('/support-api/appeals?product=shytalk', 'https://evil.example');
+    expect(stranger.status).toBe(404);
+    expect(stranger.headers.get('Access-Control-Allow-Origin')).toBeNull();
+    expect(stranger.headers.get('Access-Control-Allow-Headers')).toBeNull();
+  });
+
   it.each([
     ['an unknown product', '/support-api/whoami?product=nope', from('https://shytalk.app')],
     ['an origin not on the list', '/support-api/whoami?product=shytalk', from('https://evil.example')],

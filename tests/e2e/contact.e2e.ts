@@ -9,26 +9,10 @@
 import { describe, it } from 'mocha';
 import { strict as assert } from 'node:assert';
 import { driver } from './harness/driver.ts';
-import { named } from './harness/find.ts';
+import { JOURNEY_WAIT as WAIT, named, textHolding } from './harness/find.ts';
 import { openPage } from './harness/open-page.ts';
 import { clickMiddleOf, pickFile, press, swipeLeft, tap, tapToNewPage, type, zoomIn } from './harness/input.ts';
 import { SEEDED_TICKET_TOKEN, SHYDESK_PORT } from './harness/local-shydesk.ts';
-
-const WAIT = 20_000;
-
-/** The text of the element named `label` once it holds `expected`, or a failure showing what it held. */
-async function textHolding(label: string, expected: string, timeout = WAIT): Promise<string> {
-  const element = await named(label);
-  let text = '';
-  await driver().waitUntil(
-    async () => {
-      text = await element.getText();
-      return text.includes(expected);
-    },
-    { timeout, timeoutMsg: `"${label}" never held "${expected}"; it held "${text}"` },
-  );
-  return text;
-}
 
 /** Waits until the page, shadow roots included, holds no media viewer: it closed. */
 async function viewerClosed(): Promise<void> {

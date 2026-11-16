@@ -26,7 +26,9 @@ export function requireProductOrigin(): MiddlewareHandler<CustomerEnv> {
     c.header('Vary', 'Origin');
     if (c.req.method === 'OPTIONS') {
       c.header('Access-Control-Allow-Methods', 'GET, POST, PUT');
-      c.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+      // The appeal token's own header is allowed on the appeals path alone (shyden-labs/shydesk#61).
+      const appeal = c.req.path === '/support-api/appeals' ? ', ShyDesk-Appeal' : '';
+      c.header('Access-Control-Allow-Headers', `Content-Type, Authorization${appeal}`);
       c.header('Access-Control-Max-Age', '600');
       return c.body(null, 204);
     }

@@ -4,7 +4,8 @@ import { hashKey } from '../products.ts';
 
 /** What /api/v1 handlers see: the product the caller's key belongs to. */
 export interface ApiEnv {
-  Bindings: Env;
+  /** TICKET_TOKEN_KEY seals the private link of an in-product appeal's ticket (shyden-labs/shydesk#61). */
+  Bindings: Env & { TICKET_TOKEN_KEY?: string };
   Variables: { productId: string };
 }
 

@@ -3,6 +3,7 @@ import type { JWTVerifyGetKey } from 'jose';
 import { adminRoutes } from './admin/routes.ts';
 import { docsRoutes, type DocsEnv } from './api/docs.ts';
 import { apiRoutes } from './api/routes.ts';
+import { appealRoutes } from './customer/appeal.ts';
 import { contactRoutes, type ContactBindings } from './customer/contact.ts';
 import { embedRoutes, type EmbedEnv } from './customer/embed.ts';
 import { ticketRoutes } from './customer/ticket.ts';
@@ -46,6 +47,7 @@ export function createApp(jwks?: JWTVerifyGetKey): Hono<{ Bindings: AppBindings 
   // Before contact: its origin check covers all of /support-api, and this answers first with its own.
   app.route('/', uploadRoutes());
   app.route('/', ticketRoutes());
+  app.route('/', appealRoutes({ deliver: workerDeliver }));
   app.route('/', contactRoutes({ fetcher: fetch.bind(globalThis), deliver: workerDeliver }));
   app.route('/', embedRoutes());
   return app;
