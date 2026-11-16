@@ -42,6 +42,11 @@ const productRow = (id: string, name = `Product ${id}`) => ({
   attachments_keep_days: 30,
   text_keep_days: 365,
   created_at: 1,
+  // Release 2 settings (shyden-labs/shydesk#58), as getModeration reads them.
+  punishments_json: '[]',
+  callback_url: null as string | null,
+  appeal_page_url: null as string | null,
+  has_secret: 0,
 });
 
 interface World {
@@ -128,6 +133,10 @@ describe('who may use /admin', () => {
     ['POST', '/admin/products/shytalk/api-keys'],
     ['POST', '/admin/products/shytalk/api-keys/abc/revoke'],
     ['POST', '/admin/staff'],
+    ['POST', '/admin/products/shytalk/punishments'],
+    ['POST', '/admin/products/shytalk/report-reasons'],
+    ['POST', '/admin/products/shytalk/callback'],
+    ['POST', '/admin/products/shytalk/signing-secret'],
   ])('a rep gets 404 on %s %s and nothing is written', async (method, path) => {
     const { env, statements } = setup();
     const response = method === 'GET' ? await get(path, REP, env) : await post(path, REP, env, PRODUCT_FORM);
@@ -406,7 +415,8 @@ describe('pages with saved settings', () => {
     const w = world();
     const base = answerFrom(w);
     const { db } = standInDb((sql, values) => {
-      if (/FROM ticket_types/.test(sql)) return [{ id: 'shytalk:support', name: 'Help', fields_json: JSON.stringify(FIELDS) }];
+      if (/FROM ticket_types WHERE product_id = \? AND kind = 'support'/.test(sql))
+        return [{ id: 'shytalk:support', name: 'Help', fields_json: JSON.stringify(FIELDS) }];
       if (/FROM canned_replies/.test(sql)) return [{ id: 'c1', type_id: null, name: 'Thanks', body: 'Thanks for writing.' }];
       if (/FROM api_keys/.test(sql)) return [{ hash: 'f'.repeat(64), label: 'Old feed', created_at: 1, revoked_at: 2 }];
       return base(sql, values);
@@ -488,4 +498,135 @@ describe('storage and missed timers on /admin (shyden-labs/shydesk#22 AC3)', () 
     expect(response.status).toBe(400);
     expect(await response.text()).toContain('Attachment storage at 90 % of the free 10 GB.');
   });
+});
+
+describe('Release 2 settings (shyden-labs/shydesk#58)', () => {
+  it('saves punishments from one line each: key; label; seconds, blank for no end', async () => {
+    const { env, statements } = setup();
+    const response = await post('/admin/products/shytalk/punishments', ADMIN, env, {
+      punishments: 'ban-7d; Ban 7 days; 604800\n\nremove-room; Remove room;',
+    });
+    expect(response.status).toBe(303);
+    expect(response.headers.get('Location')).toBe('/admin/products/shytalk');
+    expect(writes(statements)[0]?.values).toEqual([
+      JSON.stringify([
+        { key: 'ban-7d', label: 'Ban 7 days', duration_seconds: 604800 },
+        { key: 'remove-room', label: 'Remove room', duration_seconds: null },
+      ]),
+      'shytalk',
+    ]);
+  });
+
+  it('shows every punishment error, keeps what was typed and writes nothing', async () => {
+    const { env, statements } = setup();
+    const response = await post('/admin/products/shytalk/punishments', ADMIN, env, { punishments: 'Ban 7 days; Ban; 59\nnot a line' });
+    expect(response.status).toBe(400);
+    const page = await response.text();
+    expect(page).toContain('Line 2: write key; label; seconds, or leave seconds blank for no end.');
+    expect(page).toContain('Ban 7 days; Ban; 59');
+    expect(writes(statements)).toEqual([]);
+  });
+
+  it('refuses a duration that is not a whole number of seconds', async () => {
+    const { env, statements } = setup();
+    const response = await post('/admin/products/shytalk/punishments', ADMIN, env, { punishments: 'ban; Ban; a week' });
+    expect(response.status).toBe(400);
+    expect(await response.text()).toContain(
+      'Punishment &quot;ban&quot; must last 60 to 31536000 seconds (one year), or be left blank for no end.',
+    );
+    expect(writes(statements)).toEqual([]);
+  });
+
+  it('saves report reasons, one per line, as the report type', async () => {
+    const { env, statements } = setup();
+    const response = await post('/admin/products/shytalk/report-reasons', ADMIN, env, { reasons: 'Cheating\nHarassment\n' });
+    expect(response.status).toBe(303);
+    expect(writes(statements)[0]?.values.slice(0, 6)).toEqual([
+      'shytalk:report',
+      'shytalk',
+      'report',
+      'Report',
+      '[]',
+      '["Cheating","Harassment"]',
+    ]);
+  });
+
+  it('refuses an empty reason list and writes nothing', async () => {
+    const { env, statements } = setup();
+    const response = await post('/admin/products/shytalk/report-reasons', ADMIN, env, { reasons: '\n  \n' });
+    expect(response.status).toBe(400);
+    expect(await response.text()).toContain('At least one report reason is required.');
+    expect(writes(statements)).toEqual([]);
+  });
+
+  it('saves the callback and appeal page addresses', async () => {
+    const { env, statements } = setup();
+    const response = await post('/admin/products/shytalk/callback', ADMIN, env, {
+      callbackUrl: ' https://api.shytalk.example/punish ',
+      appealPageUrl: 'https://shytalk.example/appeal',
+    });
+    expect(response.status).toBe(303);
+    expect(writes(statements)[0]?.values).toEqual(['https://api.shytalk.example/punish', 'https://shytalk.example/appeal', 'shytalk']);
+  });
+
+  it('refuses an http callback, keeps what was typed and writes nothing', async () => {
+    const { env, statements } = setup();
+    const response = await post('/admin/products/shytalk/callback', ADMIN, env, {
+      callbackUrl: 'http://shytalk.example/x',
+      appealPageUrl: 'https://shytalk.example/appeal',
+    });
+    expect(response.status).toBe(400);
+    const page = await response.text();
+    expect(page).toContain('Callback URL must be an https address with no user name, password or #fragment.');
+    expect(page).toContain('value="http://shytalk.example/x"');
+    expect(writes(statements)).toEqual([]);
+  });
+
+  it('shows a new signing secret once, on that response only', async () => {
+    const { env, statements } = setup();
+    const response = await post('/admin/products/shytalk/signing-secret', ADMIN, env, {});
+    expect(response.status).toBe(200);
+    const page = await response.text();
+    const secret = /<output id="newSecret">([A-Za-z0-9_-]{43})<\/output>/.exec(page)?.[1];
+    expect(secret).toBeDefined();
+    expect(writes(statements)[0]?.values).toEqual([secret, 'shytalk']);
+    expect(page).toContain('New signing secret, shown once.');
+    const later = await (await get('/admin/products/shytalk', ADMIN, env)).text();
+    expect(later).not.toContain(secret);
+  });
+
+  it("shows a product's saved Release 2 settings, and only whether a secret exists", async () => {
+    const w = world();
+    w.products = [
+      {
+        ...productRow('shytalk'),
+        punishments_json: JSON.stringify([{ key: 'ban-7d', label: 'Ban 7 days', duration_seconds: 604800 }]),
+        callback_url: 'https://api.shytalk.example/punish',
+        appeal_page_url: 'https://shytalk.example/appeal',
+        has_secret: 1,
+      },
+    ];
+    const page = await (await get('/admin/products/shytalk', ADMIN, setup(w).env)).text();
+    expect.soft(page).toContain('ban-7d; Ban 7 days; 604800');
+    expect.soft(page).toContain('value="https://api.shytalk.example/punish"');
+    expect.soft(page).toContain('value="https://shytalk.example/appeal"');
+    expect.soft(page).toContain('A signing secret is set.');
+    expect.soft(page).toContain('Rotate signing secret');
+  });
+
+  it('offers to create a signing secret when none is set', async () => {
+    const page = await (await get('/admin/products/shytalk', ADMIN, setup().env)).text();
+    expect.soft(page).toContain('No signing secret yet.');
+    expect.soft(page).toContain('Create signing secret');
+  });
+
+  it.each(['punishments', 'report-reasons', 'callback', 'signing-secret'])(
+    'answers 404 for /admin/products/ghost/%s and writes nothing',
+    async (route) => {
+      const { env, statements } = setup();
+      const response = await post(`/admin/products/ghost/${route}`, ADMIN, env, {});
+      expect(response.status).toBe(404);
+      expect(writes(statements)).toEqual([]);
+    },
+  );
 });

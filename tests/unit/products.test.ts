@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { validateProduct, type ProductInput } from '../../src/products.ts';
+import { validateCallback, validatePunishments, validateProduct, type ProductInput } from '../../src/products.ts';
 
 /**
  * Admin settings validation (shyden-labs/shydesk#17 AC1; plan Task 4 step 1).
@@ -127,5 +127,105 @@ describe('validateProduct', () => {
   it('refuses text keep-days below 1 or fractional', () => {
     expect(errorsFor({ textKeepDays: 0 })).toEqual(['Text keep-days must be a whole number of 1 or more.']);
     expect(errorsFor({ textKeepDays: 2.5 })).toHaveLength(1);
+  });
+});
+
+/**
+ * Release 2 product settings (shyden-labs/shydesk#58 AC1, AC2; Release 2 plan Task 2 step 1).
+ */
+describe('validatePunishments', () => {
+  const BAN = { key: 'ban-7d', label: 'Ban 7 days', duration_seconds: 604800 };
+  const REMOVE = { key: 'remove-room', label: 'Remove room', duration_seconds: null };
+
+  it('accepts a timed punishment and one with no end', () => {
+    expect(validatePunishments([BAN, REMOVE])).toEqual([]);
+  });
+
+  it('accepts an empty list', () => {
+    expect(validatePunishments([])).toEqual([]);
+  });
+
+  it('refuses a key used twice', () => {
+    expect(validatePunishments([BAN, { ...REMOVE, key: 'ban-7d' }])).toEqual(['Punishment key "ban-7d" is used more than once.']);
+  });
+
+  it('refuses "Ban 7 days" as a key', () => {
+    expect(validatePunishments([{ ...BAN, key: 'Ban 7 days' }])).toEqual([
+      'Punishment key "Ban 7 days" must be 1 to 32 lowercase letters, digits or hyphens.',
+    ]);
+  });
+
+  it('accepts a key of exactly 32 characters and refuses 33 or none', () => {
+    expect(validatePunishments([{ ...BAN, key: 'a'.repeat(32) }])).toEqual([]);
+    expect(validatePunishments([{ ...BAN, key: 'a'.repeat(33) }])).toHaveLength(1);
+    expect(validatePunishments([{ ...BAN, key: '' }])).toHaveLength(1);
+  });
+
+  it('accepts a label of exactly 60 characters and refuses 61', () => {
+    expect(validatePunishments([{ ...BAN, label: 'x'.repeat(60) }])).toEqual([]);
+    expect(validatePunishments([{ ...BAN, label: 'x'.repeat(61) }])).toEqual(['Punishment "ban-7d" needs a label of 1 to 60 characters.']);
+  });
+
+  it('refuses a blank label', () => {
+    expect(validatePunishments([{ ...BAN, label: '   ' }])).toEqual(['Punishment "ban-7d" needs a label of 1 to 60 characters.']);
+  });
+
+  it('accepts a duration of exactly 60 seconds and exactly one year', () => {
+    expect(validatePunishments([{ ...BAN, duration_seconds: 60 }])).toEqual([]);
+    expect(validatePunishments([{ ...BAN, duration_seconds: 31_536_000 }])).toEqual([]);
+  });
+
+  it('refuses a duration of 59 seconds', () => {
+    expect(validatePunishments([{ ...BAN, duration_seconds: 59 }])).toEqual([
+      'Punishment "ban-7d" must last 60 to 31536000 seconds (one year), or be left blank for no end.',
+    ]);
+  });
+
+  it('refuses a duration of one year and a second, a fraction, and not a number', () => {
+    expect(validatePunishments([{ ...BAN, duration_seconds: 31_536_001 }])).toHaveLength(1);
+    expect(validatePunishments([{ ...BAN, duration_seconds: 60.5 }])).toHaveLength(1);
+    expect(validatePunishments([{ ...BAN, duration_seconds: Number.NaN }])).toHaveLength(1);
+  });
+
+  it('names every broken rule, in list order', () => {
+    expect(validatePunishments([{ key: 'Bad', label: '', duration_seconds: 1 }])).toEqual([
+      'Punishment key "Bad" must be 1 to 32 lowercase letters, digits or hyphens.',
+      'Punishment "Bad" needs a label of 1 to 60 characters.',
+      'Punishment "Bad" must last 60 to 31536000 seconds (one year), or be left blank for no end.',
+    ]);
+  });
+});
+
+describe('validateCallback', () => {
+  const CALLBACK = 'https://api.shytalk.app/shydesk/punish';
+  const APPEAL = 'https://shytalk.app/appeal';
+
+  it('accepts https addresses', () => {
+    expect(validateCallback(CALLBACK, APPEAL)).toEqual([]);
+  });
+
+  it('refuses http://shytalk.app/x as the callback', () => {
+    expect(validateCallback('http://shytalk.app/x', APPEAL)).toEqual([
+      'Callback URL must be an https address with no user name, password or #fragment.',
+    ]);
+  });
+
+  it('refuses https://u:p@shytalk.app/x as the callback', () => {
+    expect(validateCallback('https://u:p@shytalk.app/x', APPEAL)).toHaveLength(1);
+  });
+
+  it('refuses a callback with a user name and no password', () => {
+    expect(validateCallback('https://u@shytalk.app/x', APPEAL)).toHaveLength(1);
+  });
+
+  it('refuses an appeal page over http, with credentials, or with a #fragment', () => {
+    const error = 'Appeal page URL must be an https address with no user name, password or #fragment.';
+    expect(validateCallback(CALLBACK, 'http://shytalk.app/appeal')).toEqual([error]);
+    expect(validateCallback(CALLBACK, 'https://u:p@shytalk.app/appeal')).toEqual([error]);
+    expect(validateCallback(CALLBACK, 'https://shytalk.app/appeal#x')).toEqual([error]);
+  });
+
+  it('refuses text that is not an address, for both', () => {
+    expect(validateCallback('not a url', '')).toHaveLength(2);
   });
 });
