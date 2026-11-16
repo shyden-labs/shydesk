@@ -27,7 +27,11 @@ In **Admin > Products**, add the product with:
 ```
 
 - `product`: the product id from step 1.
-- `view`: `contact` shows the contact form.
+- `view`: `contact` shows the contact form. `ticket` shows the conversation
+  on a private link (`#t=<token>`), for the product's ticket page. `appeal`
+  shows the decision a ban notice link names (`#appeal=<token>`) and takes
+  one appeal of it, for the product's appeal page. The tokens stay in the
+  fragment, so the product's server never receives them.
 - `lang`: the page's language. It is accepted now and used once the piece is
   translated; English is shown until then.
 
