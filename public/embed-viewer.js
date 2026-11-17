@@ -316,12 +316,13 @@ export function openViewer({ doc, host, items, start, onClose }) {
     const now = { x: event.clientX, y: event.clientY };
     pointers.set(event.pointerId, now);
     if (pointers.size === 2) {
-      const other = [...pointers].find(([id]) => id !== event.pointerId)?.[1];
-      if (other === undefined) return;
-      const before = Math.hypot(last.x - other.x, last.y - other.y);
-      if (before === 0) return;
-      const middle = fromMiddle((now.x + other.x) / 2, (now.y + other.y) / 2);
-      apply(zoomBy(state, Math.hypot(now.x - other.x, now.y - other.y) / before, middle.x, middle.y));
+      for (const [id, other] of pointers) {
+        if (id === event.pointerId) continue;
+        const before = Math.hypot(last.x - other.x, last.y - other.y);
+        if (before === 0) return;
+        const middle = fromMiddle((now.x + other.x) / 2, (now.y + other.y) / 2);
+        apply(zoomBy(state, Math.hypot(now.x - other.x, now.y - other.y) / before, middle.x, middle.y));
+      }
     } else if (pointers.size === 1 && state.zoom > 1) {
       apply({ ...state, panX: state.panX + now.x - last.x, panY: state.panY + now.y - last.y });
     }
