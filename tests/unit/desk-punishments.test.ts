@@ -45,6 +45,7 @@ const REPORT_TICKET = {
   updated_at: 6,
   seq: 3,
   token_sealed: null,
+  text_deleted_at: null,
 };
 
 const punishment = (over: Record<string, unknown> = {}) => ({

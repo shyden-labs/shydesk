@@ -65,6 +65,7 @@ describe('tables', () => {
       'closed_at',
       'seq',
       'token_sealed',
+      'text_deleted_at',
     ]);
   });
   it('messages', async () => {

@@ -59,7 +59,7 @@ export async function writeStatus(db: D1Database, ticketId: string, to: Status, 
     db
       .prepare(
         `UPDATE tickets SET status = ?, updated_at = ?, closed_at = ?, seq = (SELECT value FROM counters WHERE key = 'feed_seq')
-         WHERE id = ?${onlyFrom === undefined ? '' : ' AND status = ?'}${to === 'closed' ? NO_REPORT_OWED : ''} RETURNING product_id`,
+         WHERE id = ? AND text_deleted_at IS NULL${onlyFrom === undefined ? '' : ' AND status = ?'}${to === 'closed' ? NO_REPORT_OWED : ''} RETURNING product_id`,
       )
       .bind(...values),
   ]);

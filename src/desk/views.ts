@@ -172,6 +172,8 @@ export interface ListData {
 }
 
 const day = (ms: number): string => new Date(ms).toISOString().slice(0, 10);
+/** A bare ticket row has no subject left (shyden-labs/shydesk#191). */
+const subjectOf = (t: Pick<DeskTicket, 'subject' | 'text_deleted_at'>): string => (t.text_deleted_at === null ? t.subject : 'Text deleted');
 
 /** The admin's legal duties first, then holds due for review; nothing when neither has any. */
 const legalSections = (legal: LegalReview | undefined): Page | string => {
@@ -258,7 +260,7 @@ export const listPage = (d: ListData): Page =>
                   ${d.tickets.map(
                     (t) =>
                       html`<tr>
-                        <td><a href="/desk/tickets/${t.id}">${t.subject}</a></td>
+                        <td><a href="/desk/tickets/${t.id}">${subjectOf(t)}</a></td>
                         <td>${d.productNames.get(t.product_id) ?? t.product_id}</td>
                         <td>${STATUS_NAMES[t.status] ?? t.status}</td>
                         <td>${when(t.updated_at)}</td>
@@ -490,23 +492,40 @@ const holdsPanel = (d: TicketData, order: DeskAttachment[]): Page | string => {
   </section>`;
 };
 
+/** The reply box, with the product's canned replies filled for this ticket. */
+const replyForm = (d: TicketData, values: Parameters<typeof fillCanned>[1]) =>
+  html`<form method="post" action="/desk/tickets/${d.ticket.id}/reply">
+    ${
+      d.canned.length === 0
+        ? ''
+        : html`<p>
+            Canned replies:
+            ${d.canned.map((c) => html`<button type="button" data-canned data-body="${fillCanned(c.body, values)}">${c.name}</button> `)}
+          </p>`
+    }
+    <label>Your reply <textarea name="body" data-reply maxlength="10000" required aria-label="Your reply"></textarea></label>
+    <button type="submit">Send reply</button>
+  </form>`;
+
 export const ticketPage = (d: TicketData): Page => {
   // The first that applies: an empty reply, a refused punishment action, a punishment sent, a reply's email.
   const line =
     d.error === 'empty'
       ? 'Enter a reply.'
-      : (PUNISHMENT_ERRORS[d.error ?? ''] ??
-        APPEAL_ERRORS[d.error ?? ''] ??
-        HOLD_ERRORS[d.error ?? ''] ??
-        HOLD_LINES[d.holdDone ?? ''] ??
-        PUNISHMENT_LINES[d.punishment ?? ''] ??
-        APPEAL_LINES[d.appealOutcome ?? ''] ??
-        MAIL_LINES[d.mail ?? '']);
+      : d.error === 'text-deleted'
+        ? 'This ticket’s text has been deleted, so it cannot be replied to.'
+        : (PUNISHMENT_ERRORS[d.error ?? ''] ??
+          APPEAL_ERRORS[d.error ?? ''] ??
+          HOLD_ERRORS[d.error ?? ''] ??
+          HOLD_LINES[d.holdDone ?? ''] ??
+          PUNISHMENT_LINES[d.punishment ?? ''] ??
+          APPEAL_LINES[d.appealOutcome ?? ''] ??
+          MAIL_LINES[d.mail ?? '']);
   const values = { customer_email: d.ticket.customer_email, ticket_subject: d.ticket.subject };
   const order = shownOrder(d.messages, d.attachments);
   return layout(
-    d.ticket.subject,
-    html`<h1>${d.ticket.subject}</h1>
+    subjectOf(d.ticket),
+    html`<h1>${subjectOf(d.ticket)}</h1>
       ${line === undefined ? '' : html`<p role="status" aria-label="Reply status">${line}</p>`}
       <p>${STATUS_NAMES[d.ticket.status] ?? d.ticket.status} · ${d.ticket.customer_email} · ${d.ticket.category}</p>
       <dl>
@@ -530,18 +549,13 @@ export const ticketPage = (d: TicketData): Page => {
             </article>`,
         )}
       </section>
-      <form method="post" action="/desk/tickets/${d.ticket.id}/reply">
-        ${
-          d.canned.length === 0
-            ? ''
-            : html`<p>
-                Canned replies:
-                ${d.canned.map((c) => html`<button type="button" data-canned data-body="${fillCanned(c.body, values)}">${c.name}</button> `)}
-              </p>`
-        }
-        <label>Your reply <textarea name="body" data-reply maxlength="10000" required aria-label="Your reply"></textarea></label>
-        <button type="submit">Send reply</button>
-      </form>
+      ${
+        d.ticket.text_deleted_at === null
+          ? replyForm(d, values)
+          : html`<p>
+              This ticket’s text was deleted on ${day(d.ticket.text_deleted_at)} under its retention period; its records are kept.
+            </p>`
+      }
       ${
         d.ticket.status === 'closed'
           ? ''

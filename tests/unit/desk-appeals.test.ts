@@ -44,6 +44,7 @@ const APPEAL_TICKET = {
   updated_at: 6,
   seq: 3,
   token_sealed: null,
+  text_deleted_at: null,
 };
 
 interface Appeal {

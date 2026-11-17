@@ -18,6 +18,7 @@ const ticket: DeskTicket = {
   updated_at: 6,
   seq: 1,
   token_sealed: null,
+  text_deleted_at: null,
 };
 
 const list = (over: Partial<ListData> = {}): ListData => ({
@@ -233,6 +234,35 @@ describe('the legal review on the list', () => {
     const page = await render(listPage(list({ legal: { duties: [], due: [] } })));
     expect(page).not.toContain('Legal duty outstanding');
     expect(page).not.toContain('Holds due for review');
+  });
+});
+
+// A bare ticket row after its text timer (shyden-labs/shydesk#191): no subject, email or fields are left to show.
+describe('a ticket whose text has gone', () => {
+  const bare: DeskTicket = {
+    ...ticket,
+    status: 'closed',
+    customer_email: '',
+    subject: '',
+    category: '',
+    text_deleted_at: Date.UTC(2027, 10, 17),
+  };
+
+  it('reads "Text deleted" in the list instead of an empty link', async () => {
+    expect(await render(listPage(list({ tickets: [bare] })))).toContain('<a href="/desk/tickets/t1">Text deleted</a>');
+  });
+
+  it('says when the text went, keeps the records, and offers no reply', async () => {
+    const page = await render(ticketPage(view({ ticket: bare })));
+    expect(page).toContain('<h1>Text deleted</h1>');
+    expect(page).toContain('This ticket’s text was deleted on 2027-11-17 under its retention period; its records are kept.');
+    expect(page).not.toContain('/desk/tickets/t1/reply');
+  });
+
+  it('says a reply was refused because the text has gone', async () => {
+    expect(await render(ticketPage(view({ ticket: bare, error: 'text-deleted' })))).toContain(
+      '<p role="status" aria-label="Reply status">This ticket’s text has been deleted, so it cannot be replied to.</p>',
+    );
   });
 });
 

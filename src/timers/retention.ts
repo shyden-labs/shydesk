@@ -38,10 +38,20 @@ export async function deleteAttachments(
   ]);
 }
 
+/** Attachment rows a legal hold names, kept (as deleted) for the hold's record. */
+const HOLD_NAMED = 'SELECT attachment_id FROM legal_holds WHERE attachment_id IS NOT NULL';
+/** Nothing else points at the ticket bound to `?`: what lets its row go rather than stay bare. */
+const NOTHING_POINTS = ['reports', 'punishments', 'appeals', 'legal_holds', 'authority_reports', 'attachments']
+  .map((table) => `NOT EXISTS (SELECT 1 FROM ${table} WHERE ${table === 'punishments' ? 'report_ticket_id' : 'ticket_id'} = ?)`)
+  .join(' AND ');
+
 /**
- * Deletes a closed ticket's text: any attachments still stored first, then its attachment rows, messages, the staff
- * read marks that reference it (shyden-labs/shydesk#119) and the ticket itself; none of the text while any hold is
- * active on the ticket.
+ * Deletes a closed ticket's text, none of it while any hold is active on the ticket: any attachments still stored
+ * first, then its attachment rows, messages and the staff read marks that reference it (shyden-labs/shydesk#119).
+ * Release 2 records (a report, punishments, an appeal, legal holds, an authority report) can point at the ticket, so
+ * its row is blanked to a bare record (ID, product, type, status, dates) with its link killed, the report's text and
+ * reporter blanked too, and the row deleted only when nothing points at it (Shyden's ruling 2026-11-17,
+ * shyden-labs/shydesk#191). Attachment rows a hold names stay, as deleted, for the hold's record.
  */
 export async function deleteText(
   db: D1Database,
@@ -50,10 +60,21 @@ export async function deleteText(
   now: number,
 ): Promise<void> {
   await deleteAttachments(db, files, ticketId, now);
+  const whileClosed = `${STILL_CLOSED} AND ${TICKET_NOT_HELD}`;
   await db.batch([
-    db.prepare(`DELETE FROM attachments WHERE ${STILL_CLOSED} AND ${TICKET_NOT_HELD}`).bind(ticketId, ticketId),
-    db.prepare(`DELETE FROM messages WHERE ${STILL_CLOSED} AND ${TICKET_NOT_HELD}`).bind(ticketId, ticketId),
-    db.prepare(`DELETE FROM reads WHERE ${STILL_CLOSED} AND ${TICKET_NOT_HELD}`).bind(ticketId, ticketId),
-    db.prepare(`DELETE FROM tickets WHERE id = ? AND status = 'closed' AND ${TICKET_NOT_HELD}`).bind(ticketId, ticketId),
+    db.prepare(`UPDATE attachments SET message_id = NULL WHERE ${whileClosed} AND id IN (${HOLD_NAMED})`).bind(ticketId, ticketId),
+    db.prepare(`DELETE FROM attachments WHERE ${whileClosed} AND id NOT IN (${HOLD_NAMED})`).bind(ticketId, ticketId),
+    db.prepare(`DELETE FROM messages WHERE ${whileClosed}`).bind(ticketId, ticketId),
+    db.prepare(`DELETE FROM reads WHERE ${whileClosed}`).bind(ticketId, ticketId),
+    db.prepare(`UPDATE reports SET reporter_id = '', reason = '', context_json = '{}' WHERE ${whileClosed}`).bind(ticketId, ticketId),
+    db
+      .prepare(
+        `UPDATE tickets SET customer_email = '', subject = '', category = '', fields_json = '{}', token_hash = 'deleted:' || id, token_sealed = NULL, text_deleted_at = ?
+         WHERE id = ? AND status = 'closed' AND ${TICKET_NOT_HELD}`,
+      )
+      .bind(now, ticketId, ticketId),
+    db
+      .prepare(`DELETE FROM tickets WHERE id = ? AND status = 'closed' AND ${TICKET_NOT_HELD} AND ${NOTHING_POINTS}`)
+      .bind(ticketId, ticketId, ...Array<string>(6).fill(ticketId)),
   ]);
 }
