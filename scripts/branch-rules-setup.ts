@@ -148,51 +148,62 @@ interface ChecksParameters {
   do_not_enforce_on_create?: boolean;
 }
 
-/** Every way a branch's rules (as `rules/branches/<branch>` reports them) fall short; empty when none. */
-export function auditBranchRules(branch: Branch, rules: Rule[]): string[] {
-  const problems: string[] = [];
-  // The repository deletes merged head branches (shyden-labs/repo-template#28), so a deletable
-  // develop would go the first time a develop -> main pull request merges.
-  if (!rules.some((r) => r.type === 'deletion')) {
-    problems.push(`${branch}: no rule forbids deleting it`);
-  }
+/** How a branch's pull-request rules fall short: none, or one allowing a merge method other than its own. */
+function pullRequestProblems(branch: Branch, rules: Rule[]): string[] {
   const pullRequests = rules.filter((r) => r.type === 'pull_request');
-  if (pullRequests.length === 0) {
-    problems.push(`${branch}: no rule requires a pull request`);
-  }
-  for (const r of pullRequests) {
+  if (pullRequests.length === 0) return [`${branch}: no rule requires a pull request`];
+  return pullRequests.flatMap((r) => {
     const methods = (r.parameters as { allowed_merge_methods?: string[] } | undefined)?.allowed_merge_methods;
-    if (methods?.length !== 1 || methods[0] !== MERGE_METHOD[branch]) {
-      const named = methods === undefined ? 'an unstated method' : methods.join(', ');
-      problems.push(`${branch}: pull requests may merge by ${named}, not ${MERGE_METHOD[branch]} alone`);
-    }
+    if (methods?.length === 1 && methods[0] === MERGE_METHOD[branch]) return [];
+    const named = methods === undefined ? 'an unstated method' : methods.join(', ');
+    return [`${branch}: pull requests may merge by ${named}, not ${MERGE_METHOD[branch]} alone`];
+  });
+}
+
+/** How develop's required-checks rules fall short: strict, never needing the release cut, enforced on creation. */
+function developChecksProblems(checks: ChecksParameters[], requiresReleaseCut: boolean): string[] {
+  const problems: string[] = [];
+  if (checks.some((c) => c.strict_required_status_checks_policy !== true)) {
+    problems.push('develop: a required-checks rule is not strict');
   }
-  const checks = rules.filter((r) => r.type === 'required_status_checks').map((r) => (r.parameters ?? {}) as ChecksParameters);
-  const requiresReleaseCut = checks.some((c) => c.required_status_checks?.some((s) => s.context === RELEASE_CUT) === true);
-  if (checks.length === 0) {
-    problems.push(`${branch}: no rule requires status checks`);
-  } else if (branch === 'develop') {
-    if (checks.some((c) => c.strict_required_status_checks_policy !== true)) {
-      problems.push(`${branch}: a required-checks rule is not strict`);
-    }
-    if (requiresReleaseCut) {
-      problems.push(`${branch}: a rule requires ${RELEASE_CUT}, which runs only on pull requests into main`);
-    }
-    if (checks.some((c) => c.do_not_enforce_on_create === true)) {
-      problems.push(`${branch}: a required-checks rule is not enforced when develop is created`);
-    }
-  } else {
-    if (checks.some((c) => c.strict_required_status_checks_policy !== false)) {
-      problems.push(`${branch}: a required-checks rule is strict, so a second release cut could never merge`);
-    }
-    if (!requiresReleaseCut) {
-      problems.push(`${branch}: no rule requires ${RELEASE_CUT}`);
-    }
-    if (checks.some((c) => c.do_not_enforce_on_create !== true)) {
-      problems.push(`${branch}: a required-checks rule is enforced when main is created, so a new main can never be made`);
-    }
+  if (requiresReleaseCut) {
+    problems.push(`develop: a rule requires ${RELEASE_CUT}, which runs only on pull requests into main`);
+  }
+  if (checks.some((c) => c.do_not_enforce_on_create === true)) {
+    problems.push('develop: a required-checks rule is not enforced when develop is created');
   }
   return problems;
+}
+
+/** How main's required-checks rules fall short: not strict (a second cut must merge), needing the release cut, not enforced on creation. */
+function mainChecksProblems(checks: ChecksParameters[], requiresReleaseCut: boolean): string[] {
+  const problems: string[] = [];
+  if (checks.some((c) => c.strict_required_status_checks_policy !== false)) {
+    problems.push('main: a required-checks rule is strict, so a second release cut could never merge');
+  }
+  if (!requiresReleaseCut) {
+    problems.push(`main: no rule requires ${RELEASE_CUT}`);
+  }
+  if (checks.some((c) => c.do_not_enforce_on_create !== true)) {
+    problems.push('main: a required-checks rule is enforced when main is created, so a new main can never be made');
+  }
+  return problems;
+}
+
+/** How a branch's required-checks rules fall short; empty when none. */
+function checksProblems(branch: Branch, rules: Rule[]): string[] {
+  const checks = rules.filter((r) => r.type === 'required_status_checks').map((r) => (r.parameters ?? {}) as ChecksParameters);
+  if (checks.length === 0) return [`${branch}: no rule requires status checks`];
+  const requiresReleaseCut = checks.some((c) => c.required_status_checks?.some((s) => s.context === RELEASE_CUT) === true);
+  return branch === 'develop' ? developChecksProblems(checks, requiresReleaseCut) : mainChecksProblems(checks, requiresReleaseCut);
+}
+
+/** Every way a branch's rules (as `rules/branches/<branch>` reports them) fall short; empty when none. */
+export function auditBranchRules(branch: Branch, rules: Rule[]): string[] {
+  // The repository deletes merged head branches (shyden-labs/repo-template#28), so a deletable
+  // develop would go the first time a develop -> main pull request merges.
+  const deletion = rules.some((r) => r.type === 'deletion') ? [] : [`${branch}: no rule forbids deleting it`];
+  return [...deletion, ...pullRequestProblems(branch, rules), ...checksProblems(branch, rules)];
 }
 
 /** The repository settings a template copy does not carry, so the script sets them (shyden-labs/repo-template#28, shyden-labs/repo-template#115). */
