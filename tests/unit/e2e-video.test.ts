@@ -14,6 +14,7 @@ const state = (over: Partial<VideoState> = {}): VideoState => ({
   width: 1920,
   height: 1080,
   error: null,
+  playRefused: null,
   ...over,
 });
 
@@ -52,13 +53,24 @@ describe('playing', () => {
 describe('videoStateNote', () => {
   it('names every part of the state, with the browser meaning of each number', () => {
     expect(videoStateNote('Video 1 full size', state({ readyState: 1, networkState: 2, currentTime: 0, width: 0, height: 0 }))).toBe(
-      '"Video 1 full size": readyState 1 (metadata), networkState 2 (loading), playing asked, time 0.00 s, size 0×0, error none',
+      '"Video 1 full size": readyState 1 (metadata), networkState 2 (loading), playing asked, time 0.00 s, size 0×0, error none, play refused none',
     );
   });
 
   it('names a media error by its code', () => {
     expect(videoStateNote('v', state({ readyState: 0, networkState: 3, paused: true, error: 4 }))).toBe(
-      '"v": readyState 0 (nothing), networkState 3 (no source), paused, time 0.50 s, size 1920×1080, error 4 (source not supported)',
+      '"v": readyState 0 (nothing), networkState 3 (no source), paused, time 0.50 s, size 1920×1080, error 4 (source not supported), play refused none',
+    );
+  });
+
+  it('names the reason a play was refused', () => {
+    expect(
+      videoStateNote(
+        'v',
+        state({ readyState: 1, paused: true, currentTime: 0, playRefused: 'NotAllowedError: The request is not allowed' }),
+      ),
+    ).toBe(
+      '"v": readyState 1 (metadata), networkState 1 (idle), paused, time 0.00 s, size 1920×1080, error none, play refused NotAllowedError: The request is not allowed',
     );
   });
 });

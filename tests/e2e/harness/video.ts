@@ -15,6 +15,8 @@ export interface VideoState {
   height: number;
   /** The MediaError code, or null when there is none. */
   error: number | null;
+  /** Why the viewer's last play was refused (`data-play-refused`), or null when none was. */
+  playRefused: string | null;
 }
 
 const READY = ['nothing', 'metadata', 'current data', 'future data', 'enough data'];
@@ -37,13 +39,14 @@ export function videoStateNote(label: string, s: VideoState): string {
     `time ${s.currentTime.toFixed(2)} s`,
     `size ${String(s.width)}×${String(s.height)}`,
     `error ${error}`,
+    `play refused ${s.playRefused ?? 'none'}`,
   ].join(', ');
 }
 
 /** Reads the state of the video named `label` from the page. */
 export async function videoState(label: string): Promise<VideoState> {
   return driver().execute<VideoState>(
-    'const v = arguments[0]; return { readyState: v.readyState, networkState: v.networkState, paused: v.paused, currentTime: v.currentTime, width: v.videoWidth, height: v.videoHeight, error: v.error ? v.error.code : null };',
+    'const v = arguments[0]; return { readyState: v.readyState, networkState: v.networkState, paused: v.paused, currentTime: v.currentTime, width: v.videoWidth, height: v.videoHeight, error: v.error ? v.error.code : null, playRefused: v.dataset.playRefused ?? null };',
     await named(label),
   );
 }

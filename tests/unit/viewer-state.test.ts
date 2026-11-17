@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { START, next, prev, rotate, stateLine, wheelFactor, zoomBy } from '../../public/embed-viewer.js';
+import { START, next, prev, rotate, stateLine, togglePlay, wheelFactor, zoomBy } from '../../public/embed-viewer.js';
 
 // The media viewer's state (shyden-labs/shydesk#25 AC1): zoom clamped 1-8,
 // rotation cycling in quarter turns, next and previous wrapping round.
@@ -117,5 +117,46 @@ describe('wheelFactor', () => {
 
   it('leaves the zoom alone for a sideways-only wheel', () => {
     expect(wheelFactor(0, 0, 800)).toBe(1);
+  });
+});
+
+// A tap on a video plays or pauses it; a play the browser refuses leaves its reason on the
+// element, so a journey that sees the video stay paused can say why (shyden-labs/shydesk#188 AC2).
+describe('togglePlay', () => {
+  const clip = (paused: boolean, play: () => Promise<void> = () => Promise.resolve()) => {
+    const calls: string[] = [];
+    const el = {
+      paused,
+      dataset: {} as Record<string, string | undefined>,
+      play: () => {
+        calls.push('play');
+        return play();
+      },
+      pause: () => {
+        calls.push('pause');
+      },
+    };
+    return { el, calls };
+  };
+
+  it('plays a paused video, clearing a refusal left by an earlier tap', async () => {
+    const { el, calls } = clip(true);
+    el.dataset.playRefused = 'NotAllowedError: earlier';
+    await togglePlay(el);
+    expect(calls).toEqual(['play']);
+    expect(el.dataset.playRefused).toBeUndefined();
+  });
+
+  it('pauses a playing video without asking it to play', async () => {
+    const { el, calls } = clip(false);
+    await togglePlay(el);
+    expect(calls).toEqual(['pause']);
+    expect(el.dataset.playRefused).toBeUndefined();
+  });
+
+  it('keeps the name and message of a play refused with an error', async () => {
+    const { el } = clip(true, () => Promise.reject(new DOMException('The request is not allowed', 'NotAllowedError')));
+    await togglePlay(el);
+    expect(el.dataset.playRefused).toBe('NotAllowedError: The request is not allowed');
   });
 });
