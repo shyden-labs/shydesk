@@ -21,7 +21,18 @@ import {
 import type { Fetcher as CallbackFetcher } from '../punishments/send.ts';
 import { appealPanel, getFile, getTicket, listTickets, markRead, reportPanel, unreadCount, type DeskTicket } from './queries.ts';
 import { listPage, ticketPage } from './views.ts';
-import { legalReview } from '../holds/holds.ts';
+import {
+  HoldNotFound,
+  HoldRefused,
+  legalReview,
+  liftHold,
+  placeHold,
+  recordAuthorityReport,
+  recordNoReport,
+  renewHold,
+  setOrderPending,
+  ticketHolds,
+} from '../holds/holds.ts';
 
 /**
  * The staff desk under /desk (shyden-labs/shydesk#24; plan Task 10). Signed-in
@@ -137,6 +148,8 @@ export function deskRoutes(deps: DeskDeps, jwks?: JWTVerifyGetKey): Hono<DeskEnv
         appeal: await appealPanel(c.env.DB, found.ticket),
         appealOutcome: reference(c, 'appeal'),
         isAdmin: staff.role === 'admin',
+        holds: await ticketHolds(c.env.DB, staff, found.ticket.id),
+        holdDone: reference(c, 'hold'),
       }),
     );
   });
@@ -204,6 +217,79 @@ export function deskRoutes(deps: DeskDeps, jwks?: JWTVerifyGetKey): Hono<DeskEnv
     }
   });
 
+  // Legal holds (shyden-labs/shydesk#62): any rep in scope places one; the rest is the admin's, 404 for anyone else.
+  const holdAction = async (c: DeskContext, ticketId: string, act: () => Promise<unknown>, done: string) => {
+    try {
+      await act();
+      return c.redirect(`/desk/tickets/${ticketId}?hold=${done}`, 303);
+    } catch (error) {
+      if (error instanceof HoldNotFound) return c.notFound();
+      if (error instanceof HoldRefused) return c.redirect(`/desk/tickets/${ticketId}?error=${error.reason}`, 303);
+      throw error;
+    }
+  };
+  const field = (form: Record<string, unknown>, name: string): string => {
+    const value = form[name];
+    return typeof value === 'string' ? value : '';
+  };
+  /** A form's `YYYY-MM-DD` date as midnight UTC, or undefined when missing or not a date. */
+  const dateField = (form: Record<string, unknown>, name: string): number | undefined => {
+    const value = field(form, name);
+    const at = /^\d{4}-\d{2}-\d{2}$/.test(value) ? Date.parse(`${value}T00:00:00Z`) : Number.NaN;
+    return Number.isNaN(at) ? undefined : at;
+  };
+  const REASONS = ['crime_unreported', 'reported', 'preservation'] as const;
+
+  app.post('/desk/tickets/:id/holds', async (c) => {
+    const ticketId = c.req.param('id');
+    const form = await c.req.parseBody();
+    const reason = REASONS.find((r) => r === form.reason);
+    const back = (error: string) => c.redirect(`/desk/tickets/${ticketId}?error=${error}`, 303);
+    if (reason === undefined) return back('unknown_reason');
+    const note = field(form, 'note').trim();
+    if (note === '') return back('note_required');
+    const attachment = field(form, 'attachment');
+    const basisAt = dateField(form, 'basis');
+    const input = {
+      ticketId,
+      reason,
+      csam: form.csam === 'on',
+      note,
+      ...(attachment === '' ? {} : { attachmentId: attachment }),
+      ...(basisAt === undefined ? {} : { basisAt }),
+    };
+    return holdAction(c, ticketId, () => placeHold(c.env, c.var.staff, input, Date.now()), 'placed');
+  });
+
+  app.post('/desk/tickets/:id/holds/:hold/lift', async (c) =>
+    holdAction(c, c.req.param('id'), () => liftHold(c.env, c.var.staff, c.req.param('hold'), Date.now()), 'lifted'),
+  );
+
+  app.post('/desk/tickets/:id/holds/:hold/renew', async (c) => {
+    const note = field(await c.req.parseBody(), 'note').trim();
+    return holdAction(c, c.req.param('id'), () => renewHold(c.env, c.var.staff, c.req.param('hold'), note, Date.now()), 'renewed');
+  });
+
+  app.post('/desk/tickets/:id/holds/:hold/order', async (c) => {
+    const pending = (await c.req.parseBody()).pending === '1';
+    return holdAction(c, c.req.param('id'), () => setOrderPending(c.env, c.var.staff, c.req.param('hold'), pending, Date.now()), 'order');
+  });
+
+  app.post('/desk/tickets/:id/holds/:hold/no-report', async (c) => {
+    const reason = field(await c.req.parseBody(), 'reason');
+    return holdAction(c, c.req.param('id'), () => recordNoReport(c.env, c.var.staff, c.req.param('hold'), reason, Date.now()), 'no_report');
+  });
+
+  app.post('/desk/tickets/:id/authority-report', async (c) => {
+    const ticketId = c.req.param('id');
+    if (c.var.staff.role !== 'admin') return c.notFound();
+    const form = await c.req.parseBody();
+    const reportedAt = dateField(form, 'reported_at');
+    if (reportedAt === undefined) return c.redirect(`/desk/tickets/${ticketId}?error=date_required`, 303);
+    const report = { reportedTo: field(form, 'reported_to'), reportedAt, reference: field(form, 'reference') };
+    return holdAction(c, ticketId, () => recordAuthorityReport(c.env, c.var.staff, ticketId, report, Date.now()), 'reported');
+  });
+
   app.post('/desk/tickets/:id/reply', async (c) => {
     const staff = c.var.staff;
     const found = await getTicket(c.env.DB, staff, c.req.param('id'));
@@ -238,7 +324,9 @@ export function deskRoutes(deps: DeskDeps, jwks?: JWTVerifyGetKey): Hono<DeskEnv
     const found = await getTicket(c.env.DB, c.var.staff, c.req.param('id'));
     if (found === null) return c.notFound();
     // In scope but unchanged: a live csam hold still waits for its report to the authorities (shyden-labs/shydesk#62).
-    if (!(await changeStatus(c.env, found.ticket.id, 'closed', Date.now()))) return c.json({ error: 'authority_report_owed' }, 409);
+    if (!(await changeStatus(c.env, found.ticket.id, 'closed', Date.now()))) {
+      return c.redirect(`/desk/tickets/${found.ticket.id}?error=authority_report_owed`, 303);
+    }
     return c.redirect(`/desk/tickets/${found.ticket.id}`, 303);
   });
 

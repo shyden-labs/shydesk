@@ -322,3 +322,80 @@ export async function legalReview(db: D1Database, staff: Staff, now: number): Pr
     }),
   };
 }
+
+/** A live hold as the ticket page shows it. */
+export interface TicketHold {
+  id: string;
+  /** The one file held, or null for the whole ticket. */
+  attachmentId: string | null;
+  reason: HoldReason;
+  csam: boolean;
+  note: string;
+  placedBy: string;
+  placedAt: number;
+  /** When it may first be lifted; null while it cannot be lifted at all. */
+  earliest: number | null;
+  orderPending: boolean;
+  noReportReason: string | null;
+}
+
+/** A ticket's recorded report to the authorities. */
+export interface RecordedReport {
+  reportedTo: string;
+  reportedAt: number;
+  reference: string;
+  recordedBy: string;
+}
+
+export interface TicketHolds {
+  holds: TicketHold[];
+  report: RecordedReport | null;
+}
+
+interface TicketHoldRow extends HoldTiming {
+  id: string;
+  attachment_id: string | null;
+  csam: number;
+  note: string;
+  placed_by: string;
+}
+
+/** A ticket's live holds, oldest first, and its recorded report, for anyone with the ticket in scope. */
+export async function ticketHolds(db: D1Database, staff: Staff, ticketId: string): Promise<TicketHolds> {
+  if (staff.products.length === 0) return { holds: [], report: null };
+  const [{ results }, report] = await Promise.all([
+    db
+      .prepare(
+        `SELECT h.id, h.attachment_id, h.reason, h.csam, h.note, h.placed_by, h.placed_at, h.basis_at, h.renewals, h.order_pending, h.no_report_reason
+         FROM legal_holds h JOIN tickets t ON t.id = h.ticket_id
+         WHERE h.ticket_id = ? AND h.lifted_at IS NULL AND t.product_id IN (${marks(staff.products)}) ORDER BY h.placed_at, h.id`,
+      )
+      .bind(ticketId, ...staff.products)
+      .all<TicketHoldRow>(),
+    db
+      .prepare(
+        `SELECT r.reported_to, r.reported_at, r.reference, r.recorded_by FROM authority_reports r JOIN tickets t ON t.id = r.ticket_id
+         WHERE r.ticket_id = ? AND t.product_id IN (${marks(staff.products)})`,
+      )
+      .bind(ticketId, ...staff.products)
+      .first<{ reported_to: string; reported_at: number; reference: string; recorded_by: string }>(),
+  ]);
+  return {
+    holds: results.map((h) => ({
+      id: h.id,
+      attachmentId: h.attachment_id,
+      reason: h.reason,
+      csam: h.csam === 1,
+      note: h.note,
+      placedBy: h.placed_by,
+      placedAt: h.placed_at,
+      earliest: earliestRelease(h),
+      orderPending: h.order_pending === 1,
+      noReportReason: h.no_report_reason,
+    })),
+    report:
+      report === null
+        ? null
+        : { reportedTo: report.reported_to, reportedAt: report.reported_at, reference: report.reference, recordedBy: report.recorded_by },
+  };
+}

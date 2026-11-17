@@ -75,6 +75,119 @@ describe('listPage', () => {
   });
 });
 
+describe('the legal holds panel', () => {
+  const T = Date.UTC(2026, 9, 1);
+  const hold = {
+    id: 'h1',
+    attachmentId: null,
+    reason: 'preservation' as const,
+    csam: false,
+    note: 'Request <1>',
+    placedBy: 'rep@example.com',
+    placedAt: T,
+    earliest: Date.UTC(2026, 11, 30),
+    orderPending: false,
+    noReportReason: null,
+  };
+  const file = { id: 'a1', message_id: 'm1', mime: 'image/jpeg', bytes: 2000, duration_ms: null, state: 'stored', withheld: 0 as const };
+  const message = { id: 'm1', author: 'customer', staff_email: null, body: 'Hi', created_at: 5 };
+
+  it('shows a rep each live hold and the form to place one, but no admin actions', async () => {
+    const page = await render(ticketPage(view({ messages: [message], attachments: [file], holds: { holds: [hold], report: null } })));
+    expect(page).toContain('<h2 id="holds">Legal holds</h2>');
+    expect(page).toContain(
+      'Preservation request on the whole ticket: Request &lt;1&gt;. Placed by rep@example.com, 2026-10-01 00:00. May be lifted from 2026-12-30.',
+    );
+    expect(page).toContain('<form method="post" action="/desk/tickets/t1/holds">');
+    expect(page).toContain('<option value="a1">Photo 1</option>');
+    expect(page).not.toContain('/holds/h1/');
+    expect(page).not.toContain('action="/desk/tickets/t1/authority-report"');
+  });
+
+  it('says what a hold covers: one file by its number, suspected child-abuse material, and one that cannot be lifted yet', async () => {
+    const page = await render(
+      ticketPage(
+        view({
+          messages: [message],
+          attachments: [file],
+          holds: { holds: [{ ...hold, reason: 'crime_unreported', attachmentId: 'a1', csam: true, earliest: null }], report: null },
+        }),
+      ),
+    );
+    expect(page).toContain('Possible crime, not yet reported, suspected child-abuse material, on Photo 1: ');
+    expect(page).toContain('Cannot be lifted yet.');
+  });
+
+  it('gives the admin lift, renew and order on a preservation hold, and the report form', async () => {
+    const page = await render(ticketPage(view({ isAdmin: true, holds: { holds: [hold], report: null } })));
+    expect(page).toContain('action="/desk/tickets/t1/holds/h1/lift"');
+    expect(page).toContain('action="/desk/tickets/t1/holds/h1/renew"');
+    expect(page).toContain('action="/desk/tickets/t1/holds/h1/order"');
+    expect(page).toContain('<button type="submit">Mark a production order pending</button>');
+    expect(page).not.toContain('/holds/h1/no-report');
+    expect(page).toContain('action="/desk/tickets/t1/authority-report"');
+  });
+
+  it('gives the admin "no report needed" on an undecided possible crime, and "order answered" on a pending order', async () => {
+    const page = await render(
+      ticketPage(
+        view({
+          isAdmin: true,
+          holds: {
+            holds: [
+              { ...hold, id: 'h2', reason: 'crime_unreported', earliest: null },
+              { ...hold, id: 'h3', orderPending: true, earliest: null },
+            ],
+            report: null,
+          },
+        }),
+      ),
+    );
+    expect(page).toContain('action="/desk/tickets/t1/holds/h2/no-report"');
+    expect(page).not.toContain('/holds/h2/renew');
+    expect(page).toContain('<button type="submit">Mark the order answered</button>');
+    expect(page).toContain('Production order pending.');
+  });
+
+  it('gives no "no report needed" once that is recorded, and says why', async () => {
+    const page = await render(
+      ticketPage(
+        view({ isAdmin: true, holds: { holds: [{ ...hold, reason: 'crime_unreported', noReportReason: 'A joke' }], report: null } }),
+      ),
+    );
+    expect(page).not.toContain('/holds/h1/no-report');
+    expect(page).toContain('No report needed: A joke.');
+  });
+
+  it('shows a recorded report in place of the form', async () => {
+    const page = await render(
+      ticketPage(
+        view({
+          isAdmin: true,
+          holds: {
+            holds: [hold],
+            report: { reportedTo: 'Bareskrim Polri', reportedAt: T, reference: 'LP/1', recordedBy: 'admin@example.com' },
+          },
+        }),
+      ),
+    );
+    expect(page).toContain('Reported to Bareskrim Polri on 2026-10-01, reference LP/1, recorded by admin@example.com.');
+    expect(page).not.toContain('action="/desk/tickets/t1/authority-report"');
+  });
+
+  it.each([
+    ['not_yet', 'This hold cannot be lifted yet.'],
+    ['authority_report_owed', 'Record the report to the authorities before closing this ticket.'],
+    ['basis_required', 'Enter the report or request date.'],
+  ])('explains the refusal %s', async (error, text) => {
+    expect(await render(ticketPage(view({ error, holds: { holds: [], report: null } })))).toContain(text);
+  });
+
+  it('confirms a hold action', async () => {
+    expect(await render(ticketPage(view({ holdDone: 'placed', holds: { holds: [], report: null } })))).toContain('Legal hold placed.');
+  });
+});
+
 describe('the legal review on the list', () => {
   it('shows the admin the tickets owing a report first, then the holds due for review, each linking to its ticket', async () => {
     const page = await render(

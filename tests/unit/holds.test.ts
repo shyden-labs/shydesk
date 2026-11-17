@@ -10,6 +10,7 @@ import {
   recordNoReport,
   renewHold,
   setOrderPending,
+  ticketHolds,
   type HoldEnv,
 } from '../../src/holds/holds.ts';
 import { DAY_MS, type TimerPlan } from '../../src/tickets/status.ts';
@@ -416,5 +417,56 @@ describe('legalReview', () => {
   it('a day before its earliest release a hold is not yet due', async () => {
     const { env: e } = env((sql) => (sql.includes('h.renewals') ? [{ ...live, id: 'h1', ticket_id: 't1', subject: 'S' }] : []));
     expect((await legalReview(e.DB, ADMIN, T + 89 * DAY_MS)).due).toEqual([]);
+  });
+});
+
+describe('ticketHolds', () => {
+  it('a person with no products is shown no holds, and nothing is asked', async () => {
+    const { env: e, statements } = env(() => []);
+    expect(await ticketHolds(e.DB, { ...REP, products: [] }, 't1')).toEqual({ holds: [], report: null });
+    expect(statements).toEqual([]);
+  });
+
+  it("lists the ticket's live holds with when each may be lifted, and its recorded report, scoped in SQL", async () => {
+    const row = {
+      id: 'h1',
+      attachment_id: 'a1',
+      reason: 'preservation',
+      csam: 1,
+      note: 'Request',
+      placed_by: 'rep@example.com',
+      placed_at: T,
+      basis_at: T,
+      renewals: 1,
+      order_pending: 0,
+      no_report_reason: null,
+    };
+    const report = { reported_to: 'Bareskrim Polri', reported_at: T, reference: 'LP/1', recorded_by: 'admin@example.com' };
+    const { env: e, statements } = env((sql) =>
+      sql.includes('FROM legal_holds') ? [row] : sql.includes('FROM authority_reports') ? [report] : [],
+    );
+    expect(await ticketHolds(e.DB, REP, 't1')).toEqual({
+      holds: [
+        {
+          id: 'h1',
+          attachmentId: 'a1',
+          reason: 'preservation',
+          csam: true,
+          note: 'Request',
+          placedBy: 'rep@example.com',
+          placedAt: T,
+          earliest: T + 180 * DAY_MS,
+          orderPending: false,
+          noReportReason: null,
+        },
+      ],
+      report: { reportedTo: 'Bareskrim Polri', reportedAt: T, reference: 'LP/1', recordedBy: 'admin@example.com' },
+    });
+    const holds = statements.find((s) => s.sql.includes('FROM legal_holds'));
+    expect(holds?.sql).toMatch(/WHERE h\.ticket_id = \? AND h\.lifted_at IS NULL AND t\.product_id IN \(\?\) ORDER BY h\.placed_at, h\.id/);
+    expect(holds?.values).toEqual(['t1', 'shytalk']);
+    const recorded = statements.find((s) => s.sql.includes('FROM authority_reports'));
+    expect(recorded?.sql).toMatch(/WHERE r\.ticket_id = \? AND t\.product_id IN \(\?\)/);
+    expect(recorded?.values).toEqual(['t1', 'shytalk']);
   });
 });

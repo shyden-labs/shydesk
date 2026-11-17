@@ -17,6 +17,7 @@ import {
   recordNoReport,
   renewHold,
   setOrderPending,
+  ticketHolds,
   type HoldEnv,
 } from '../../src/holds/holds.ts';
 import { getFile } from '../../src/desk/queries.ts';
@@ -215,6 +216,19 @@ describe('legal holds on D1', () => {
         .soft(recordAuthorityReport(env, ADMIN, 'it-hold-t2', { ...report, reference: 'LP/999' }, T + 7 * DAY_MS))
         .rejects.toEqual(new HoldRefused('already_reported'));
       expect.soft((await legalReview(db, ADMIN, T + 200 * DAY_MS)).duties).toEqual([]);
+      // The ticket page's holds on real D1: t2's two live holds and its report; nothing for another product's admin.
+      const page = await ticketHolds(db, ADMIN, 'it-hold-t2');
+      expect.soft(page.holds.map((h) => [h.id, h.reason, h.csam])).toEqual(
+        [
+          [kept, 'preservation', false],
+          [crime, 'reported', true],
+          // Both placed at T: ordered by id, as SQLite compares text.
+        ].sort((a, b) => (String(a[0]) < String(b[0]) ? -1 : 1)),
+      );
+      expect
+        .soft(page.report)
+        .toEqual({ reportedTo: 'Bareskrim Polri', reportedAt: T + 5 * DAY_MS, reference: 'LP/123', recordedBy: ADMIN.email });
+      expect.soft(await ticketHolds(db, ADMIN_ONE, 'it-hold-t2')).toEqual({ holds: [], report: null });
       // Reported, t2 closes.
       expect.soft(await writeStatus(db, 'it-hold-t2', 'closed', T + 7 * DAY_MS)).not.toBeNull();
       expect
