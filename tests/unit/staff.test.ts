@@ -109,25 +109,19 @@ describe('loadStaff', () => {
     }
   });
 
-  it('returns null for an email that is neither a staff row nor the first admin', async () => {
-    const { db } = standInDb(ROWS);
-    await expect(loadStaff(db, 'stranger@example.com', FIRST_ADMIN)).resolves.toBeNull();
-  });
-
-  it('returns null for a staff row with a role it does not know', async () => {
-    const { db } = standInDb(ROWS);
-    await expect(loadStaff(db, 'odd@example.com', FIRST_ADMIN)).resolves.toBeNull();
-  });
-
   it('makes nobody the first admin when FIRST_ADMIN_EMAIL is empty', async () => {
     const { db } = standInDb({ staff: [], grants: [], products: ROWS.products });
     await expect(loadStaff(db, '', '')).resolves.toBeNull();
     await expect(loadStaff(db, 'stranger@example.com', '  ')).resolves.toBeNull();
   });
 
-  it('returns null for an empty email even when it would match nothing else', async () => {
+  it.each([
+    ['an email that is neither a staff row nor the first admin', 'stranger@example.com'],
+    ['a staff row with a role it does not know', 'odd@example.com'],
+    ['an empty email even when it would match nothing else', '   '],
+  ])('returns null for %s', async (_what, email) => {
     const { db } = standInDb(ROWS);
-    await expect(loadStaff(db, '   ', FIRST_ADMIN)).resolves.toBeNull();
+    await expect(loadStaff(db, email, FIRST_ADMIN)).resolves.toBeNull();
   });
 });
 

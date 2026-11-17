@@ -19,7 +19,8 @@ async function hmacHex(secret: string, message: string): Promise<string> {
 
 /** The `ShyDesk-Signature` header for this timestamp and body. */
 export async function sign(secret: string, timestamp: number, rawBody: string): Promise<string> {
-  return `v1=${await hmacHex(secret, `${String(timestamp)}.${rawBody}`)}`;
+  const signed = `${String(timestamp)}.${rawBody}`;
+  return `v1=${await hmacHex(secret, signed)}`;
 }
 
 /** Compares two strings in time that depends only on their length. */

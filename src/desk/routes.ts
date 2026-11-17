@@ -102,12 +102,12 @@ export function deskRoutes(deps: DeskDeps, jwks?: JWTVerifyGetKey): Hono<DeskEnv
     const inScope = scope(staff, selected);
     const allProducts = await listProducts(c.env.DB);
     const products = allProducts.filter((p) => staff.products.includes(p.id));
+    const placeholders = inScope.map(() => '?').join(', ');
+    const appeals = staff.role === 'admin' ? '' : " AND kind != 'appeal'";
     const { results: types } =
       inScope.length === 0
         ? { results: [] }
-        : await c.env.DB.prepare(
-            `SELECT id, name FROM ticket_types WHERE product_id IN (${inScope.map(() => '?').join(', ')})${staff.role === 'admin' ? '' : " AND kind != 'appeal'"} ORDER BY name`,
-          )
+        : await c.env.DB.prepare(`SELECT id, name FROM ticket_types WHERE product_id IN (${placeholders})${appeals} ORDER BY name`)
             .bind(...inScope)
             .all<{ id: string; name: string }>();
     return c.html(

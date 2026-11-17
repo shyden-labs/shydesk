@@ -212,15 +212,24 @@ const listLink = (d: ListData, changes: { product?: string | undefined; cursor?:
   return text === '' ? '/desk' : `/desk?${text}`;
 };
 
+const currentWhen = (current: boolean): string => (current ? 'page' : 'false');
+
+/** A link to the next page when this one is full. */
+const nextPageLink = (d: ListData): Page | '' => {
+  if (d.tickets.length !== PAGE_SIZE) return '';
+  const next = listLink(d, { cursor: d.cursor + PAGE_SIZE });
+  return html`<p><a href="${next}">Next page</a></p>`;
+};
+
 export const listPage = (d: ListData): Page =>
   layout(
     'Tickets',
     html`<h1>Tickets</h1>
       ${legalSections(d.legal)}
       <nav aria-label="Products">
-        ${d.showAll ? html`<a href="${listLink(d, { product: undefined })}" aria-current="${d.selected === undefined ? 'page' : 'false'}">All products</a>` : ''}
+        ${d.showAll ? html`<a href="${listLink(d, { product: undefined })}" aria-current="${currentWhen(d.selected === undefined)}">All products</a>` : ''}
         ${d.products.map(
-          (p) => html`<a href="${listLink(d, { product: p.id })}" aria-current="${d.selected === p.id ? 'page' : 'false'}">${p.name}</a>`,
+          (p) => html`<a href="${listLink(d, { product: p.id })}" aria-current="${currentWhen(d.selected === p.id)}">${p.name}</a>`,
         )}
       </nav>
       <form method="get" action="/desk">
@@ -270,7 +279,7 @@ export const listPage = (d: ListData): Page =>
               </table>
             </div>`
       }
-      ${d.tickets.length === PAGE_SIZE ? html`<p><a href="${listLink(d, { cursor: d.cursor + PAGE_SIZE })}">Next page</a></p>` : ''}`,
+      ${nextPageLink(d)}`,
   );
 
 const fieldsOf = (json: string): [string, string][] => Object.entries(JSON.parse(json) as Record<string, string>);
@@ -325,10 +334,13 @@ export interface TicketData {
   holdDone?: string | undefined;
 }
 
+/** ` (error)` after a state, or nothing when there is no error. */
+const inBrackets = (error: string | null): string => (error === null ? '' : ' (' + error + ')');
+
 const stateLine = (p: PunishmentRow): string => {
-  const sent = `${p.label}: ${p.send_state}${p.send_error === null ? '' : ` (${p.send_error})`}`;
+  const sent = `${p.label}: ${p.send_state}${inBrackets(p.send_error)}`;
   if (p.lifted_at === null) return sent;
-  const lift = `lift ${p.lift_state ?? 'sending'}${p.lift_error === null ? '' : ` (${p.lift_error})`}`;
+  const lift = `lift ${p.lift_state ?? 'sending'}${inBrackets(p.lift_error)}`;
   return `${sent}, lifted by ${p.lifted_by ?? ''}, ${lift}`;
 };
 
@@ -385,6 +397,11 @@ const reportSection = (r: ReportPanel, ticketId: string, isAdmin: boolean): Page
 const DECIDED: Record<string, string> = { upheld: 'Upheld', rejected: 'Rejected' };
 
 /** The appeal panel: the punishment appealed, and the decision or the buttons to make it. */
+const decidedLine = (a: AppealPanel): Page => {
+  const at = a.decided_at === null ? '' : when(a.decided_at);
+  return html`<p>${DECIDED[a.state] ?? a.state} by ${a.decided_by ?? ''}, ${at}.</p>`;
+};
+
 const appealSection = (a: AppealPanel, ticketId: string): Page =>
   html`<section aria-label="Appeal">
     <h2>Appeal of ${a.label}</h2>
@@ -396,25 +413,33 @@ const appealSection = (a: AppealPanel, ticketId: string): Page =>
               <button type="submit" name="outcome" value="upheld">Uphold and lift</button>
               <button type="submit" name="outcome" value="rejected">Reject</button>
             </form>`
-        : html`<p>${DECIDED[a.state] ?? a.state} by ${a.decided_by ?? ''}, ${a.decided_at === null ? '' : when(a.decided_at)}.</p>`
+        : decidedLine(a)
     }
   </section>`;
 
 const fileName = (a: DeskAttachment, order: DeskAttachment[]): string => {
   const number = order.indexOf(a) + 1;
-  return number === 0 ? 'a withheld file' : `${a.mime.startsWith('video/') ? 'Video' : 'Photo'} ${String(number)}`;
+  if (number === 0) return 'a withheld file';
+  const kind = a.mime.startsWith('video/') ? 'Video' : 'Photo';
+  return `${kind} ${String(number)}`;
 };
 
 const holdLine = (h: TicketHold, d: TicketData, order: DeskAttachment[]): string => {
   const file = d.attachments.find((a) => a.id === h.attachmentId);
-  const covers = h.attachmentId === null ? 'the whole ticket' : file === undefined ? 'a file' : fileName(file, order);
+  let covers = 'the whole ticket';
+  if (h.attachmentId !== null) covers = file === undefined ? 'a file' : fileName(file, order);
   const release = h.earliest === null ? 'Cannot be lifted yet.' : `May be lifted from ${day(h.earliest)}.`;
-  return `${HOLD_REASONS[h.reason]}${h.csam ? ', suspected child-abuse material,' : ''} on ${covers}: ${h.note}. Placed by ${h.placedBy}, ${when(h.placedAt)}. ${release}${h.orderPending ? ' Production order pending.' : ''}${h.noReportReason === null ? '' : ` No report needed: ${h.noReportReason}.`}`;
+  const csam = h.csam ? ', suspected child-abuse material,' : '';
+  const pendingOrder = h.orderPending ? ' Production order pending.' : '';
+  const noReport = h.noReportReason === null ? '' : ' No report needed: ' + h.noReportReason + '.';
+  return `${HOLD_REASONS[h.reason]}${csam} on ${covers}: ${h.note}. Placed by ${h.placedBy}, ${when(h.placedAt)}. ${release}${pendingOrder}${noReport}`;
 };
 
 /** The admin's actions on one hold: lift, and those its reason allows. */
 const holdActions = (h: TicketHold, ticketId: string): Page => {
   const to = (action: string) => `/desk/tickets/${ticketId}/holds/${h.id}/${action}`;
+  const nextPending = h.orderPending ? '0' : '1';
+  const orderButton = h.orderPending ? 'Mark the order answered' : 'Mark a production order pending';
   return html`<form method="post" action="${to('lift')}"><button type="submit">Lift</button></form>
     ${
       h.reason === 'preservation'
@@ -422,8 +447,8 @@ const holdActions = (h: TicketHold, ticketId: string): Page => {
               <label>Renewal request <input name="note" required /></label><button type="submit">Renew</button>
             </form>
             <form method="post" action="${to('order')}">
-              <input type="hidden" name="pending" value="${h.orderPending ? '0' : '1'}" />
-              <button type="submit">${h.orderPending ? 'Mark the order answered' : 'Mark a production order pending'}</button>
+              <input type="hidden" name="pending" value="${nextPending}" />
+              <button type="submit">${orderButton}</button>
             </form>`
         : ''
     }
@@ -434,6 +459,22 @@ const holdActions = (h: TicketHold, ticketId: string): Page => {
           </form>`
         : ''
     }`;
+};
+
+/** The report to the authorities once recorded; before that, the admin's form to record it. */
+const authorityReport = (report: TicketHolds['report'], admin: boolean, ticketId: string): Page | string => {
+  if (report !== null) {
+    return html`<p>
+      Reported to ${report.reportedTo} on ${day(report.reportedAt)}, reference ${report.reference}, recorded by ${report.recordedBy}.
+    </p>`;
+  }
+  if (!admin) return '';
+  return html`<form method="post" action="/desk/tickets/${ticketId}/authority-report">
+    <label>Reported to <input name="reported_to" required /></label>
+    <label>Date <input type="date" name="reported_at" required /></label>
+    <label>Reference <input name="reference" required /></label>
+    <button type="submit">Record report to the authorities</button>
+  </form>`;
 };
 
 /** Live holds, the form to place one, and for the admin each hold's actions and the authority report. */
@@ -475,20 +516,7 @@ const holdsPanel = (d: TicketData, order: DeskAttachment[]): Page | string => {
       <label>Why <input name="note" required /></label>
       <button type="submit">Place hold</button>
     </form>
-    ${
-      report !== null
-        ? html`<p>
-            Reported to ${report.reportedTo} on ${day(report.reportedAt)}, reference ${report.reference}, recorded by ${report.recordedBy}.
-          </p>`
-        : admin
-          ? html`<form method="post" action="/desk/tickets/${d.ticket.id}/authority-report">
-              <label>Reported to <input name="reported_to" required /></label>
-              <label>Date <input type="date" name="reported_at" required /></label>
-              <label>Reference <input name="reference" required /></label>
-              <button type="submit">Record report to the authorities</button>
-            </form>`
-          : ''
-    }
+    ${authorityReport(report, admin, d.ticket.id)}
   </section>`;
 };
 
@@ -507,20 +535,23 @@ const replyForm = (d: TicketData, values: Parameters<typeof fillCanned>[1]) =>
     <button type="submit">Send reply</button>
   </form>`;
 
+/** The first notice that applies: an empty reply, a refused action, an action done, a reply's email. */
+const noticeLine = (d: TicketData): string | undefined => {
+  if (d.error === 'empty') return 'Enter a reply.';
+  if (d.error === 'text-deleted') return 'This ticket’s text has been deleted, so it cannot be replied to.';
+  return (
+    PUNISHMENT_ERRORS[d.error ?? ''] ??
+    APPEAL_ERRORS[d.error ?? ''] ??
+    HOLD_ERRORS[d.error ?? ''] ??
+    HOLD_LINES[d.holdDone ?? ''] ??
+    PUNISHMENT_LINES[d.punishment ?? ''] ??
+    APPEAL_LINES[d.appealOutcome ?? ''] ??
+    MAIL_LINES[d.mail ?? '']
+  );
+};
+
 export const ticketPage = (d: TicketData): Page => {
-  // The first that applies: an empty reply, a refused punishment action, a punishment sent, a reply's email.
-  const line =
-    d.error === 'empty'
-      ? 'Enter a reply.'
-      : d.error === 'text-deleted'
-        ? 'This ticket’s text has been deleted, so it cannot be replied to.'
-        : (PUNISHMENT_ERRORS[d.error ?? ''] ??
-          APPEAL_ERRORS[d.error ?? ''] ??
-          HOLD_ERRORS[d.error ?? ''] ??
-          HOLD_LINES[d.holdDone ?? ''] ??
-          PUNISHMENT_LINES[d.punishment ?? ''] ??
-          APPEAL_LINES[d.appealOutcome ?? ''] ??
-          MAIL_LINES[d.mail ?? '']);
+  const line = noticeLine(d);
   const values = { customer_email: d.ticket.customer_email, ticket_subject: d.ticket.subject };
   const order = shownOrder(d.messages, d.attachments);
   return layout(
