@@ -484,6 +484,56 @@ describe('the contact form', () => {
       expect(stand.media.uploadAttachment.mock.calls[0]?.[0]).toMatchObject({ file: converted, mime: 'image/jpeg' });
     });
 
+    it('keeps sending off after an upload until the check has passed', async () => {
+      const view = await contact();
+      pick(view.picker, [new File(['p'], 'a.jpg', { type: 'image/jpeg' })]);
+      await vi.waitFor(() => {
+        expect(view.lines?.textContent).toBe('a.jpg: attached, 3 KB');
+      });
+      expect(view.send?.disabled).toBe(true);
+    });
+
+    it('keeps sending off after a refused send, even once an upload finishes, until a new check passes', async () => {
+      const view = await contact();
+      view.options.callback('token-1');
+      routes['POST tickets'] = () => json({ error: 'No.' }, 400);
+      submit(view.form);
+      await vi.waitFor(() => {
+        expect(view.status()).toBe('No.');
+      });
+      pick(view.picker, [new File(['p'], 'a.jpg', { type: 'image/jpeg' })]);
+      await vi.waitFor(() => {
+        expect(view.lines?.textContent).toBe('a.jpg: attached, 3 KB');
+      });
+      expect(view.send?.disabled).toBe(true);
+      view.options.callback('token-2');
+      expect(view.send?.disabled).toBe(false);
+    });
+
+    it('clears the picker once every picked file is done with, so the same file can be picked again', async () => {
+      const view = await contact();
+      const cleared = vi.spyOn(HTMLInputElement.prototype, 'value', 'set');
+      let finish: (value: { id: string; bytes: number }) => void = () => undefined;
+      stand.media.uploadAttachment.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finish = resolve;
+          }),
+      );
+      pick(view.picker, [new File(['p'], 'a.jpg', { type: 'image/jpeg' }), new File(['p'], 'b.jpg', { type: 'image/jpeg' })]);
+      await vi.waitFor(() => {
+        expect(stand.media.uploadAttachment).toHaveBeenCalledOnce();
+      });
+      expect(cleared.mock.contexts).not.toContain(view.picker);
+      finish({ id: 'file-1', bytes: 1 });
+      await vi.waitFor(() => {
+        expect(view.lines?.textContent).toBe('a.jpg: attached, 1 KB\nb.jpg: attached, 3 KB');
+      });
+      expect(cleared.mock.contexts.filter((one) => one === view.picker)).toHaveLength(1);
+      expect(cleared.mock.calls.at(-1)).toEqual(['']);
+      cleared.mockRestore();
+    });
+
     it('refuses a file that is neither a photo nor an MP4 video', async () => {
       const view = await contact();
       pick(view.picker, [new File(['x'], 'notes.txt', { type: 'text/plain' })]);
