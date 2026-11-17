@@ -165,7 +165,10 @@ describe('liftHold', () => {
     expect(update?.sql).toMatch(/SET lifted_at = \?, lifted_by = \? WHERE id = \? AND lifted_at IS NULL/);
     expect(update?.values).toEqual([at, 'admin@example.com', 'h1']);
     const event = statements.find((s) => s.sql.startsWith('INSERT INTO legal_hold_events'));
-    expect(event?.values).toEqual(['h1', at, 'admin@example.com', 'lifted', '']);
+    // The lift and its event are written together; the event only for the row this lift changed.
+    expect([update?.method, event?.method]).toEqual(['batch', 'batch']);
+    expect(event?.sql).toMatch(/SELECT id, \?, \?, \?, \? FROM legal_holds WHERE id = \? AND lifted_at = \? AND lifted_by = \?/);
+    expect(event?.values).toEqual([at, 'admin@example.com', 'lifted', '', 'h1', at, 'admin@example.com']);
     // Attachments were due at T + 30 d, long past: now. Text is due at T + 365 d: also now.
     expect(applied).toEqual([{ ticketId: 't1', plan: { schedule: { attachments: at, text: T + 365 * DAY_MS }, cancel: [] } }]);
   });
@@ -199,7 +202,7 @@ describe('liftHold', () => {
   it('two lifts at the same moment: only the one that changed the row goes on', async () => {
     const { env: e, statements, applied } = env(liftAnswer(reportedHold, false));
     await expect(liftHold(e, ADMIN, 'h1', T + 365 * DAY_MS)).rejects.toBeInstanceOf(HoldNotFound);
-    expect(statements.some((s) => s.sql.startsWith('INSERT INTO legal_hold_events'))).toBe(false);
+    expect(statements.filter((s) => s.method === 'batch').map((s) => s.sql.split(' ')[0])).toEqual(['UPDATE', 'INSERT']);
     expect(applied).toEqual([]);
   });
 });

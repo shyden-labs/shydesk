@@ -111,14 +111,19 @@ export async function liftHold(env: HoldEnv, staff: Staff, holdId: string, now: 
   if (hold === null) throw new HoldNotFound();
   const earliest = earliestRelease(hold);
   if (earliest === null || now < earliest) throw new HoldRefused('not_yet', earliest);
-  // Two lifts at the same moment: only the one that changed the row goes on.
-  const lifted = await env.DB.prepare('UPDATE legal_holds SET lifted_at = ?, lifted_by = ? WHERE id = ? AND lifted_at IS NULL RETURNING id')
-    .bind(now, staff.email, holdId)
-    .first();
-  if (lifted === null) throw new HoldNotFound();
-  await env.DB.prepare('INSERT INTO legal_hold_events (hold_id, at, by, action, detail) VALUES (?, ?, ?, ?, ?)')
-    .bind(holdId, now, staff.email, 'lifted', '')
-    .run();
+  // The lift and its event in one batch. Two lifts at the same moment: only the one that changed the row goes on,
+  // and the event is written only for the row this lift changed.
+  const [lifted] = await env.DB.batch([
+    env.DB.prepare('UPDATE legal_holds SET lifted_at = ?, lifted_by = ? WHERE id = ? AND lifted_at IS NULL RETURNING id').bind(
+      now,
+      staff.email,
+      holdId,
+    ),
+    env.DB.prepare(
+      'INSERT INTO legal_hold_events (hold_id, at, by, action, detail) SELECT id, ?, ?, ?, ? FROM legal_holds WHERE id = ? AND lifted_at = ? AND lifted_by = ?',
+    ).bind(now, staff.email, 'lifted', '', holdId, now, staff.email),
+  ]);
+  if (lifted === undefined || lifted.results.length === 0) throw new HoldNotFound();
   if (hold.status !== 'closed' || hold.closed_at === null) return;
   const schedule = {
     attachments: Math.max(now, hold.closed_at + hold.attachments_keep_days * DAY_MS),
