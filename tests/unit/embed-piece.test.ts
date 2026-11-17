@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeAll, beforeEach, describe, expect, it, type MockInstance, vi } from 'vitest';
 
-// The shared support piece (shyden-labs/shydesk#19, #20, #21, #24, #25, #61): the
+// The shared support piece (shyden-labs/shydesk#19, shyden-labs/shydesk#20, shyden-labs/shydesk#21, shyden-labs/shydesk#24,
+// shyden-labs/shydesk#25, shyden-labs/shydesk#61): the
 // contact form, the private link's conversation and the appeal view, as a page
 // that loads public/embed.js from ShyDesk sees them. The script registers its
 // element once per page, so this file loads it once; Turnstile and the two
