@@ -21,6 +21,12 @@ describe('every workflow', () => {
     expect(files).toEqual(['check-release-cut.yml', 'ci.yml', 'deploy-dev.yml', 'deploy-prod.yml', 'sonarcloud.yml']);
   });
 
+  // npx fetches the newest release when a package is not installed, so a typo or a lockfile change
+  // could deploy an unreviewed version (SonarCloud githubactions:S8543; shyden-labs/shydesk#180).
+  it.each(files)('%s runs installed tools from the lockfile, never through npx', (file) => {
+    expect(withoutYamlComments(read(file)).match(/^.*\bnpx\s.*$/gm) ?? []).toEqual([]);
+  });
+
   it.each(files)('%s swallows no failure and gates no step on the token', (file) => {
     expect([...swallowed(file, read(file)), ...tokenGated(file, read(file))]).toEqual([]);
   });
