@@ -205,6 +205,7 @@ describe('the contact form', () => {
   it('cannot load on a page whose origin the product does not allow', async () => {
     // A known product whose only allowed origin is elsewhere: the browser refuses the answer (no CORS header).
     await openPage('/contact.html?product=demo-elsewhere');
-    await textHolding('Support status', 'The support form could not load here.');
+    const status = await textHolding('Support status', 'The support form could not load here.');
+    assert.equal(status.trim(), 'The support form could not load here.', 'the status says more than that the form could not load');
   });
 });
