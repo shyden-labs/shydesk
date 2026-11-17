@@ -75,9 +75,178 @@ describe('listPage', () => {
   });
 });
 
+describe('the legal holds panel', () => {
+  const T = Date.UTC(2026, 9, 1);
+  const hold = {
+    id: 'h1',
+    attachmentId: null,
+    reason: 'preservation' as const,
+    csam: false,
+    note: 'Request <1>',
+    placedBy: 'rep@example.com',
+    placedAt: T,
+    earliest: Date.UTC(2026, 11, 30),
+    orderPending: false,
+    noReportReason: null,
+  };
+  const file = { id: 'a1', message_id: 'm1', mime: 'image/jpeg', bytes: 2000, duration_ms: null, state: 'stored', withheld: 0 as const };
+  const message = { id: 'm1', author: 'customer', staff_email: null, body: 'Hi', created_at: 5 };
+
+  it('shows a rep each live hold and the form to place one, but no admin actions', async () => {
+    const page = await render(ticketPage(view({ messages: [message], attachments: [file], holds: { holds: [hold], report: null } })));
+    expect(page).toContain('<h2 id="holds">Legal holds</h2>');
+    expect(page).toContain(
+      'Preservation request on the whole ticket: Request &lt;1&gt;. Placed by rep@example.com, 2026-10-01 00:00. May be lifted from 2026-12-30.',
+    );
+    expect(page).toContain('<form method="post" action="/desk/tickets/t1/holds">');
+    expect(page).toContain('<option value="a1">Photo 1</option>');
+    expect(page).not.toContain('/holds/h1/');
+    expect(page).not.toContain('action="/desk/tickets/t1/authority-report"');
+  });
+
+  it('says what a hold covers: one file by its number, suspected child-abuse material, and one that cannot be lifted yet', async () => {
+    const page = await render(
+      ticketPage(
+        view({
+          messages: [message],
+          attachments: [file],
+          holds: { holds: [{ ...hold, reason: 'crime_unreported', attachmentId: 'a1', csam: true, earliest: null }], report: null },
+        }),
+      ),
+    );
+    expect(page).toContain('Possible crime, not yet reported, suspected child-abuse material, on Photo 1: ');
+    expect(page).toContain('Cannot be lifted yet.');
+  });
+
+  it('names a held file that is withheld, or that the page does not list, without a number', async () => {
+    const page = await render(
+      ticketPage(
+        view({
+          messages: [message],
+          attachments: [{ ...file, withheld: 1 }],
+          holds: {
+            holds: [
+              { ...hold, attachmentId: 'a1' },
+              { ...hold, id: 'h2', attachmentId: 'a9' },
+            ],
+            report: null,
+          },
+        }),
+      ),
+    );
+    expect(page).toContain('Preservation request on a withheld file: ');
+    expect(page).toContain('Preservation request on a file: ');
+  });
+
+  it('gives the admin lift, renew and order on a preservation hold, and the report form', async () => {
+    const page = await render(ticketPage(view({ isAdmin: true, holds: { holds: [hold], report: null } })));
+    expect(page).toContain('action="/desk/tickets/t1/holds/h1/lift"');
+    expect(page).toContain('action="/desk/tickets/t1/holds/h1/renew"');
+    expect(page).toContain('action="/desk/tickets/t1/holds/h1/order"');
+    expect(page).toContain('<button type="submit">Mark a production order pending</button>');
+    expect(page).not.toContain('/holds/h1/no-report');
+    expect(page).toContain('action="/desk/tickets/t1/authority-report"');
+  });
+
+  it('gives the admin "no report needed" on an undecided possible crime, and "order answered" on a pending order', async () => {
+    const page = await render(
+      ticketPage(
+        view({
+          isAdmin: true,
+          holds: {
+            holds: [
+              { ...hold, id: 'h2', reason: 'crime_unreported', earliest: null },
+              { ...hold, id: 'h3', orderPending: true, earliest: null },
+            ],
+            report: null,
+          },
+        }),
+      ),
+    );
+    expect(page).toContain('action="/desk/tickets/t1/holds/h2/no-report"');
+    expect(page).not.toContain('/holds/h2/renew');
+    expect(page).toContain('<button type="submit">Mark the order answered</button>');
+    expect(page).toContain('Production order pending.');
+  });
+
+  it('gives no "no report needed" once that is recorded, and says why', async () => {
+    const page = await render(
+      ticketPage(
+        view({ isAdmin: true, holds: { holds: [{ ...hold, reason: 'crime_unreported', noReportReason: 'A joke' }], report: null } }),
+      ),
+    );
+    expect(page).not.toContain('/holds/h1/no-report');
+    expect(page).toContain('No report needed: A joke.');
+  });
+
+  it('shows a recorded report in place of the form', async () => {
+    const page = await render(
+      ticketPage(
+        view({
+          isAdmin: true,
+          holds: {
+            holds: [hold],
+            report: { reportedTo: 'Bareskrim Polri', reportedAt: T, reference: 'LP/1', recordedBy: 'admin@example.com' },
+          },
+        }),
+      ),
+    );
+    expect(page).toContain('Reported to Bareskrim Polri on 2026-10-01, reference LP/1, recorded by admin@example.com.');
+    expect(page).not.toContain('action="/desk/tickets/t1/authority-report"');
+  });
+
+  it.each([
+    ['not_yet', 'This hold cannot be lifted yet.'],
+    ['authority_report_owed', 'Record the report to the authorities before closing this ticket.'],
+    ['basis_required', 'Enter the report or request date.'],
+  ])('explains the refusal %s', async (error, text) => {
+    expect(await render(ticketPage(view({ error, holds: { holds: [], report: null } })))).toContain(text);
+  });
+
+  it('confirms a hold action', async () => {
+    expect(await render(ticketPage(view({ holdDone: 'placed', holds: { holds: [], report: null } })))).toContain('Legal hold placed.');
+  });
+});
+
+describe('the legal review on the list', () => {
+  it('shows the admin the tickets owing a report first, then the holds due for review, each linking to its ticket', async () => {
+    const page = await render(
+      listPage(
+        list({
+          legal: {
+            duties: [{ ticketId: 't9', subject: 'Image <x>', placedAt: 1 }],
+            due: [{ holdId: 'h1', ticketId: 't8', subject: 'Request', earliest: Date.UTC(2026, 10, 1) }],
+          },
+        }),
+      ),
+    );
+    const duty = page.indexOf('<h2 id="legal-duty">Legal duty outstanding</h2>');
+    const due = page.indexOf('<h2 id="holds-due">Holds due for review</h2>');
+    expect(duty).toBeGreaterThan(-1);
+    expect(due).toBeGreaterThan(duty);
+    expect(page.indexOf('aria-label="Ticket list"')).toBeGreaterThan(due);
+    expect(page).toContain('<a href="/desk/tickets/t9">Image &lt;x&gt;</a>: report to the authorities not yet recorded');
+    expect(page).toContain('<a href="/desk/tickets/t8">Request</a>: may be lifted since 2026-11-01');
+  });
+
+  it('shows neither heading when nothing is owed or due', async () => {
+    const page = await render(listPage(list({ legal: { duties: [], due: [] } })));
+    expect(page).not.toContain('Legal duty outstanding');
+    expect(page).not.toContain('Holds due for review');
+  });
+});
+
 describe('ticketPage', () => {
   const message = { id: 'm1', author: 'customer', staff_email: null, body: 'Help', created_at: 5 };
-  const attachment = { id: 'a1', message_id: 'm1', mime: 'image/jpeg', bytes: 2000, duration_ms: null, state: 'stored' };
+  const attachment = {
+    id: 'a1',
+    message_id: 'm1',
+    mime: 'image/jpeg',
+    bytes: 2000,
+    duration_ms: null,
+    state: 'stored',
+    withheld: 0 as const,
+  };
 
   it('names each stored attachment by kind and size, on its own message', async () => {
     const page = await render(
@@ -109,6 +278,26 @@ describe('ticketPage', () => {
         }),
       ),
     );
+    expect(page).toContain('aria-label="Open photo 1"');
+    expect(page).not.toContain('photo 2');
+  });
+
+  it('shows a file under a csam hold as withheld: no preview, no viewer, and it takes no number', async () => {
+    // shyden-labs/shydesk#62 AC3.
+    const page = await render(
+      ticketPage(
+        view({
+          messages: [message],
+          attachments: [
+            { ...attachment, id: 'a0', withheld: 1 },
+            { ...attachment, id: 'a1' },
+          ],
+        }),
+      ),
+    );
+    expect(page).toContain('<li>Evidence withheld under legal hold</li>');
+    expect(page).not.toContain('/desk/files/a0');
+    expect(page).not.toContain('data-id="a0"');
     expect(page).toContain('aria-label="Open photo 1"');
     expect(page).not.toContain('photo 2');
   });
@@ -207,6 +396,26 @@ describe('the queries', () => {
   it("leaves an appeal's files out of a rep's file lookup and keeps them in the admin's", async () => {
     expect(await asked('rep', (db, scope) => getFile(db, scope, 'a1'))).toContain(`t.${NOT_APPEAL}`);
     expect(await asked('admin', (db, scope) => getFile(db, scope, 'a1'))).not.toContain('appeal');
+  });
+
+  it('withholds a file under a live csam hold, on the ticket or on that file, from every viewer, in SQL', async () => {
+    // shyden-labs/shydesk#62: suspected child-abuse material is never served, the admin included.
+    expect(await asked('rep', (db, scope) => getFile(db, scope, 'a1'))).toMatch(
+      /NOT EXISTS \(SELECT 1 FROM legal_holds h WHERE h\.lifted_at IS NULL AND h\.csam = 1 AND h\.ticket_id = a\.ticket_id AND \(h\.attachment_id IS NULL OR h\.attachment_id = a\.id\)\)/,
+    );
+    expect(await asked('admin', (db, scope) => getFile(db, scope, 'a1'))).toMatch(
+      /NOT EXISTS \(SELECT 1 FROM legal_holds h WHERE h\.lifted_at IS NULL AND h\.csam = 1 AND h\.ticket_id = a\.ticket_id AND \(h\.attachment_id IS NULL OR h\.attachment_id = a\.id\)\)/,
+    );
+  });
+
+  it('marks each attachment of a ticket withheld when a live csam hold covers it, in SQL', async () => {
+    const { db, statements } = standInDb((sql) => (sql.includes('FROM tickets') ? [{ ...ticket }] : []));
+    await getTicket(db, { products: ['shytalk'], role: 'admin' }, 't1');
+    const files = statements.find((s) => s.sql.includes('FROM attachments'))?.sql;
+    expect(files).toMatch(/FROM attachments a WHERE/);
+    expect(files).toMatch(
+      /CASE WHEN NOT EXISTS \(SELECT 1 FROM legal_holds h WHERE h\.lifted_at IS NULL AND h\.csam = 1 AND h\.ticket_id = a\.ticket_id AND \(h\.attachment_id IS NULL OR h\.attachment_id = a\.id\)\) THEN 0 ELSE 1 END AS withheld/,
+    );
   });
 
   it("leaves appeals out of a rep's unread count and keeps them in the admin's", async () => {

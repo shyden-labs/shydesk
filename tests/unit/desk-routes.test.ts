@@ -66,6 +66,16 @@ interface World {
   mailShareUsed?: boolean;
   noTokenKey?: boolean;
   productGone?: boolean;
+  /** The status change matches no row: a close refused while a report to the authorities is owed. */
+  closeRefused?: boolean;
+  /** Tickets the legal review says owe a report to the authorities. */
+  owed?: Record<string, unknown>[];
+  /** The ticket's live holds, as the holds panel reads them. */
+  holds?: Record<string, unknown>[];
+  /** Every hold write matches a row. */
+  holdWrites?: boolean;
+  /** Hold writes fail as when the database is away. */
+  holdWritesFail?: boolean;
   /** Rows the scoped file lookup answers; none means out of scope or not stored. */
   files?: Record<string, unknown>[];
   /** The stored bytes by key, with the type each was stored with. */
@@ -79,11 +89,17 @@ function setup(w: World = {}) {
   const mails: SmtpMail[] = [];
   const { db, statements } = standInDb((sql, values) => {
     if (/SELECT attachments_keep_days/.test(sql)) return [{ attachments_keep_days: 30, text_keep_days: 365 }];
+    if (/FROM legal_holds h JOIN tickets t/.test(sql) && /authority_reports/.test(sql)) return w.owed ?? [];
+    if (/WHERE h\.ticket_id = \?/.test(sql)) return w.holds ?? [];
+    if (/^(INSERT INTO legal_holds|UPDATE legal_holds|INSERT INTO authority_reports)/.test(sql)) {
+      if (w.holdWritesFail === true) throw new Error('D1 is down');
+      return w.holdWrites === true ? [{ id: 'h1' }] : [];
+    }
     if (/FROM products WHERE id = \?/.test(sql)) return w.productGone === true ? [] : [productRow(String(values[0]))];
     if (/FROM products/.test(sql)) return [productRow('shytalk'), productRow('yawelo-idle')];
     if (/FROM staff_products/.test(sql)) return values[0] === REP ? [{ product_id: 'shytalk' }] : [];
     if (/FROM staff WHERE/.test(sql)) return values[0] === REP ? [{ role: 'rep' }] : [];
-    if (/UPDATE tickets/.test(sql)) return [{ product_id: 'shytalk' }];
+    if (/UPDATE tickets/.test(sql)) return w.closeRefused === true ? [] : [{ product_id: 'shytalk' }];
     if (/COUNT\(\*\)/.test(sql)) return [{ unread: w.unread ?? 0 }];
     if (/INTO counters/.test(sql)) return w.mailShareUsed === true ? [] : [{ value: 1 }];
     if (/FROM canned_replies/.test(sql)) {
@@ -187,6 +203,19 @@ describe('the ticket list', () => {
     const page = await (await get('/desk')).text();
     expect(page).toContain('Cannot &lt;b&gt;sign&lt;/b&gt; in');
     expect(named(statements, 'FROM tickets')[0]?.values).toContain('shytalk');
+  });
+
+  it('shows the admin the tickets owing a report to the authorities, first', async () => {
+    const { get } = setup({ owed: [{ ticket_id: 't7', subject: 'Owed one', placed_at: 1 }] });
+    const page = await (await get('/desk', ADMIN)).text();
+    expect(page).toContain('Legal duty outstanding');
+    expect(page).toContain('<a href="/desk/tickets/t7">Owed one</a>');
+  });
+
+  it('asks a rep nothing about legal holds', async () => {
+    const { get, statements } = setup({ owed: [{ ticket_id: 't7', subject: 'Owed one', placed_at: 1 }] });
+    expect(await (await get('/desk')).text()).not.toContain('Legal duty');
+    expect(named(statements, 'legal_holds')).toEqual([]);
   });
 
   it("gives a rep an empty list for another product's filter, asking the database nothing", async () => {
@@ -515,6 +544,14 @@ describe('closing', () => {
     expect(plans[0]?.schedule.text).toEqual(expect.any(Number));
   });
 
+  it('is refused while a csam hold awaits its report, back to the ticket saying why, and starts no timers', async () => {
+    const { post, plans } = setup({ closeRefused: true });
+    const response = await post('/desk/tickets/t1/close');
+    expect(response.status).toBe(303);
+    expect(response.headers.get('Location')).toBe('/desk/tickets/t1?error=authority_report_owed');
+    expect(plans).toEqual([]);
+  });
+
   it("is 404 for a ticket out of the rep's scope", async () => {
     const { post, plans } = setup({ tickets: [] });
     expect((await post('/desk/tickets/t1/close')).status).toBe(404);
@@ -539,5 +576,152 @@ describe('fillCanned', () => {
 
   it('does not treat a subject holding a placeholder as another placeholder', () => {
     expect(fillCanned('{{ticket_subject}}', { customer_email: 'a@b.c', ticket_subject: '{{customer_email}}' })).toBe('{{customer_email}}');
+  });
+});
+
+describe('legal holds on the desk', () => {
+  const holdRow = {
+    id: 'h1',
+    attachment_id: null,
+    reason: 'preservation',
+    csam: 0,
+    note: 'Request one',
+    placed_by: REP,
+    placed_at: 1000,
+    basis_at: 1000,
+    renewals: 0,
+    order_pending: 0,
+    no_report_reason: null,
+  };
+
+  it("shows the ticket's live holds on its page", async () => {
+    const page = await (await setup({ holds: [holdRow] }).get('/desk/tickets/t1')).text();
+    expect(page).toContain('Legal holds');
+    expect(page).toContain('Request one');
+  });
+
+  it('a rep places a hold on the whole ticket, dated from the form', async () => {
+    const { post, statements } = setup({ holdWrites: true });
+    const response = await post('/desk/tickets/t1/holds', {
+      reason: 'preservation',
+      note: 'Request one',
+      basis: '2026-10-01',
+      attachment: '',
+    });
+    expect(response.status).toBe(303);
+    expect(response.headers.get('Location')).toBe('/desk/tickets/t1?hold=placed');
+    const insert = named(statements, 'INSERT INTO legal_holds')[0];
+    expect(insert?.values.slice(1, 8)).toEqual([null, 'preservation', 0, 'Request one', REP, expect.any(Number), Date.UTC(2026, 9, 1)]);
+  });
+
+  it('places a hold on one file, marked as suspected child-abuse material, with no date for a possible crime', async () => {
+    const { post, statements } = setup({ holdWrites: true });
+    await post('/desk/tickets/t1/holds', { reason: 'crime_unreported', note: 'Image', csam: 'on', attachment: 'a1', basis: '' });
+    expect(named(statements, 'INSERT INTO legal_holds')[0]?.values.slice(1, 4)).toEqual(['a1', 'crime_unreported', 1]);
+  });
+
+  it.each([
+    [{ reason: 'preservation', note: 'x', basis: '' }, 'basis_required'],
+    [{ reason: 'preservation', note: 'x', basis: 'soon' }, 'basis_required'],
+    [{ reason: 'crime_unreported', note: 'x', basis: '2026-10-01' }, 'basis_refused'],
+    [{ reason: 'preservation', note: '  ', basis: '2026-10-01' }, 'note_required'],
+    [{ reason: 'fun', note: 'x', basis: '2026-10-01' }, 'unknown_reason'],
+  ])('refuses %o with %s, back to the ticket, writing nothing', async (form, error) => {
+    const { post, statements } = setup({ holdWrites: true });
+    const response = await post('/desk/tickets/t1/holds', form);
+    expect(response.headers.get('Location')).toBe(`/desk/tickets/t1?error=${error}`);
+    expect(named(statements, 'INSERT INTO legal_holds')).toEqual([]);
+  });
+
+  it('a hold that fails for another reason is a server error, never a redirect claiming it was placed', async () => {
+    const response = await setup({ holdWritesFail: true }).post('/desk/tickets/t1/holds', {
+      reason: 'preservation',
+      note: 'x',
+      basis: '2026-10-01',
+    });
+    expect(response.status).toBe(500);
+  });
+
+  it('a hold placed on a ticket out of scope is 404', async () => {
+    expect((await setup().post('/desk/tickets/t9/holds', { reason: 'preservation', note: 'x', basis: '2026-10-01' })).status).toBe(404);
+  });
+
+  it.each(['lift', 'renew', 'order', 'no-report'])('a rep asking to %s a hold gets 404', async (action) => {
+    const { post, statements } = setup({ holdWrites: true });
+    expect((await post(`/desk/tickets/t1/holds/h1/${action}`, { note: 'x', reason: 'x', pending: '1' })).status).toBe(404);
+    expect(named(statements, 'legal_hold')).toEqual([]);
+  });
+
+  it.each([
+    ['renew', { note: 'Second request' }, 'renewed'],
+    ['order', { pending: '1' }, 'order'],
+    ['no-report', { reason: 'A joke' }, 'no_report'],
+  ])('the admin can %s a hold, back to the ticket saying so', async (action, form, done) => {
+    const response = await setup({ holdWrites: true }).post(`/desk/tickets/t1/holds/h1/${action}`, form, ADMIN);
+    expect(response.headers.get('Location')).toBe(`/desk/tickets/t1?hold=${done}`);
+  });
+
+  it('a blank "no report" reason is refused, back to the ticket', async () => {
+    const response = await setup({ holdWrites: true }).post('/desk/tickets/t1/holds/h1/no-report', { reason: ' ' }, ADMIN);
+    expect(response.headers.get('Location')).toBe('/desk/tickets/t1?error=reason_required');
+  });
+
+  it('a lift of a hold that is not there is 404 for the admin too', async () => {
+    expect((await setup().post('/desk/tickets/t1/holds/h9/lift', {}, ADMIN)).status).toBe(404);
+  });
+
+  it('the admin records a report to the authorities, dated from the form', async () => {
+    const { post, statements } = setup({ holdWrites: true });
+    const response = await post(
+      '/desk/tickets/t1/authority-report',
+      { reported_to: 'Bareskrim Polri', reported_at: '2026-10-05', reference: 'LP/1' },
+      ADMIN,
+    );
+    expect(response.headers.get('Location')).toBe('/desk/tickets/t1?hold=reported');
+    expect(named(statements, 'INSERT INTO authority_reports')[0]?.values.slice(0, 3)).toEqual([
+      'Bareskrim Polri',
+      Date.UTC(2026, 9, 5),
+      'LP/1',
+    ]);
+  });
+
+  it('a report without a valid date is refused, writing nothing', async () => {
+    const { post, statements } = setup({ holdWrites: true });
+    const response = await post('/desk/tickets/t1/authority-report', { reported_to: 'Polri', reported_at: '', reference: 'LP/1' }, ADMIN);
+    expect(response.headers.get('Location')).toBe('/desk/tickets/t1?error=date_required');
+    expect(named(statements, 'authority_reports')).toEqual([]);
+  });
+
+  it('a rep recording a report without a date still gets 404, never a reason', async () => {
+    const response = await setup({ holdWrites: true }).post('/desk/tickets/t1/authority-report', {
+      reported_to: 'Polri',
+      reference: 'LP/1',
+    });
+    expect(response.status).toBe(404);
+  });
+
+  it('the admin marks an order answered', async () => {
+    const { post, statements } = setup({ holdWrites: true });
+    await post('/desk/tickets/t1/holds/h1/order', { pending: '0' }, ADMIN);
+    expect(named(statements, 'UPDATE legal_holds')[0]?.values[0]).toBe(0);
+  });
+
+  it('a rep recording a report gets 404', async () => {
+    const response = await setup({ holdWrites: true }).post('/desk/tickets/t1/authority-report', {
+      reported_to: 'Polri',
+      reported_at: '2026-10-05',
+      reference: 'LP/1',
+    });
+    expect(response.status).toBe(404);
+  });
+
+  it('refuses a hold post from another origin', async () => {
+    const response = await setup({ holdWrites: true }).post(
+      '/desk/tickets/t1/holds',
+      { reason: 'preservation', note: 'x', basis: '2026-10-01' },
+      REP,
+      'https://evil.example',
+    );
+    expect(response.status).toBe(403);
   });
 });

@@ -1,4 +1,6 @@
 import { html } from 'hono/html';
+import type { LegalReview, TicketHold, TicketHolds } from '../holds/holds.ts';
+import type { HoldReason } from '../holds/rules.ts';
 import type { HtmlEscapedString } from 'hono/utils/html';
 import type { Canned } from '../products.ts';
 import type { PunishmentRow } from '../db/types.ts';
@@ -50,6 +52,33 @@ const APPEAL_LINES: Record<string, string> = {
 const APPEAL_ERRORS: Record<string, string> = {
   already_decided: 'This appeal was already decided.',
   unknown_outcome: 'Choose to uphold or reject the appeal.',
+};
+
+/** Why a legal hold action, or closing, was refused (shyden-labs/shydesk#62). */
+const HOLD_ERRORS: Record<string, string> = {
+  not_yet: 'This hold cannot be lifted yet.',
+  authority_report_owed: 'Record the report to the authorities before closing this ticket.',
+  basis_required: 'Enter the report or request date.',
+  basis_refused: 'A possible crime not yet reported takes no date.',
+  note_required: 'Say why the evidence is held.',
+  unknown_reason: 'Choose why the evidence is held.',
+  reason_required: 'Fill in every field.',
+  date_required: 'Enter the date of the report.',
+  already_reported: 'A report to the authorities is already recorded for this ticket.',
+};
+/** What the page says after a hold action. */
+const HOLD_LINES: Record<string, string> = {
+  placed: 'Legal hold placed.',
+  lifted: 'Legal hold lifted.',
+  renewed: 'Legal hold renewed.',
+  order: 'Production order mark saved.',
+  no_report: 'Recorded that no report is needed.',
+  reported: 'Report to the authorities recorded.',
+};
+const HOLD_REASONS: Record<HoldReason, string> = {
+  crime_unreported: 'Possible crime, not yet reported',
+  reported: 'Reported to the authorities',
+  preservation: 'Preservation request',
 };
 
 const when = (ms: number): string => new Date(ms).toISOString().slice(0, 16).replace('T', ' ');
@@ -138,7 +167,37 @@ export interface ListData {
   tickets: DeskTicket[];
   cursor: number;
   productNames: Map<string, string>;
+  /** The admin's legal review (shyden-labs/shydesk#62); none for a rep. */
+  legal?: LegalReview;
 }
+
+const day = (ms: number): string => new Date(ms).toISOString().slice(0, 10);
+
+/** The admin's legal duties first, then holds due for review; nothing when neither has any. */
+const legalSections = (legal: LegalReview | undefined): Page | string => {
+  if (legal === undefined) return '';
+  return html`${
+    legal.duties.length === 0
+      ? ''
+      : html`<section aria-labelledby="legal-duty">
+          <h2 id="legal-duty">Legal duty outstanding</h2>
+          <ul>
+            ${legal.duties.map(
+              (d) => html`<li><a href="/desk/tickets/${d.ticketId}">${d.subject}</a>: report to the authorities not yet recorded</li>`,
+            )}
+          </ul>
+        </section>`
+  }${
+    legal.due.length === 0
+      ? ''
+      : html`<section aria-labelledby="holds-due">
+          <h2 id="holds-due">Holds due for review</h2>
+          <ul>
+            ${legal.due.map((h) => html`<li><a href="/desk/tickets/${h.ticketId}">${h.subject}</a>: may be lifted since ${day(h.earliest)}</li>`)}
+          </ul>
+        </section>`
+  }`;
+};
 
 const listLink = (d: ListData, changes: { product?: string | undefined; cursor?: number }): string => {
   const product = 'product' in changes ? changes.product : d.selected;
@@ -155,6 +214,7 @@ export const listPage = (d: ListData): Page =>
   layout(
     'Tickets',
     html`<h1>Tickets</h1>
+      ${legalSections(d.legal)}
       <nav aria-label="Products">
         ${d.showAll ? html`<a href="${listLink(d, { product: undefined })}" aria-current="${d.selected === undefined ? 'page' : 'false'}">All products</a>` : ''}
         ${d.products.map(
@@ -220,12 +280,13 @@ const minutes = (ms: number): string => {
 };
 
 /**
- * A removed attachment's line, or a stored one's preview, which opens the
+ * A removed or withheld attachment's line, or a stored one's preview, which opens the
  * read-only viewer (shyden-labs/shydesk#25; public/desk.js). `number` is its
  * place among the ticket's stored files, so each control has its own name.
  */
 const attachmentLine = (a: DeskAttachment, number: number): Page => {
   if (a.state === 'deleted') return html`<li>Attachment removed</li>`;
+  if (a.withheld === 1) return html`<li>Evidence withheld under legal hold</li>`;
   const kind = a.mime.startsWith('video/') ? 'Video' : 'Photo';
   const length = a.duration_ms === null ? '' : `, ${minutes(a.duration_ms)}`;
   return html`<li>
@@ -236,9 +297,9 @@ const attachmentLine = (a: DeskAttachment, number: number): Page => {
   </li>`;
 };
 
-/** The ticket's stored files in the order the page shows them, so each is numbered by its place. */
+/** The ticket's stored, viewable files in the order the page shows them, so each is numbered by its place. */
 const shownOrder = (messages: DeskMessage[], attachments: DeskAttachment[]): DeskAttachment[] =>
-  messages.flatMap((m) => attachments.filter((a) => a.message_id === m.id && a.state !== 'deleted'));
+  messages.flatMap((m) => attachments.filter((a) => a.message_id === m.id && a.state !== 'deleted' && a.withheld !== 1));
 
 export interface TicketData {
   ticket: DeskTicket;
@@ -256,6 +317,10 @@ export interface TicketData {
   /** The outcome of the last appeal decision, from the redirect. */
   appealOutcome?: string | undefined;
   isAdmin?: boolean;
+  /** The ticket's live legal holds and recorded report (shyden-labs/shydesk#62). */
+  holds?: TicketHolds;
+  /** The last hold action done, from the redirect. */
+  holdDone?: string | undefined;
 }
 
 const stateLine = (p: PunishmentRow): string => {
@@ -333,6 +398,98 @@ const appealSection = (a: AppealPanel, ticketId: string): Page =>
     }
   </section>`;
 
+const fileName = (a: DeskAttachment, order: DeskAttachment[]): string => {
+  const number = order.indexOf(a) + 1;
+  return number === 0 ? 'a withheld file' : `${a.mime.startsWith('video/') ? 'Video' : 'Photo'} ${String(number)}`;
+};
+
+const holdLine = (h: TicketHold, d: TicketData, order: DeskAttachment[]): string => {
+  const file = d.attachments.find((a) => a.id === h.attachmentId);
+  const covers = h.attachmentId === null ? 'the whole ticket' : file === undefined ? 'a file' : fileName(file, order);
+  const release = h.earliest === null ? 'Cannot be lifted yet.' : `May be lifted from ${day(h.earliest)}.`;
+  return `${HOLD_REASONS[h.reason]}${h.csam ? ', suspected child-abuse material,' : ''} on ${covers}: ${h.note}. Placed by ${h.placedBy}, ${when(h.placedAt)}. ${release}${h.orderPending ? ' Production order pending.' : ''}${h.noReportReason === null ? '' : ` No report needed: ${h.noReportReason}.`}`;
+};
+
+/** The admin's actions on one hold: lift, and those its reason allows. */
+const holdActions = (h: TicketHold, ticketId: string): Page => {
+  const to = (action: string) => `/desk/tickets/${ticketId}/holds/${h.id}/${action}`;
+  return html`<form method="post" action="${to('lift')}"><button type="submit">Lift</button></form>
+    ${
+      h.reason === 'preservation'
+        ? html`<form method="post" action="${to('renew')}">
+              <label>Renewal request <input name="note" required /></label><button type="submit">Renew</button>
+            </form>
+            <form method="post" action="${to('order')}">
+              <input type="hidden" name="pending" value="${h.orderPending ? '0' : '1'}" />
+              <button type="submit">${h.orderPending ? 'Mark the order answered' : 'Mark a production order pending'}</button>
+            </form>`
+        : ''
+    }
+    ${
+      h.reason === 'crime_unreported' && h.noReportReason === null
+        ? html`<form method="post" action="${to('no-report')}">
+            <label>Why no report is needed <input name="reason" required /></label><button type="submit">No report needed</button>
+          </form>`
+        : ''
+    }`;
+};
+
+/** Live holds, the form to place one, and for the admin each hold's actions and the authority report. */
+const holdsPanel = (d: TicketData, order: DeskAttachment[]): Page | string => {
+  if (d.holds === undefined) return '';
+  const { holds, report } = d.holds;
+  const admin = d.isAdmin === true;
+  return html`<section aria-labelledby="holds">
+    <h2 id="holds">Legal holds</h2>
+    ${
+      holds.length === 0
+        ? html`<p>No live holds.</p>`
+        : html`<ul>
+            ${holds.map(
+              (h) =>
+                html`<li>
+                  <p>${holdLine(h, d, order)}</p>
+                  ${admin ? holdActions(h, d.ticket.id) : ''}
+                </li>`,
+            )}
+          </ul>`
+    }
+    <form method="post" action="/desk/tickets/${d.ticket.id}/holds">
+      <label
+        >Reason
+        <select name="reason">
+          ${Object.entries(HOLD_REASONS).map(([value, name]) => html`<option value="${value}">${name}</option>`)}
+        </select>
+      </label>
+      <label
+        >Covers
+        <select name="attachment">
+          <option value="">Whole ticket</option>
+          ${order.map((a) => html`<option value="${a.id}">${fileName(a, order)}</option>`)}
+        </select>
+      </label>
+      <label><input type="checkbox" name="csam" /> Suspected child-abuse material</label>
+      <label>Report or request date <input type="date" name="basis" /></label>
+      <label>Why <input name="note" required /></label>
+      <button type="submit">Place hold</button>
+    </form>
+    ${
+      report !== null
+        ? html`<p>
+            Reported to ${report.reportedTo} on ${day(report.reportedAt)}, reference ${report.reference}, recorded by ${report.recordedBy}.
+          </p>`
+        : admin
+          ? html`<form method="post" action="/desk/tickets/${d.ticket.id}/authority-report">
+              <label>Reported to <input name="reported_to" required /></label>
+              <label>Date <input type="date" name="reported_at" required /></label>
+              <label>Reference <input name="reference" required /></label>
+              <button type="submit">Record report to the authorities</button>
+            </form>`
+          : ''
+    }
+  </section>`;
+};
+
 export const ticketPage = (d: TicketData): Page => {
   // The first that applies: an empty reply, a refused punishment action, a punishment sent, a reply's email.
   const line =
@@ -340,6 +497,8 @@ export const ticketPage = (d: TicketData): Page => {
       ? 'Enter a reply.'
       : (PUNISHMENT_ERRORS[d.error ?? ''] ??
         APPEAL_ERRORS[d.error ?? ''] ??
+        HOLD_ERRORS[d.error ?? ''] ??
+        HOLD_LINES[d.holdDone ?? ''] ??
         PUNISHMENT_LINES[d.punishment ?? ''] ??
         APPEAL_LINES[d.appealOutcome ?? ''] ??
         MAIL_LINES[d.mail ?? '']);
@@ -358,7 +517,7 @@ export const ticketPage = (d: TicketData): Page => {
         )}
       </dl>
       ${d.report ? reportSection(d.report, d.ticket.id, d.isAdmin === true) : ''}
-      ${d.appeal && d.isAdmin === true ? appealSection(d.appeal, d.ticket.id) : ''}
+      ${d.appeal && d.isAdmin === true ? appealSection(d.appeal, d.ticket.id) : ''} ${holdsPanel(d, order)}
       <section role="log" aria-label="Conversation">
         ${d.messages.map(
           (m) =>

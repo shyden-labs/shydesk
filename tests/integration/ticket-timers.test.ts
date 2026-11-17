@@ -65,6 +65,17 @@ const staffRead = async (email: string, ticketId: string) => {
   await db.prepare(`INSERT INTO reads (email, ticket_id, read_seq) VALUES (?, ?, 1)`).bind(email, ticketId).run();
 };
 
+/** A legal hold on a ticket, or on one of its attachments (migrations/0004_release_2.sql); lifted when `liftedAt` is set. */
+async function hold(id: string, ticketId: string, attachmentId: string | null, liftedAt: number | null = null): Promise<void> {
+  await db
+    .prepare(
+      `INSERT INTO legal_holds (id, ticket_id, attachment_id, reason, csam, note, placed_by, placed_at, lifted_at, lifted_by)
+       VALUES (?, ?, ?, 'crime_unreported', 0, 'Possible threat.', 'rep@example.com', 1000, ?, ?)`,
+    )
+    .bind(id, ticketId, attachmentId, liftedAt, liftedAt === null ? null : 'admin@example.com')
+    .run();
+}
+
 const one = async (sql: string, ...values: unknown[]) =>
   db
     .prepare(sql)
@@ -265,6 +276,68 @@ describe('retention on D1', () => {
     expect((await overdue(db, NOW + 400 * DAY_MS)).filter((o) => o.id === 'it-tm-r1' || o.id === 'it-tm-p1')).toEqual([]);
     expect(await writeStatus(db, 'it-tm-r1', 'open', NOW)).toBeNull();
     expect(await one('SELECT status FROM tickets WHERE id = ?', 'it-tm-r1')).toEqual({ status: 'closed' });
+  });
+});
+
+// Held evidence is never deleted automatically (shyden-labs/shydesk#62 AC1).
+describe('retention under a legal hold on D1', () => {
+  it('deletes a closed ticket’s attachments except the one held, and only their bytes come off the total', async () => {
+    await product('it-tm-hold');
+    await ticket('it-tm-hold', 'it-tm-h1', 'closed', 1000, 1000);
+    await attachment('it-tm-hold', 'it-tm-hx1', 'it-tm-h1', 'stored', 100);
+    await attachment('it-tm-hold', 'it-tm-hx2', 'it-tm-h1', 'stored', 50);
+    await hold('it-tm-hh1', 'it-tm-h1', 'it-tm-hx1');
+    await db
+      .prepare(`INSERT INTO counters (key, value) VALUES (?, 150) ON CONFLICT (key) DO UPDATE SET value = value + 150`)
+      .bind(STORED_BYTES)
+      .run();
+    const before = await storedBytes(db);
+    const { deleted, files } = recorder();
+    await deleteAttachments(db, files, 'it-tm-h1', NOW);
+    expect.soft(deleted.flat().sort()).toEqual(['k-it-tm-hx2', 'th-it-tm-hx2']);
+    expect.soft(await one('SELECT state FROM attachments WHERE id = ?', 'it-tm-hx1')).toEqual({ state: 'stored' });
+    expect.soft(await one('SELECT state FROM attachments WHERE id = ?', 'it-tm-hx2')).toEqual({ state: 'deleted' });
+    expect.soft(await storedBytes(db)).toBe(before - 50);
+  });
+
+  it('deletes none of a closed ticket’s attachments while the whole ticket is held', async () => {
+    await product('it-tm-holdt');
+    await ticket('it-tm-holdt', 'it-tm-h2', 'closed', 1000, 1000);
+    await attachment('it-tm-holdt', 'it-tm-hx3', 'it-tm-h2', 'stored', 10);
+    await hold('it-tm-hh2', 'it-tm-h2', null);
+    const { deleted, files } = recorder();
+    await deleteAttachments(db, files, 'it-tm-h2', NOW);
+    expect.soft(deleted).toEqual([]);
+    expect.soft(await one('SELECT state FROM attachments WHERE id = ?', 'it-tm-hx3')).toEqual({ state: 'stored' });
+  });
+
+  it('deletes an attachment whose hold was lifted', async () => {
+    await product('it-tm-holdl');
+    await ticket('it-tm-holdl', 'it-tm-h3', 'closed', 1000, 1000);
+    await attachment('it-tm-holdl', 'it-tm-hx4', 'it-tm-h3', 'stored', 10);
+    await hold('it-tm-hh3', 'it-tm-h3', 'it-tm-hx4', 2000);
+    const { deleted, files } = recorder();
+    await deleteAttachments(db, files, 'it-tm-h3', NOW);
+    expect.soft(deleted.flat().sort()).toEqual(['k-it-tm-hx4', 'th-it-tm-hx4']);
+    expect.soft(await one('SELECT state FROM attachments WHERE id = ?', 'it-tm-hx4')).toEqual({ state: 'deleted' });
+  });
+
+  it('deletes none of a closed ticket’s text while any hold on it is active, one attachment’s included', async () => {
+    await product('it-tm-holdx');
+    await ticket('it-tm-holdx', 'it-tm-h4', 'closed', 1000, 1000);
+    await db
+      .prepare(`INSERT INTO messages (id, ticket_id, author, body, created_at) VALUES ('it-tm-hm1', 'it-tm-h4', 'customer', 'Hello', 1000)`)
+      .run();
+    await attachment('it-tm-holdx', 'it-tm-hx5', 'it-tm-h4', 'stored', 10);
+    await attachment('it-tm-holdx', 'it-tm-hx6', 'it-tm-h4', 'deleted', 10);
+    await staffRead('it-tm-rep-h@example.com', 'it-tm-h4');
+    await hold('it-tm-hh4', 'it-tm-h4', 'it-tm-hx5');
+    await deleteText(db, recorder().files, 'it-tm-h4', NOW);
+    expect.soft(await one('SELECT status FROM tickets WHERE id = ?', 'it-tm-h4')).toEqual({ status: 'closed' });
+    expect.soft(await one('SELECT body FROM messages WHERE id = ?', 'it-tm-hm1')).toEqual({ body: 'Hello' });
+    expect.soft(await one('SELECT state FROM attachments WHERE id = ?', 'it-tm-hx5')).toEqual({ state: 'stored' });
+    expect.soft(await one('SELECT state FROM attachments WHERE id = ?', 'it-tm-hx6')).toEqual({ state: 'deleted' });
+    expect.soft(await one('SELECT read_seq FROM reads WHERE ticket_id = ?', 'it-tm-h4')).toEqual({ read_seq: 1 });
   });
 });
 

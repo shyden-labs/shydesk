@@ -9,6 +9,7 @@ import { streamFile, type StoredFile } from '../uploads/serve.ts';
 import type { Product } from '../products.ts';
 import { MESSAGES } from './messages.ts';
 import { requireProductOrigin } from './origin.ts';
+import { NOT_WITHHELD } from '../holds/rules.ts';
 
 /**
  * The customer's private ticket page (shyden-labs/shydesk#23; plan Task 9). The
@@ -107,11 +108,13 @@ async function saveReply(c: TicketContext, ticketId: string, reply: Reply, now: 
   await db.batch(statements);
 }
 
-/** The attachment `:id` when it is stored on the token's own ticket, or null. */
+/** The attachment `:id` when it is stored on the token's own ticket and not withheld under a csam hold, or null. */
 async function fileOfTicket(c: TicketContext, id: string): Promise<StoredFile | null> {
   const ticket = await openTicket(c);
   if (ticket === null) return null;
-  return c.env.DB.prepare("SELECT r2_key, thumb_key, mime FROM attachments WHERE id = ? AND ticket_id = ? AND state = 'stored'")
+  return c.env.DB.prepare(
+    `SELECT a.r2_key, a.thumb_key, a.mime FROM attachments a WHERE a.id = ? AND a.ticket_id = ? AND a.state = 'stored' AND ${NOT_WITHHELD}`,
+  )
     .bind(id, ticket.id)
     .first<StoredFile>();
 }
