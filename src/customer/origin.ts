@@ -21,8 +21,11 @@ export function requireProductOrigin(): MiddlewareHandler<CustomerEnv> {
     const productId = c.req.query('product') ?? '';
     const origin = c.req.header('Origin') ?? '';
     const product = productId && origin ? await productForOrigin(c.env.DB, productId, origin) : null;
-    if (!product) return c.json({ error: MESSAGES.notFound }, 404);
-    c.header('Access-Control-Allow-Origin', origin);
+    // The header carries the product's own stored origin, the one the request's matched exactly,
+    // so nothing from the request is echoed (SonarCloud tssecurity:S8348; shyden-labs/shydesk#181).
+    const allowed = product?.allowedOrigins.find((listed) => listed === origin);
+    if (!product || allowed === undefined) return c.json({ error: MESSAGES.notFound }, 404);
+    c.header('Access-Control-Allow-Origin', allowed);
     c.header('Vary', 'Origin');
     if (c.req.method === 'OPTIONS') {
       c.header('Access-Control-Allow-Methods', 'GET, POST, PUT');
