@@ -21,6 +21,12 @@ describe('every workflow', () => {
     expect(files).toEqual(['check-release-cut.yml', 'ci.yml', 'deploy-dev.yml', 'deploy-prod.yml', 'sonarcloud.yml']);
   });
 
+  // npx fetches the newest release when a package is not installed, so a typo or a lockfile change
+  // could deploy an unreviewed version (SonarCloud githubactions:S8543; shyden-labs/shydesk#180).
+  it.each(files)('%s runs installed tools from the lockfile, never through npx', (file) => {
+    expect(withoutYamlComments(read(file)).match(/^.*\bnpx\s.*$/gm) ?? []).toEqual([]);
+  });
+
   it.each(files)('%s swallows no failure and gates no step on the token', (file) => {
     expect([...swallowed(file, read(file)), ...tokenGated(file, read(file))]).toEqual([]);
   });
@@ -53,12 +59,15 @@ describe('sonarcloud.yml', () => {
 
   // Issue shyden-labs/repo-template#164: without these, the scanner judged tests/ and the config files as
   // uncovered source, failing the coverage gate of a fully covered pull request.
-  it('scans tests as tests and judges coverage only on what the unit suite measures', () => {
+  // With sonar.tests and no sonar.sources the scanner indexes the tests only and the gate reads no
+  // product code (measured 2026-11-17: 0 source files, 132 test files on develop; shyden-labs/shydesk#178).
+  it('scans the product code as sources and tests as tests, and judges coverage only on what the unit suite measures', () => {
     expect(read('sonarcloud.yml')).toContain(
       [
         '            -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info',
+        '            -Dsonar.sources=.',
         '            -Dsonar.tests=tests',
-        '            -Dsonar.exclusions=tests/**',
+        '            -Dsonar.exclusions=tests/**,coverage/**,node_modules/**',
         '            -Dsonar.coverage.exclusions=eslint.config.js,vitest.unit.config.ts',
       ].join('\n'),
     );
