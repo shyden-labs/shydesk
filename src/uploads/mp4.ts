@@ -22,7 +22,7 @@ const view = (bytes: Uint8Array): DataView => new DataView(bytes.buffer, bytes.b
 function boxAt(header: Uint8Array, at: number, limit: number): Box | null {
   if (header.length < 8) return null;
   const v = view(header);
-  const type = String.fromCharCode(...header.subarray(4, 8));
+  const type = String.fromCodePoint(...header.subarray(4, 8));
   const short = v.getUint32(0);
   if (short === 1 && header.length < 16) return null;
   const headerSize = short === 1 ? 16 : 8;
@@ -202,7 +202,7 @@ function trackLengths(trak: Uint8Array, movieTimescale: number): number[] | null
   const samples = sttsTotal(boxes.timing);
   const edits = editsTotal(boxes.parts);
   // The sample table must time exactly the samples the track holds, or a player may time the rest its own way.
-  if (headerDuration === null || !mediaLength || !samples || stszCount(boxes.sizes) !== samples.count || edits === null) {
+  if (headerDuration === null || !mediaLength || stszCount(boxes.sizes) !== samples?.count || edits === null) {
     return null;
   }
   const perMs = 1000 / mediaLength.timescale;
