@@ -295,6 +295,8 @@ export function deskRoutes(deps: DeskDeps, jwks?: JWTVerifyGetKey): Hono<DeskEnv
     const found = await getTicket(c.env.DB, staff, c.req.param('id'));
     if (found === null) return c.notFound();
     const { ticket } = found;
+    // A bare ticket row has no customer left to answer (shyden-labs/shydesk#191).
+    if (ticket.text_deleted_at !== null) return c.redirect(`/desk/tickets/${ticket.id}?error=text-deleted`, 303);
     const form = await c.req.parseBody();
     const body = typeof form.body === 'string' ? form.body : '';
     if (body.trim() === '' || body.length > MAX_REPLY) return c.redirect(`/desk/tickets/${ticket.id}?error=empty`, 303);

@@ -202,11 +202,11 @@ describe('TicketTimer.alarm', () => {
     await timer.apply('t1', { schedule: { text: NOW + DAY_MS }, cancel: [] });
     vi.setSystemTime(NOW + DAY_MS);
     await timer.alarm();
-    const deletes = statements.filter((s) => s.sql.startsWith('DELETE'));
-    // The deletes carry the closed check, so on an open ticket they match nothing (its read marks included, shyden-labs/shydesk#119).
-    expect(deletes).toHaveLength(4);
-    for (const d of deletes) expect(d.sql).toContain("status = 'closed'");
-    expect(statements.some((s) => s.sql.startsWith('UPDATE'))).toBe(false);
+    const writes = statements.filter((s) => /^(DELETE|UPDATE)/.test(s.sql));
+    // Every write carries the closed check, so on an open ticket they match nothing (its read marks included,
+    // shyden-labs/shydesk#119; the bare-row updates too, shyden-labs/shydesk#191).
+    expect(writes).toHaveLength(7);
+    for (const w of writes) expect(w.sql).toContain("status = 'closed'");
   });
 
   it('leaves a kind that is not yet due and re-arms for it', async () => {

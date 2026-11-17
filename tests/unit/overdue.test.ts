@@ -22,6 +22,8 @@ describe('overdue', () => {
     expect(statements).toHaveLength(1);
     expect(statements[0]?.values).toEqual([NOW, NOW, NOW, NOW, NOW]);
     expect(statements[0]?.sql).toContain('ORDER BY due_at');
+    // A bare ticket row whose text has gone is never due again (shyden-labs/shydesk#191).
+    expect(statements[0]?.sql).toContain("WHERE t.status = 'closed' AND t.text_deleted_at IS NULL AND t.closed_at + p.text_keep_days");
   });
 
   it('is empty when nothing is past due', async () => {
