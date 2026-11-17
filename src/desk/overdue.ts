@@ -30,7 +30,7 @@ SELECT 'attachment' AS kind, a.id AS id, t.product_id AS product_id, t.closed_at
 UNION ALL
 SELECT 'text', t.id, t.product_id, t.closed_at + p.text_keep_days * ${DAY_MS}
   FROM tickets t JOIN products p ON p.id = t.product_id
-  WHERE t.status = 'closed' AND t.closed_at + p.text_keep_days * ${DAY_MS} < ?
+  WHERE t.status = 'closed' AND t.text_deleted_at IS NULL AND t.closed_at + p.text_keep_days * ${DAY_MS} < ?
 UNION ALL
 SELECT 'autoclose', t.id, t.product_id, t.updated_at + ${AUTOCLOSE_AFTER_DAYS * DAY_MS}
   FROM tickets t

@@ -56,6 +56,7 @@ const ticketRow = (over: Record<string, unknown> = {}) => ({
   updated_at: 6,
   seq: 3,
   token_sealed: null,
+  text_deleted_at: null,
   ...over,
 });
 
@@ -451,6 +452,17 @@ describe('replying', () => {
     expect(mails[0]?.to).toBe('ana@example.com');
     expect(mails[0]?.text).toContain('https://shytalk.example/ticket#t=the-token');
     expect(mails[0]?.text).not.toContain('We fixed it');
+  });
+
+  it('refuses a reply to a ticket whose text has gone, saving and sending nothing (shyden-labs/shydesk#191)', async () => {
+    const { post, statements, plans, mails } = setup({
+      tickets: [ticketRow({ status: 'closed', customer_email: '', text_deleted_at: 9 })],
+    });
+    const response = await post('/desk/tickets/t1/reply', { body: 'Hello?' });
+    expect(response.headers.get('Location')).toBe('/desk/tickets/t1?error=text-deleted');
+    expect(named(statements, 'INSERT INTO messages')).toEqual([]);
+    expect(plans).toEqual([]);
+    expect(mails).toEqual([]);
   });
 
   it('says the email failed if the ticket has lost its product, keeping the reply', async () => {

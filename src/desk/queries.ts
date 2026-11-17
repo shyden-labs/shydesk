@@ -28,6 +28,8 @@ export interface DeskTicket {
   updated_at: number;
   seq: number;
   token_sealed: string | null;
+  /** When the text timer left a bare row (shyden-labs/shydesk#191); null while the text is kept. */
+  text_deleted_at: number | null;
 }
 
 export interface DeskMessage {
@@ -56,7 +58,7 @@ export interface TicketFilter {
 }
 
 const COLUMNS =
-  'id, product_id, type_id, status, customer_email, subject, category, fields_json, created_at, updated_at, seq, token_sealed';
+  'id, product_id, type_id, status, customer_email, subject, category, fields_json, created_at, updated_at, seq, token_sealed, text_deleted_at';
 const marks = (values: unknown[]): string => values.map(() => '?').join(', ');
 
 /** Whose desk is asking: the products in scope, and whether appeals are theirs to see. */

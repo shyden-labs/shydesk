@@ -69,6 +69,12 @@ describe('writeStatus', () => {
     expect(statements.find((s) => s.sql.startsWith('UPDATE tickets'))?.values).toEqual(['open', NOW, null, 't1']);
   });
 
+  it('never changes a bare ticket whose text has gone (shyden-labs/shydesk#191)', async () => {
+    const { db, statements } = ticketDb('open');
+    await writeStatus(db, 't1', 'open', NOW);
+    expect(statements.find((s) => s.sql.startsWith('UPDATE tickets'))?.sql).toContain('AND text_deleted_at IS NULL');
+  });
+
   it('never closes a ticket owing a report to the authorities: a live csam hold and no report, in SQL', async () => {
     // shyden-labs/shydesk#62 AC3: staff closing and the auto-close both go through here.
     const { db, statements } = ticketDb('open');

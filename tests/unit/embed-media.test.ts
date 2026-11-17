@@ -8,6 +8,7 @@ import {
   softwareResizer,
   uploadAttachment,
   uploadShape,
+  videoToolsUrl,
 } from '../../public/embed-media.js';
 
 // What the shared piece decides about a file before and while it uploads
@@ -225,12 +226,14 @@ describe('shrinkVideo', () => {
     discardedOnce = [],
     track = bigTrack,
     execute = () => Promise.resolve(),
+    buffer = new Uint8Array([1, 2, 3]).buffer,
   }: {
     isValid?: boolean;
     discardedTracks?: { reason: string }[];
     discardedOnce?: { reason: string }[];
     track?: typeof bigTrack | null;
     execute?: () => Promise<void>;
+    buffer?: ArrayBuffer | null;
   } = {}) {
     const asked: Options[] = [];
     const order: string[] = [];
@@ -249,7 +252,7 @@ describe('shrinkVideo', () => {
       },
       Mp4OutputFormat: Object,
       BufferTarget: class {
-        buffer = new Uint8Array([1, 2, 3]).buffer;
+        buffer = buffer;
       },
       Output: class {
         target: unknown;
@@ -317,6 +320,10 @@ describe('shrinkVideo', () => {
     const shrunk = await shrinkVideo(file, videoTools().load);
     expect(shrunk?.type).toBe('video/mp4');
     expect(new Uint8Array((await shrunk?.arrayBuffer()) ?? [])).toEqual(new Uint8Array([1, 2, 3]));
+  });
+
+  it('gives nothing when the encoder finishes without any bytes', async () => {
+    expect(await shrinkVideo(file, videoTools({ buffer: null }).load)).toBeNull();
   });
 
   it('gives nothing when this browser cannot make the video, so the original goes', async () => {
@@ -572,5 +579,17 @@ describe('softwareResizer', () => {
   it('leaves the frame to the library when no canvas can be drawn on', () => {
     const resize = softwareResizer(Made, () => null);
     expect(resize(sampleOf(3840, 2160, []) as never, box(1920, 1080) as never)).toBeNull();
+  });
+});
+
+// The video library is built beside the piece (scripts/build-api-docs.ts) and loaded
+// from there on the first video, wherever the piece itself was imported from.
+describe('the video library', () => {
+  it('is loaded from beside the piece', () => {
+    expect(videoToolsUrl()).toBe(new URL('../../public/embed-video.js', import.meta.url).href);
+  });
+
+  it('sends the original when the library is not there to load', async () => {
+    expect(await shrinkVideo(new File(['clip'], 'clip.mp4', { type: 'video/mp4' }))).toBeNull();
   });
 });

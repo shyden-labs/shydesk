@@ -22,8 +22,14 @@ describe('row types', () => {
       closed_at: null,
       seq: 1,
       token_sealed: null,
+      text_deleted_at: null,
     };
     expect(row.token_sealed).toBeNull();
+  });
+
+  it('TicketRow has text_deleted_at, null until the text timer leaves a bare row (shyden-labs/shydesk#191)', () => {
+    const row: Pick<TicketRow, 'text_deleted_at'> = { text_deleted_at: null };
+    expect(row.text_deleted_at).toBeNull();
   });
 
   it('AttachmentRow has received_bytes, a count that is never null', () => {
