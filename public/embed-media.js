@@ -198,11 +198,14 @@ export function softwareResizer(VideoSample, makeCanvas = softwareCanvas) {
   };
 }
 
+/** Where the video library is: beside this file, wherever it was imported from, built from the pinned package (scripts/build-api-docs.ts). */
+export function videoToolsUrl() {
+  return new URL('embed-video.js', import.meta.url).href;
+}
+
 /** @returns {Promise<VideoTools>} */
 function loadVideoTools() {
-  // Beside this file, wherever it was imported from: built from the pinned package (scripts/build-api-docs.ts).
-  const url = new URL('embed-video.js', import.meta.url).href;
-  return /** @type {Promise<VideoTools>} */ (import(/* @vite-ignore */ url));
+  return /** @type {Promise<VideoTools>} */ (import(/* @vite-ignore */ videoToolsUrl()));
 }
 
 /**
