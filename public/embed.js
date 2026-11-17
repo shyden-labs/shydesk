@@ -24,7 +24,7 @@
   /** Everything the customer reads. None says we, us, our, I, me, my, the team or solo (tests/unit/customer-copy.test.ts). */
   const TEXT = {
     loading: 'Loading the support form…',
-    cannotLoad: 'The support form could not load here. MUTATION',
+    cannotLoad: 'The support form could not load here.',
     needsCheck: 'Complete the check below to send.',
     ready: 'Ready to send',
     sending: 'Sending…',
