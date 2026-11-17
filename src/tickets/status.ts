@@ -41,6 +41,12 @@ export function timerPlan(status: Status, keep: Keep, now: number): TimerPlan {
 }
 
 /**
+ * SQL: the ticket owes no report to the authorities, so it may close (shyden-labs/shydesk#62 AC3):
+ * no live csam hold without an `authority_reports` row. Staff closing and the auto-close both obey it.
+ */
+const NO_REPORT_OWED = ` AND NOT EXISTS (SELECT 1 FROM legal_holds h WHERE h.ticket_id = tickets.id AND h.lifted_at IS NULL AND h.csam = 1 AND NOT EXISTS (SELECT 1 FROM authority_reports r WHERE r.ticket_id = tickets.id))`;
+
+/**
  * Moves a ticket to `to` and to the next feed seq (so the product API feed
  * returns the change), only if it is still in `onlyFrom` when given. Returns
  * its product's keep-days, or null if no ticket changed.
@@ -53,7 +59,7 @@ export async function writeStatus(db: D1Database, ticketId: string, to: Status, 
     db
       .prepare(
         `UPDATE tickets SET status = ?, updated_at = ?, closed_at = ?, seq = (SELECT value FROM counters WHERE key = 'feed_seq')
-         WHERE id = ?${onlyFrom === undefined ? '' : ' AND status = ?'} RETURNING product_id`,
+         WHERE id = ?${onlyFrom === undefined ? '' : ' AND status = ?'}${to === 'closed' ? NO_REPORT_OWED : ''} RETURNING product_id`,
       )
       .bind(...values),
   ]);

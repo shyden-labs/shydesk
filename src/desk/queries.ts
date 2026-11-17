@@ -5,6 +5,7 @@ import { getPunishments, reportTypeId, type PunishmentDef } from '../products.ts
 import { offenderHistory, type OffenderHistory } from '../reports/history.ts';
 import type { Staff } from '../auth/staff.ts';
 import type { StoredFile } from '../uploads/serve.ts';
+import { NOT_WITHHELD } from '../holds/rules.ts';
 
 /**
  * What the staff desk reads and marks (shyden-labs/shydesk#24; plan Task 10).
@@ -120,14 +121,14 @@ export async function getTicket(
   return { ticket, messages, attachments };
 }
 
-/** A stored attachment on a ticket in scope, or null (shyden-labs/shydesk#25). */
+/** A stored attachment on a ticket in scope and not withheld under a csam hold, or null (shyden-labs/shydesk#25, shyden-labs/shydesk#62). */
 export async function getFile(db: D1Database, scope: Scope, id: string): Promise<StoredFile | null> {
   const { products } = scope;
   if (products.length === 0) return null;
   return db
     .prepare(
       `SELECT a.r2_key, a.thumb_key, a.mime FROM attachments a JOIN tickets t ON t.id = a.ticket_id
-       WHERE a.id = ? AND a.state = 'stored' AND t.product_id IN (${marks(products)})${repSees(scope, 't.')}`,
+       WHERE a.id = ? AND a.state = 'stored' AND ${NOT_WITHHELD} AND t.product_id IN (${marks(products)})${repSees(scope, 't.')}`,
     )
     .bind(id, ...products)
     .first<StoredFile>();

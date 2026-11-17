@@ -66,6 +66,8 @@ interface World {
   mailShareUsed?: boolean;
   noTokenKey?: boolean;
   productGone?: boolean;
+  /** The status change matches no row: a close refused while a report to the authorities is owed. */
+  closeRefused?: boolean;
   /** Rows the scoped file lookup answers; none means out of scope or not stored. */
   files?: Record<string, unknown>[];
   /** The stored bytes by key, with the type each was stored with. */
@@ -83,7 +85,7 @@ function setup(w: World = {}) {
     if (/FROM products/.test(sql)) return [productRow('shytalk'), productRow('yawelo-idle')];
     if (/FROM staff_products/.test(sql)) return values[0] === REP ? [{ product_id: 'shytalk' }] : [];
     if (/FROM staff WHERE/.test(sql)) return values[0] === REP ? [{ role: 'rep' }] : [];
-    if (/UPDATE tickets/.test(sql)) return [{ product_id: 'shytalk' }];
+    if (/UPDATE tickets/.test(sql)) return w.closeRefused === true ? [] : [{ product_id: 'shytalk' }];
     if (/COUNT\(\*\)/.test(sql)) return [{ unread: w.unread ?? 0 }];
     if (/INTO counters/.test(sql)) return w.mailShareUsed === true ? [] : [{ value: 1 }];
     if (/FROM canned_replies/.test(sql)) {
@@ -513,6 +515,14 @@ describe('closing', () => {
     expect(named(statements, 'UPDATE tickets')[0]?.values[0]).toBe('closed');
     expect(plans[0]?.schedule.attachments).toEqual(expect.any(Number));
     expect(plans[0]?.schedule.text).toEqual(expect.any(Number));
+  });
+
+  it('is refused with 409 authority_report_owed while a csam hold awaits its report, and starts no timers', async () => {
+    const { post, plans } = setup({ closeRefused: true });
+    const response = await post('/desk/tickets/t1/close');
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ error: 'authority_report_owed' });
+    expect(plans).toEqual([]);
   });
 
   it("is 404 for a ticket out of the rep's scope", async () => {

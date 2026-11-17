@@ -69,6 +69,21 @@ describe('writeStatus', () => {
     expect(statements.find((s) => s.sql.startsWith('UPDATE tickets'))?.values).toEqual(['open', NOW, null, 't1']);
   });
 
+  it('never closes a ticket owing a report to the authorities: a live csam hold and no report, in SQL', async () => {
+    // shyden-labs/shydesk#62 AC3: staff closing and the auto-close both go through here.
+    const { db, statements } = ticketDb('open');
+    await writeStatus(db, 't1', 'closed', NOW);
+    expect(statements.find((s) => s.sql.startsWith('UPDATE tickets'))?.sql).toMatch(
+      /AND NOT EXISTS \(SELECT 1 FROM legal_holds h WHERE h\.ticket_id = tickets\.id AND h\.lifted_at IS NULL AND h\.csam = 1 AND NOT EXISTS \(SELECT 1 FROM authority_reports r WHERE r\.ticket_id = tickets\.id\)\)/,
+    );
+  });
+
+  it('reopening or waiting is never held back by the report duty', async () => {
+    const { db, statements } = ticketDb('closed');
+    await writeStatus(db, 't1', 'open', NOW);
+    expect(statements.find((s) => s.sql.startsWith('UPDATE tickets'))?.sql).not.toContain('legal_holds');
+  });
+
   it('only changes a ticket still in the expected status', async () => {
     const { db, statements } = ticketDb('open');
     expect(await writeStatus(db, 't1', 'closed', NOW, 'waiting')).toBeNull();

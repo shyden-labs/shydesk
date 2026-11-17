@@ -209,6 +209,16 @@ describe('the queries', () => {
     expect(await asked('admin', (db, scope) => getFile(db, scope, 'a1'))).not.toContain('appeal');
   });
 
+  it('withholds a file under a live csam hold, on the ticket or on that file, from every viewer, in SQL', async () => {
+    // shyden-labs/shydesk#62: suspected child-abuse material is never served, the admin included.
+    expect(await asked('rep', (db, scope) => getFile(db, scope, 'a1'))).toMatch(
+      /NOT EXISTS \(SELECT 1 FROM legal_holds h WHERE h\.lifted_at IS NULL AND h\.csam = 1 AND h\.ticket_id = a\.ticket_id AND \(h\.attachment_id IS NULL OR h\.attachment_id = a\.id\)\)/,
+    );
+    expect(await asked('admin', (db, scope) => getFile(db, scope, 'a1'))).toMatch(
+      /NOT EXISTS \(SELECT 1 FROM legal_holds h WHERE h\.lifted_at IS NULL AND h\.csam = 1 AND h\.ticket_id = a\.ticket_id AND \(h\.attachment_id IS NULL OR h\.attachment_id = a\.id\)\)/,
+    );
+  });
+
   it("leaves appeals out of a rep's unread count and keeps them in the admin's", async () => {
     expect(await asked('rep', (db, scope) => unreadCount(db, 'r@b.c', scope))).toContain(`t.${NOT_APPEAL}`);
     expect(await asked('admin', (db, scope) => unreadCount(db, 'a@b.c', scope))).not.toContain('appeal');

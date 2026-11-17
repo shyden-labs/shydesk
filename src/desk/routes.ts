@@ -235,7 +235,8 @@ export function deskRoutes(deps: DeskDeps, jwks?: JWTVerifyGetKey): Hono<DeskEnv
   app.post('/desk/tickets/:id/close', async (c) => {
     const found = await getTicket(c.env.DB, c.var.staff, c.req.param('id'));
     if (found === null) return c.notFound();
-    await changeStatus(c.env, found.ticket.id, 'closed', Date.now());
+    // In scope but unchanged: a live csam hold still waits for its report to the authorities (shyden-labs/shydesk#62).
+    if (!(await changeStatus(c.env, found.ticket.id, 'closed', Date.now()))) return c.json({ error: 'authority_report_owed' }, 409);
     return c.redirect(`/desk/tickets/${found.ticket.id}`, 303);
   });
 

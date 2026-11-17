@@ -31,3 +31,9 @@ export function earliestRelease(h: HoldTiming): number | null {
   if (h.order_pending === 1) return null;
   return h.basis_at + PRESERVATION_KEEP_DAYS * DAY_MS * (1 + h.renewals);
 }
+
+/**
+ * SQL: no live csam hold covers the attachment aliased `a`, on its ticket as a whole or on
+ * that attachment (shyden-labs/shydesk#62). Suspected child-abuse material is never served.
+ */
+export const NOT_WITHHELD = `NOT EXISTS (SELECT 1 FROM legal_holds h WHERE h.lifted_at IS NULL AND h.csam = 1 AND h.ticket_id = a.ticket_id AND (h.attachment_id IS NULL OR h.attachment_id = a.id))`;

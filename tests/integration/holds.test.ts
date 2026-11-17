@@ -18,8 +18,9 @@ import {
   setOrderPending,
   type HoldEnv,
 } from '../../src/holds/holds.ts';
+import { getFile } from '../../src/desk/queries.ts';
 import { saveProduct, saveTicketType, supportTypeId } from '../../src/products.ts';
-import { DAY_MS, type TimerPlan } from '../../src/tickets/status.ts';
+import { DAY_MS, writeStatus, type TimerPlan } from '../../src/tickets/status.ts';
 import { restD1 } from './d1.ts';
 
 const db = restD1(inject('databaseId'));
@@ -43,7 +44,7 @@ const env = {
   },
 } as unknown as HoldEnv;
 
-// Some 45 calls at about 2 s each over D1's REST API (see appeals.test.ts).
+// Some 55 calls at about 2 s each over D1's REST API (see appeals.test.ts).
 const JOURNEY_MS = 240_000;
 
 async function product(id: string): Promise<void> {
@@ -199,11 +200,16 @@ describe('legal holds on D1', () => {
       // unreported hold into a reported one from the report's date, and leaving t1's alone.
       const crime = await placeHold(env, ADMIN, { ticketId: 'it-hold-t2', reason: 'crime_unreported', csam: true, note: 'Image' }, T);
       const report = { reportedTo: 'Bareskrim Polri', reportedAt: T + 5 * DAY_MS, reference: 'LP/123' };
+      // Owing its report, t2 cannot close; t1's live hold is not csam, so t1 can.
+      expect.soft(await writeStatus(db, 'it-hold-t2', 'closed', T + 6 * DAY_MS)).toBeNull();
+      expect.soft(await writeStatus(db, 'it-hold-t1', 'closed', T + 6 * DAY_MS)).not.toBeNull();
       await expect.soft(recordAuthorityReport(env, ADMIN_ONE, 'it-hold-t2', report, T + 6 * DAY_MS)).rejects.toBeInstanceOf(HoldNotFound);
       await recordAuthorityReport(env, ADMIN, 'it-hold-t2', report, T + 6 * DAY_MS);
       await expect
         .soft(recordAuthorityReport(env, ADMIN, 'it-hold-t2', { ...report, reference: 'LP/999' }, T + 7 * DAY_MS))
         .rejects.toEqual(new HoldRefused('already_reported'));
+      // Reported, t2 closes.
+      expect.soft(await writeStatus(db, 'it-hold-t2', 'closed', T + 7 * DAY_MS)).not.toBeNull();
       expect
         .soft(await one('SELECT reported_to, reported_at, reference, recorded_by FROM authority_reports WHERE ticket_id = ?', 'it-hold-t2'))
         .toEqual({
@@ -219,6 +225,11 @@ describe('legal holds on D1', () => {
         .soft(await one(`SELECT detail FROM legal_hold_events WHERE hold_id = ? AND action = 'reported'`, crime))
         .toEqual({ detail: 'Bareskrim Polri LP/123' });
       expect.soft(await one('SELECT reason FROM legal_holds WHERE id = ?', unreported)).toEqual({ reason: 'crime_unreported' });
+
+      // The file lookup on real D1: t2's live csam hold withholds its file even from the admin; t1's csam hold was
+      // lifted and its live hold is not csam, so t1's file is served.
+      expect.soft(await getFile(db, ADMIN, 'it-hold-a2')).toBeNull();
+      expect.soft(await getFile(db, ADMIN, 'it-hold-a1')).toEqual({ r2_key: 'k-it-hold-a1', thumb_key: null, mime: 'image/jpeg' });
     },
     JOURNEY_MS,
   );
