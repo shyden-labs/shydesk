@@ -12,6 +12,15 @@ import { standInDb, type Statement } from './d1-stand-in.ts';
 // Anything else is `failed` with the reason. ShyDesk never sends twice by itself.
 
 const NOW = 1_762_500_000_123;
+// The spec is parsed and its webhook schema compiled with the test file, not inside the
+// test, so that work does not count against the test's 1 s (shyden-labs/shydesk#200).
+const spec = parse(readFileSync(new URL('../../openapi/shydesk.v1.yaml', import.meta.url), 'utf8')) as {
+  webhooks: Record<string, { post: { requestBody: { content: { 'application/json': { schema: { $ref: string } } } } } }>;
+  components: { schemas: Record<string, object> };
+};
+const webhookRef = spec.webhooks.punishment?.post.requestBody.content['application/json'].schema.$ref ?? '';
+const validate = new Ajv2020({ strict: true }).compile(spec.components.schemas[webhookRef.replace('#/components/schemas/', '')] ?? {});
+
 const TARGET: CallbackTarget = { id: 'shytalk', callbackUrl: 'https://api.shytalk.example/punish', callbackSecret: 'the-secret' };
 const PUN: PunishmentRow = {
   id: 'pun-1',
@@ -81,13 +90,6 @@ describe('send', () => {
   });
 
   it('sends a body that matches the webhook schema in the OpenAPI spec', async () => {
-    const spec = parse(readFileSync(new URL('../../openapi/shydesk.v1.yaml', import.meta.url), 'utf8')) as {
-      webhooks: Record<string, { post: { requestBody: { content: { 'application/json': { schema: { $ref: string } } } } } }>;
-      components: { schemas: Record<string, object> };
-    };
-    const ref = spec.webhooks.punishment?.post.requestBody.content['application/json'].schema.$ref ?? '';
-    const name = ref.replace('#/components/schemas/', '');
-    const validate = new Ajv2020({ strict: true }).compile(spec.components.schemas[name] ?? {});
     const { db } = standInDb();
     const bodies: unknown[] = [];
     for (const [type, appeal] of [
