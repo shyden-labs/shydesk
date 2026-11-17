@@ -11,6 +11,9 @@ Access) and sends no-reply notification emails over SMTP (port 587, STARTTLS)
 through a mailbox the operator already has. Anything specific to one deployment, such as domains and products, is
 configuration, so anyone can run their own copy for free.
 
+Progress toward v1, refreshed from the project board at each work session:
+[ShyDesk progress](https://claude.ai/artifact/4x75bUW86DpHypMn4HhTzg).
+
 The approved design is
 [`docs/superpowers/specs/2026-11-03-shydesk-v1-design.md`](docs/superpowers/specs/2026-11-03-shydesk-v1-design.md).
 The app itself is being built; this repository currently holds its design, CI
