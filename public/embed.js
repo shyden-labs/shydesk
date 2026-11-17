@@ -215,7 +215,7 @@
         say(TEXT.tooMany);
         return;
       }
-      const loaded = /** @type {unknown} */ (await import(`${HOST}/embed-media.js`));
+      const loaded = /** @type {unknown} */ (await import(/* @vite-ignore */ `${HOST}/embed-media.js`));
       const media = /** @type {typeof import('./embed-media.js')} */ (loaded);
       const shape = media.uploadShape(file.type);
       if (shape === null) {
@@ -736,7 +736,7 @@
     async openViewer(stored, start) {
       let viewer;
       try {
-        const loaded = /** @type {unknown} */ (await import(`${HOST}/embed-viewer.js`));
+        const loaded = /** @type {unknown} */ (await import(/* @vite-ignore */ `${HOST}/embed-viewer.js`));
         viewer = /** @type {typeof import('./embed-viewer.js')} */ (loaded);
       } catch {
         this.tell(TEXT.cannotOpen);

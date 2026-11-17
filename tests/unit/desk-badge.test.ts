@@ -7,6 +7,7 @@ function page(visible = true) {
   const listeners: Record<string, () => void> = {};
   let timer: (() => void | Promise<void>) | null = null;
   let period = 0;
+  let clears = 0;
   const calls: string[] = [];
   const badge = { textContent: '' };
   const doc = {
@@ -22,6 +23,7 @@ function page(visible = true) {
       return 1;
     },
     clearInterval: () => {
+      clears += 1;
       timer = null;
     },
   };
@@ -40,6 +42,7 @@ function page(visible = true) {
     tick: () => timer?.(),
     running: () => timer !== null,
     period: () => period,
+    clears: () => clears,
     answerWith: (fn: () => Promise<Response>) => {
       answer = fn;
     },
@@ -62,6 +65,14 @@ describe('startBadge', () => {
     await p.start();
     expect(p.calls).toEqual([]);
     expect(p.running()).toBe(false);
+  });
+
+  it('has no timer to stop when a tab that started hidden is hidden again', async () => {
+    const p = page(false);
+    await p.start();
+    p.change();
+    expect(p.clears()).toBe(0);
+    expect(p.calls).toEqual([]);
   });
 
   it('stops when the tab is hidden, and asks again when it comes back', async () => {
@@ -144,6 +155,15 @@ describe('the viewer buttons', () => {
     expect(v.opened[0]?.start).toBe(1);
     expect(v.opened[0]?.host).toBe(body);
     expect(v.opened[0]?.doc).toBe(doc);
+  });
+
+  it('gives a file with no type or id an empty type and the bare files address', async () => {
+    const v = viewer();
+    const bare = { dataset: {} };
+    openFromButton(bare, [bare], v.module, doc);
+    const item = v.opened[0]?.items[0];
+    expect(item?.mime).toBe('');
+    expect(await item?.load()).toBe('/desk/files/');
   });
 
   it('gives it every file in page order, each read from the desk by its encoded id', async () => {
