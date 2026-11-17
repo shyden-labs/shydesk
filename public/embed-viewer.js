@@ -14,6 +14,26 @@
 const MIN_ZOOM = 1;
 const MAX_ZOOM = 8;
 
+/**
+ * A tap on a video: a paused one is asked to play, a playing one pauses. When the browser refuses
+ * the play, the reason stays on the element as `data-play-refused`, so a video left paused says
+ * why (shyden-labs/shydesk#188).
+ * @param {{ paused: boolean, dataset: Record<string, string | undefined>, play: () => Promise<void>, pause: () => void }} video
+ * @returns {Promise<void>}
+ */
+export async function togglePlay(video) {
+  if (!video.paused) {
+    video.pause();
+    return;
+  }
+  delete video.dataset.playRefused;
+  try {
+    await video.play();
+  } catch (refusal) {
+    video.dataset.playRefused = String(refusal); // an Error reads "Name: message"
+  }
+}
+
 /** A file opened fresh: unzoomed, upright and centred. */
 export const START = /** @type {ViewerState} */ (Object.freeze({ index: 0, zoom: 1, rotation: 0, panX: 0, panY: 0 }));
 
@@ -339,9 +359,7 @@ export function openViewer({ doc, host, items, start, onClose }) {
     if (Math.abs(dx) >= SWIPE_PX && Math.abs(dx) > Math.abs(dy)) {
       showFile(dx < 0 ? next(state, count) : prev(state, count));
     } else if (pressOnLayer && layer !== null && Math.hypot(dx, dy) < CLICK_PX) {
-      const { video } = layer;
-      if (video.paused) void video.play();
-      else video.pause();
+      void togglePlay(layer.video);
     }
   };
   stage.addEventListener('pointerup', lift);
