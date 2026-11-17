@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { START, next, prev, rotate, stateLine, wheelFactor, zoomBy } from '../../public/embed-viewer.js';
+import { START, next, prev, rotate, stateLine, togglePlay, wheelFactor, zoomBy } from '../../public/embed-viewer.js';
 
 // The media viewer's state (shyden-labs/shydesk#25 AC1): zoom clamped 1-8,
 // rotation cycling in quarter turns, next and previous wrapping round.
@@ -117,5 +117,45 @@ describe('wheelFactor', () => {
 
   it('leaves the zoom alone for a sideways-only wheel', () => {
     expect(wheelFactor(0, 0, 800)).toBe(1);
+  });
+});
+
+// shyden-labs/shydesk#188 AC2: a click on the video plays or pauses it, and a play the browser refuses keeps its
+// reason on the element instead of being dropped, so a journey that sees the video stay paused can name why.
+describe('togglePlay', () => {
+  const video = (paused: boolean, play: () => Promise<void>) => {
+    const calls: string[] = [];
+    const v = {
+      paused,
+      dataset: {} as Record<string, string | undefined>,
+      play: () => {
+        calls.push('play');
+        return play();
+      },
+      pause: () => {
+        calls.push('pause');
+      },
+    };
+    return { v, calls };
+  };
+
+  it('plays a paused video and leaves no refusal when it plays', async () => {
+    const { v, calls } = video(true, () => Promise.resolve());
+    v.dataset.playRefused = 'AbortError: old';
+    await togglePlay(v);
+    expect(calls).toEqual(['play']);
+    expect(v.dataset.playRefused).toBeUndefined();
+  });
+
+  it('keeps the name and message of a refused play', async () => {
+    const { v } = video(true, () => Promise.reject(new DOMException('The request is not allowed', 'NotAllowedError')));
+    await togglePlay(v);
+    expect(v.dataset.playRefused).toBe('NotAllowedError: The request is not allowed');
+  });
+
+  it('pauses a playing video', async () => {
+    const { v, calls } = video(false, () => Promise.resolve());
+    await togglePlay(v);
+    expect(calls).toEqual(['pause']);
   });
 });
