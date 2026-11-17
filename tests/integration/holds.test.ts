@@ -10,6 +10,7 @@ import type { Staff } from '../../src/auth/staff.ts';
 import {
   HoldNotFound,
   HoldRefused,
+  legalReview,
   liftHold,
   placeHold,
   recordAuthorityReport,
@@ -200,6 +201,11 @@ describe('legal holds on D1', () => {
       // unreported hold into a reported one from the report's date, and leaving t1's alone.
       const crime = await placeHold(env, ADMIN, { ticketId: 'it-hold-t2', reason: 'crime_unreported', csam: true, note: 'Image' }, T);
       const report = { reportedTo: 'Bareskrim Polri', reportedAt: T + 5 * DAY_MS, reference: 'LP/123' };
+      // The admin's review on real D1: t2 owes its report; the preservation hold is due from T + 180 d, t1's no-report hold at once.
+      const review = await legalReview(db, ADMIN, T + 200 * DAY_MS);
+      expect.soft(review.duties.map((d) => d.ticketId)).toEqual(['it-hold-t2']);
+      expect.soft(review.due.map((d) => d.holdId).sort()).toEqual([kept, unreported].sort());
+      expect.soft((await legalReview(db, ADMIN_ONE, T + 200 * DAY_MS)).duties).toEqual([]);
       // Owing its report, t2 cannot close; t1's live hold is not csam, so t1 can.
       expect.soft(await writeStatus(db, 'it-hold-t2', 'closed', T + 6 * DAY_MS)).toBeNull();
       expect.soft(await writeStatus(db, 'it-hold-t1', 'closed', T + 6 * DAY_MS)).not.toBeNull();
@@ -208,6 +214,7 @@ describe('legal holds on D1', () => {
       await expect
         .soft(recordAuthorityReport(env, ADMIN, 'it-hold-t2', { ...report, reference: 'LP/999' }, T + 7 * DAY_MS))
         .rejects.toEqual(new HoldRefused('already_reported'));
+      expect.soft((await legalReview(db, ADMIN, T + 200 * DAY_MS)).duties).toEqual([]);
       // Reported, t2 closes.
       expect.soft(await writeStatus(db, 'it-hold-t2', 'closed', T + 7 * DAY_MS)).not.toBeNull();
       expect

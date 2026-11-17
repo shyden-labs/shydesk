@@ -1,4 +1,5 @@
 import { html } from 'hono/html';
+import type { LegalReview } from '../holds/holds.ts';
 import type { HtmlEscapedString } from 'hono/utils/html';
 import type { Canned } from '../products.ts';
 import type { PunishmentRow } from '../db/types.ts';
@@ -138,7 +139,37 @@ export interface ListData {
   tickets: DeskTicket[];
   cursor: number;
   productNames: Map<string, string>;
+  /** The admin's legal review (shyden-labs/shydesk#62); none for a rep. */
+  legal?: LegalReview;
 }
+
+const day = (ms: number): string => new Date(ms).toISOString().slice(0, 10);
+
+/** The admin's legal duties first, then holds due for review; nothing when neither has any. */
+const legalSections = (legal: LegalReview | undefined): Page | string => {
+  if (legal === undefined) return '';
+  return html`${
+    legal.duties.length === 0
+      ? ''
+      : html`<section aria-labelledby="legal-duty">
+          <h2 id="legal-duty">Legal duty outstanding</h2>
+          <ul>
+            ${legal.duties.map(
+              (d) => html`<li><a href="/desk/tickets/${d.ticketId}">${d.subject}</a>: report to the authorities not yet recorded</li>`,
+            )}
+          </ul>
+        </section>`
+  }${
+    legal.due.length === 0
+      ? ''
+      : html`<section aria-labelledby="holds-due">
+          <h2 id="holds-due">Holds due for review</h2>
+          <ul>
+            ${legal.due.map((h) => html`<li><a href="/desk/tickets/${h.ticketId}">${h.subject}</a>: may be lifted since ${day(h.earliest)}</li>`)}
+          </ul>
+        </section>`
+  }`;
+};
 
 const listLink = (d: ListData, changes: { product?: string | undefined; cursor?: number }): string => {
   const product = 'product' in changes ? changes.product : d.selected;
@@ -155,6 +186,7 @@ export const listPage = (d: ListData): Page =>
   layout(
     'Tickets',
     html`<h1>Tickets</h1>
+      ${legalSections(d.legal)}
       <nav aria-label="Products">
         ${d.showAll ? html`<a href="${listLink(d, { product: undefined })}" aria-current="${d.selected === undefined ? 'page' : 'false'}">All products</a>` : ''}
         ${d.products.map(

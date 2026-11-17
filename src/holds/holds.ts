@@ -1,3 +1,4 @@
+import type { D1Database } from '@cloudflare/workers-types';
 import type { Staff } from '../auth/staff.ts';
 import { DAY_MS, type TimerEnv } from '../tickets/status.ts';
 import { earliestRelease, type HoldReason, type HoldTiming } from './rules.ts';
@@ -258,4 +259,66 @@ export async function recordAuthorityReport(
     .bind(ticketId, ...staff.products)
     .first();
   throw already === null ? new HoldNotFound() : new HoldRefused('already_reported');
+}
+
+/** A ticket owing a report to the authorities: a live csam hold and no `authority_reports` row. */
+export interface LegalDuty {
+  ticketId: string;
+  subject: string;
+  /** When its oldest live csam hold was placed. */
+  placedAt: number;
+}
+
+/** A live hold whose earliest release has come, for the admin to lift or renew. */
+export interface DueHold {
+  holdId: string;
+  ticketId: string;
+  subject: string;
+  earliest: number;
+}
+
+export interface LegalReview {
+  duties: LegalDuty[];
+  due: DueHold[];
+}
+
+interface ReviewRow extends HoldTiming {
+  id: string;
+  ticket_id: string;
+  subject: string;
+}
+
+/**
+ * The admin's legal review for the desk's list (shyden-labs/shydesk#62 AC3): tickets in
+ * scope owing a report to the authorities, oldest first, and live holds past their earliest
+ * release. A rep has none, and nothing is asked.
+ */
+export async function legalReview(db: D1Database, staff: Staff, now: number): Promise<LegalReview> {
+  if (staff.role !== 'admin' || staff.products.length === 0) return { duties: [], due: [] };
+  const [{ results: duties }, { results: held }] = await Promise.all([
+    db
+      .prepare(
+        `SELECT t.id AS ticket_id, t.subject, MIN(h.placed_at) AS placed_at FROM legal_holds h JOIN tickets t ON t.id = h.ticket_id
+         WHERE h.lifted_at IS NULL AND h.csam = 1 AND t.product_id IN (${marks(staff.products)})
+           AND NOT EXISTS (SELECT 1 FROM authority_reports r WHERE r.ticket_id = t.id)
+         GROUP BY t.id, t.subject ORDER BY placed_at, t.id`,
+      )
+      .bind(...staff.products)
+      .all<{ ticket_id: string; subject: string; placed_at: number }>(),
+    db
+      .prepare(
+        `SELECT h.id, h.ticket_id, t.subject, h.reason, h.placed_at, h.basis_at, h.renewals, h.order_pending, h.no_report_reason
+         FROM legal_holds h JOIN tickets t ON t.id = h.ticket_id
+         WHERE h.lifted_at IS NULL AND t.product_id IN (${marks(staff.products)}) ORDER BY h.placed_at, h.id`,
+      )
+      .bind(...staff.products)
+      .all<ReviewRow>(),
+  ]);
+  return {
+    duties: duties.map((d) => ({ ticketId: d.ticket_id, subject: d.subject, placedAt: d.placed_at })),
+    due: held.flatMap((h) => {
+      const earliest = earliestRelease(h);
+      return earliest !== null && now >= earliest ? [{ holdId: h.id, ticketId: h.ticket_id, subject: h.subject, earliest }] : [];
+    }),
+  };
 }

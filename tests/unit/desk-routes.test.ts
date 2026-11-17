@@ -68,6 +68,8 @@ interface World {
   productGone?: boolean;
   /** The status change matches no row: a close refused while a report to the authorities is owed. */
   closeRefused?: boolean;
+  /** Tickets the legal review says owe a report to the authorities. */
+  owed?: Record<string, unknown>[];
   /** Rows the scoped file lookup answers; none means out of scope or not stored. */
   files?: Record<string, unknown>[];
   /** The stored bytes by key, with the type each was stored with. */
@@ -81,6 +83,7 @@ function setup(w: World = {}) {
   const mails: SmtpMail[] = [];
   const { db, statements } = standInDb((sql, values) => {
     if (/SELECT attachments_keep_days/.test(sql)) return [{ attachments_keep_days: 30, text_keep_days: 365 }];
+    if (/FROM legal_holds h JOIN tickets t/.test(sql) && /authority_reports/.test(sql)) return w.owed ?? [];
     if (/FROM products WHERE id = \?/.test(sql)) return w.productGone === true ? [] : [productRow(String(values[0]))];
     if (/FROM products/.test(sql)) return [productRow('shytalk'), productRow('yawelo-idle')];
     if (/FROM staff_products/.test(sql)) return values[0] === REP ? [{ product_id: 'shytalk' }] : [];
@@ -189,6 +192,19 @@ describe('the ticket list', () => {
     const page = await (await get('/desk')).text();
     expect(page).toContain('Cannot &lt;b&gt;sign&lt;/b&gt; in');
     expect(named(statements, 'FROM tickets')[0]?.values).toContain('shytalk');
+  });
+
+  it('shows the admin the tickets owing a report to the authorities, first', async () => {
+    const { get } = setup({ owed: [{ ticket_id: 't7', subject: 'Owed one', placed_at: 1 }] });
+    const page = await (await get('/desk', ADMIN)).text();
+    expect(page).toContain('Legal duty outstanding');
+    expect(page).toContain('<a href="/desk/tickets/t7">Owed one</a>');
+  });
+
+  it('asks a rep nothing about legal holds', async () => {
+    const { get, statements } = setup({ owed: [{ ticket_id: 't7', subject: 'Owed one', placed_at: 1 }] });
+    expect(await (await get('/desk')).text()).not.toContain('Legal duty');
+    expect(named(statements, 'legal_holds')).toEqual([]);
   });
 
   it("gives a rep an empty list for another product's filter, asking the database nothing", async () => {

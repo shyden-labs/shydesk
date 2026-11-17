@@ -75,6 +75,34 @@ describe('listPage', () => {
   });
 });
 
+describe('the legal review on the list', () => {
+  it('shows the admin the tickets owing a report first, then the holds due for review, each linking to its ticket', async () => {
+    const page = await render(
+      listPage(
+        list({
+          legal: {
+            duties: [{ ticketId: 't9', subject: 'Image <x>', placedAt: 1 }],
+            due: [{ holdId: 'h1', ticketId: 't8', subject: 'Request', earliest: Date.UTC(2026, 10, 1) }],
+          },
+        }),
+      ),
+    );
+    const duty = page.indexOf('<h2 id="legal-duty">Legal duty outstanding</h2>');
+    const due = page.indexOf('<h2 id="holds-due">Holds due for review</h2>');
+    expect(duty).toBeGreaterThan(-1);
+    expect(due).toBeGreaterThan(duty);
+    expect(page.indexOf('aria-label="Ticket list"')).toBeGreaterThan(due);
+    expect(page).toContain('<a href="/desk/tickets/t9">Image &lt;x&gt;</a>: report to the authorities not yet recorded');
+    expect(page).toContain('<a href="/desk/tickets/t8">Request</a>: may be lifted since 2026-11-01');
+  });
+
+  it('shows neither heading when nothing is owed or due', async () => {
+    const page = await render(listPage(list({ legal: { duties: [], due: [] } })));
+    expect(page).not.toContain('Legal duty outstanding');
+    expect(page).not.toContain('Holds due for review');
+  });
+});
+
 describe('ticketPage', () => {
   const message = { id: 'm1', author: 'customer', staff_email: null, body: 'Help', created_at: 5 };
   const attachment = {

@@ -21,6 +21,7 @@ import {
 import type { Fetcher as CallbackFetcher } from '../punishments/send.ts';
 import { appealPanel, getFile, getTicket, listTickets, markRead, reportPanel, unreadCount, type DeskTicket } from './queries.ts';
 import { listPage, ticketPage } from './views.ts';
+import { legalReview } from '../holds/holds.ts';
 
 /**
  * The staff desk under /desk (shyden-labs/shydesk#24; plan Task 10). Signed-in
@@ -109,6 +110,7 @@ export function deskRoutes(deps: DeskDeps, jwks?: JWTVerifyGetKey): Hono<DeskEnv
         tickets: await listTickets(c.env.DB, { products: inScope, role: staff.role }, { status, typeId, cursor }),
         cursor,
         productNames: new Map(allProducts.map((p) => [p.id, p.name])),
+        legal: await legalReview(c.env.DB, staff, Date.now()),
       }),
     );
   });

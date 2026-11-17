@@ -3,6 +3,7 @@ import type { Staff } from '../../src/auth/staff.ts';
 import {
   HoldNotFound,
   HoldRefused,
+  legalReview,
   liftHold,
   placeHold,
   recordAuthorityReport,
@@ -373,5 +374,47 @@ describe('recordAuthorityReport', () => {
     const check = statements.find((s) => s.sql.startsWith('SELECT 1 FROM authority_reports'));
     expect(check?.sql).toMatch(/JOIN tickets t ON t\.id = r\.ticket_id WHERE r\.ticket_id = \? AND t\.product_id IN \(\?, \?\)/);
     expect(check?.values).toEqual(['t9', 'shytalk', 'yawelo-idle']);
+  });
+});
+
+describe('legalReview', () => {
+  const live = { reason: 'preservation', placed_at: T, basis_at: T, renewals: 0, order_pending: 0, no_report_reason: null };
+
+  it('a rep sees no legal review, and nothing is asked', async () => {
+    const { env: e, statements } = env(() => []);
+    expect(await legalReview(e.DB, REP, NOW)).toEqual({ duties: [], due: [] });
+    expect(statements).toEqual([]);
+  });
+
+  it('lists the tickets in scope owing a report to the authorities, oldest hold first', async () => {
+    const { env: e, statements } = env((sql) =>
+      sql.includes('authority_reports') ? [{ ticket_id: 't1', subject: 'Image', placed_at: T }] : [],
+    );
+    const review = await legalReview(e.DB, ADMIN, NOW);
+    expect(review.duties).toEqual([{ ticketId: 't1', subject: 'Image', placedAt: T }]);
+    const asked = statements.find((s) => s.sql.includes('authority_reports'));
+    expect(asked?.sql).toMatch(/WHERE h\.lifted_at IS NULL AND h\.csam = 1 AND t\.product_id IN \(\?, \?\)/);
+    expect(asked?.sql).toMatch(/AND NOT EXISTS \(SELECT 1 FROM authority_reports r WHERE r\.ticket_id = t\.id\)/);
+    expect(asked?.sql).toMatch(/GROUP BY t\.id, t\.subject ORDER BY placed_at, t\.id/);
+    expect(asked?.values).toEqual(['shytalk', 'yawelo-idle']);
+  });
+
+  it('lists the live holds in scope whose earliest release has come, and only those', async () => {
+    const rows = [
+      { ...live, id: 'h1', ticket_id: 't1', subject: 'Due today' }, // T + 90 d
+      { ...live, id: 'h2', ticket_id: 't2', subject: 'Renewed', renewals: 1 }, // T + 180 d
+      { ...live, id: 'h3', ticket_id: 't3', subject: 'Order', order_pending: 1 }, // never while pending
+    ];
+    const { env: e, statements } = env((sql) => (sql.includes('h.renewals') ? rows : []));
+    const review = await legalReview(e.DB, ADMIN, T + 90 * DAY_MS);
+    expect(review.due).toEqual([{ holdId: 'h1', ticketId: 't1', subject: 'Due today', earliest: T + 90 * DAY_MS }]);
+    const asked = statements.find((s) => s.sql.includes('h.renewals'));
+    expect(asked?.sql).toMatch(/WHERE h\.lifted_at IS NULL AND t\.product_id IN \(\?, \?\) ORDER BY h\.placed_at, h\.id/);
+    expect(asked?.values).toEqual(['shytalk', 'yawelo-idle']);
+  });
+
+  it('a day before its earliest release a hold is not yet due', async () => {
+    const { env: e } = env((sql) => (sql.includes('h.renewals') ? [{ ...live, id: 'h1', ticket_id: 't1', subject: 'S' }] : []));
+    expect((await legalReview(e.DB, ADMIN, T + 89 * DAY_MS)).due).toEqual([]);
   });
 });
