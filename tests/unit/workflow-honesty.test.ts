@@ -68,7 +68,7 @@ describe('sonarcloud.yml', () => {
         '            -Dsonar.sources=.',
         '            -Dsonar.tests=tests',
         '            -Dsonar.exclusions=tests/**,coverage/**,node_modules/**',
-        '            -Dsonar.coverage.exclusions=eslint.config.js,vitest.unit.config.ts',
+        '            -Dsonar.coverage.exclusions=eslint.config.js,vitest.unit.config.ts,vitest.integration.config.ts,wdio.conf.ts',
       ].join('\n'),
     );
   });
