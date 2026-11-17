@@ -45,6 +45,8 @@ export interface DeskAttachment {
   bytes: number;
   duration_ms: number | null;
   state: string;
+  /** 1 while a live csam hold covers it: never shown nor served (shyden-labs/shydesk#62). */
+  withheld: 0 | 1;
 }
 
 export interface TicketFilter {
@@ -114,7 +116,8 @@ export async function getTicket(
     .all<DeskMessage>();
   const { results: attachments } = await db
     .prepare(
-      "SELECT id, message_id, mime, bytes, duration_ms, state FROM attachments WHERE ticket_id = ? AND message_id IS NOT NULL AND state IN ('stored', 'deleted')",
+      `SELECT a.id, a.message_id, a.mime, a.bytes, a.duration_ms, a.state, CASE WHEN ${NOT_WITHHELD} THEN 0 ELSE 1 END AS withheld
+       FROM attachments a WHERE a.ticket_id = ? AND a.message_id IS NOT NULL AND a.state IN ('stored', 'deleted')`,
     )
     .bind(id)
     .all<DeskAttachment>();

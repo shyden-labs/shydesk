@@ -77,7 +77,15 @@ describe('listPage', () => {
 
 describe('ticketPage', () => {
   const message = { id: 'm1', author: 'customer', staff_email: null, body: 'Help', created_at: 5 };
-  const attachment = { id: 'a1', message_id: 'm1', mime: 'image/jpeg', bytes: 2000, duration_ms: null, state: 'stored' };
+  const attachment = {
+    id: 'a1',
+    message_id: 'm1',
+    mime: 'image/jpeg',
+    bytes: 2000,
+    duration_ms: null,
+    state: 'stored',
+    withheld: 0 as const,
+  };
 
   it('names each stored attachment by kind and size, on its own message', async () => {
     const page = await render(
@@ -109,6 +117,26 @@ describe('ticketPage', () => {
         }),
       ),
     );
+    expect(page).toContain('aria-label="Open photo 1"');
+    expect(page).not.toContain('photo 2');
+  });
+
+  it('shows a file under a csam hold as withheld: no preview, no viewer, and it takes no number', async () => {
+    // shyden-labs/shydesk#62 AC3.
+    const page = await render(
+      ticketPage(
+        view({
+          messages: [message],
+          attachments: [
+            { ...attachment, id: 'a0', withheld: 1 },
+            { ...attachment, id: 'a1' },
+          ],
+        }),
+      ),
+    );
+    expect(page).toContain('<li>Evidence withheld under legal hold</li>');
+    expect(page).not.toContain('/desk/files/a0');
+    expect(page).not.toContain('data-id="a0"');
     expect(page).toContain('aria-label="Open photo 1"');
     expect(page).not.toContain('photo 2');
   });
@@ -216,6 +244,16 @@ describe('the queries', () => {
     );
     expect(await asked('admin', (db, scope) => getFile(db, scope, 'a1'))).toMatch(
       /NOT EXISTS \(SELECT 1 FROM legal_holds h WHERE h\.lifted_at IS NULL AND h\.csam = 1 AND h\.ticket_id = a\.ticket_id AND \(h\.attachment_id IS NULL OR h\.attachment_id = a\.id\)\)/,
+    );
+  });
+
+  it('marks each attachment of a ticket withheld when a live csam hold covers it, in SQL', async () => {
+    const { db, statements } = standInDb((sql) => (sql.includes('FROM tickets') ? [{ ...ticket }] : []));
+    await getTicket(db, { products: ['shytalk'], role: 'admin' }, 't1');
+    const files = statements.find((s) => s.sql.includes('FROM attachments'))?.sql;
+    expect(files).toMatch(/FROM attachments a WHERE/);
+    expect(files).toMatch(
+      /CASE WHEN NOT EXISTS \(SELECT 1 FROM legal_holds h WHERE h\.lifted_at IS NULL AND h\.csam = 1 AND h\.ticket_id = a\.ticket_id AND \(h\.attachment_id IS NULL OR h\.attachment_id = a\.id\)\) THEN 0 ELSE 1 END AS withheld/,
     );
   });
 

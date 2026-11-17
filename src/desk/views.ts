@@ -220,12 +220,13 @@ const minutes = (ms: number): string => {
 };
 
 /**
- * A removed attachment's line, or a stored one's preview, which opens the
+ * A removed or withheld attachment's line, or a stored one's preview, which opens the
  * read-only viewer (shyden-labs/shydesk#25; public/desk.js). `number` is its
  * place among the ticket's stored files, so each control has its own name.
  */
 const attachmentLine = (a: DeskAttachment, number: number): Page => {
   if (a.state === 'deleted') return html`<li>Attachment removed</li>`;
+  if (a.withheld === 1) return html`<li>Evidence withheld under legal hold</li>`;
   const kind = a.mime.startsWith('video/') ? 'Video' : 'Photo';
   const length = a.duration_ms === null ? '' : `, ${minutes(a.duration_ms)}`;
   return html`<li>
@@ -236,9 +237,9 @@ const attachmentLine = (a: DeskAttachment, number: number): Page => {
   </li>`;
 };
 
-/** The ticket's stored files in the order the page shows them, so each is numbered by its place. */
+/** The ticket's stored, viewable files in the order the page shows them, so each is numbered by its place. */
 const shownOrder = (messages: DeskMessage[], attachments: DeskAttachment[]): DeskAttachment[] =>
-  messages.flatMap((m) => attachments.filter((a) => a.message_id === m.id && a.state !== 'deleted'));
+  messages.flatMap((m) => attachments.filter((a) => a.message_id === m.id && a.state !== 'deleted' && a.withheld !== 1));
 
 export interface TicketData {
   ticket: DeskTicket;
