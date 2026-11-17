@@ -101,9 +101,9 @@ describe('the contact form', () => {
     await textHolding('Attachments', 'attached,', 150_000);
     await pickFile('Photos and videos', 'photo.jpg');
     const attached = await attachedTwo();
-    // shyden-labs/shydesk#21: each is stored smaller than its fixture, the 10,586 KB video and the 3,011 KB photo.
+    // shyden-labs/shydesk#21: each is stored smaller than its fixture, the 11,079 KB 2560×1440 video and the 3,011 KB photo.
     const [video = Infinity, photo = Infinity] = attached;
-    assert.ok(video < 10586 && photo < 3011, `not stored smaller than the originals: ${attached.join(', ')} KB`);
+    assert.ok(video < 11079 && photo < 3011, `not stored smaller than the originals: ${attached.join(', ')} KB`);
     // The test site key passes by itself; the button is enabled once it has.
     await textHolding('Support status', 'Ready to send');
     await tap('Send');
@@ -150,6 +150,12 @@ describe('the contact form', () => {
     // along the bottom of the picture, is left uncovered for the browser's play, pause and scrub.
     await clickMiddleOf('Video 1 full size');
     await videoPlaying('Video 1 full size');
+    // shyden-labs/shydesk#88: the 2560×1440 video was stored at no more than 1920×1080, on every browser.
+    const shown = await driver().execute<number[]>(
+      'return [arguments[0].videoWidth, arguments[0].videoHeight];',
+      await named('Video 1 full size'),
+    );
+    assert.ok(shown[0] === 1920 && shown[1] === 1080, `the video was stored at ${shown.join('×')}, not 1920×1080`);
     await controlsBarUncovered('Video 1 full size');
     // A sideways drag across the video moves on, as across a photo, on every browser.
     await swipeLeft('Viewer stage');
