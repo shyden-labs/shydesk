@@ -23,6 +23,13 @@ files), and fails naming any target that ran fewer tests than another or than
 the whole suite (`scripts/e2e-totals.ts`). The browsers run in CI and the
 phones on this Mac, so each run is held to the suite's full count on its own.
 
+Phones and desktop browsers are two groups. Within each group, every target runs
+the identical set. A test runs everywhere unless its behaviour differs by device
+kind: then it goes in `<name>.phone.e2e.ts` or `<name>.desktop.e2e.ts`, whose
+first line is `// phone-only: <the input or feature that differs>` (or
+`desktop-only`). That file runs on its own group only, and the totals check
+counts each group's set (shyden-labs/shydesk#175).
+
 ## Desktop (CI)
 
 The `e2e-desktop` job in `.github/workflows/ci.yml` runs
