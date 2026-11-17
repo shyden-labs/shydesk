@@ -118,6 +118,26 @@ describe('the legal holds panel', () => {
     expect(page).toContain('Cannot be lifted yet.');
   });
 
+  it('names a held file that is withheld, or that the page does not list, without a number', async () => {
+    const page = await render(
+      ticketPage(
+        view({
+          messages: [message],
+          attachments: [{ ...file, withheld: 1 }],
+          holds: {
+            holds: [
+              { ...hold, attachmentId: 'a1' },
+              { ...hold, id: 'h2', attachmentId: 'a9' },
+            ],
+            report: null,
+          },
+        }),
+      ),
+    );
+    expect(page).toContain('Preservation request on a withheld file: ');
+    expect(page).toContain('Preservation request on a file: ');
+  });
+
   it('gives the admin lift, renew and order on a preservation hold, and the report form', async () => {
     const page = await render(ticketPage(view({ isAdmin: true, holds: { holds: [hold], report: null } })));
     expect(page).toContain('action="/desk/tickets/t1/holds/h1/lift"');

@@ -1,5 +1,6 @@
 import { html } from 'hono/html';
 import type { LegalReview, TicketHold, TicketHolds } from '../holds/holds.ts';
+import type { HoldReason } from '../holds/rules.ts';
 import type { HtmlEscapedString } from 'hono/utils/html';
 import type { Canned } from '../products.ts';
 import type { PunishmentRow } from '../db/types.ts';
@@ -74,7 +75,7 @@ const HOLD_LINES: Record<string, string> = {
   no_report: 'Recorded that no report is needed.',
   reported: 'Report to the authorities recorded.',
 };
-const HOLD_REASONS: Record<string, string> = {
+const HOLD_REASONS: Record<HoldReason, string> = {
   crime_unreported: 'Possible crime, not yet reported',
   reported: 'Reported to the authorities',
   preservation: 'Preservation request',
@@ -406,7 +407,7 @@ const holdLine = (h: TicketHold, d: TicketData, order: DeskAttachment[]): string
   const file = d.attachments.find((a) => a.id === h.attachmentId);
   const covers = h.attachmentId === null ? 'the whole ticket' : file === undefined ? 'a file' : fileName(file, order);
   const release = h.earliest === null ? 'Cannot be lifted yet.' : `May be lifted from ${day(h.earliest)}.`;
-  return `${HOLD_REASONS[h.reason] ?? h.reason}${h.csam ? ', suspected child-abuse material,' : ''} on ${covers}: ${h.note}. Placed by ${h.placedBy}, ${when(h.placedAt)}. ${release}${h.orderPending ? ' Production order pending.' : ''}${h.noReportReason === null ? '' : ` No report needed: ${h.noReportReason}.`}`;
+  return `${HOLD_REASONS[h.reason]}${h.csam ? ', suspected child-abuse material,' : ''} on ${covers}: ${h.note}. Placed by ${h.placedBy}, ${when(h.placedAt)}. ${release}${h.orderPending ? ' Production order pending.' : ''}${h.noReportReason === null ? '' : ` No report needed: ${h.noReportReason}.`}`;
 };
 
 /** The admin's actions on one hold: lift, and those its reason allows. */

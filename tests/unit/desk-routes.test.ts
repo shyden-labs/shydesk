@@ -74,6 +74,8 @@ interface World {
   holds?: Record<string, unknown>[];
   /** Every hold write matches a row. */
   holdWrites?: boolean;
+  /** Hold writes fail as when the database is away. */
+  holdWritesFail?: boolean;
   /** Rows the scoped file lookup answers; none means out of scope or not stored. */
   files?: Record<string, unknown>[];
   /** The stored bytes by key, with the type each was stored with. */
@@ -89,8 +91,10 @@ function setup(w: World = {}) {
     if (/SELECT attachments_keep_days/.test(sql)) return [{ attachments_keep_days: 30, text_keep_days: 365 }];
     if (/FROM legal_holds h JOIN tickets t/.test(sql) && /authority_reports/.test(sql)) return w.owed ?? [];
     if (/WHERE h\.ticket_id = \?/.test(sql)) return w.holds ?? [];
-    if (/^(INSERT INTO legal_holds|UPDATE legal_holds|INSERT INTO authority_reports)/.test(sql))
+    if (/^(INSERT INTO legal_holds|UPDATE legal_holds|INSERT INTO authority_reports)/.test(sql)) {
+      if (w.holdWritesFail === true) throw new Error('D1 is down');
       return w.holdWrites === true ? [{ id: 'h1' }] : [];
+    }
     if (/FROM products WHERE id = \?/.test(sql)) return w.productGone === true ? [] : [productRow(String(values[0]))];
     if (/FROM products/.test(sql)) return [productRow('shytalk'), productRow('yawelo-idle')];
     if (/FROM staff_products/.test(sql)) return values[0] === REP ? [{ product_id: 'shytalk' }] : [];
@@ -627,6 +631,15 @@ describe('legal holds on the desk', () => {
     const response = await post('/desk/tickets/t1/holds', form);
     expect(response.headers.get('Location')).toBe(`/desk/tickets/t1?error=${error}`);
     expect(named(statements, 'INSERT INTO legal_holds')).toEqual([]);
+  });
+
+  it('a hold that fails for another reason is a server error, never a redirect claiming it was placed', async () => {
+    const response = await setup({ holdWritesFail: true }).post('/desk/tickets/t1/holds', {
+      reason: 'preservation',
+      note: 'x',
+      basis: '2026-10-01',
+    });
+    expect(response.status).toBe(500);
   });
 
   it('a hold placed on a ticket out of scope is 404', async () => {
