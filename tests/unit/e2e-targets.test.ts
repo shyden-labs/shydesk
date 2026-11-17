@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   desktopFilePath,
   capabilitiesFor,
+  otherGroupSpecs,
   nativeFinder,
   pickerItem,
   targetOf,
@@ -816,5 +817,15 @@ describe('coverOver', () => {
     expect(coverOver('the control', control, [{ name: 'the keyboard', box: { x: 0, y: 596, width: 420, height: 245 } }])).toBe(
       'ios: the keyboard (y 596 to 841) lies over the control (y 574 to 597)',
     );
+  });
+});
+
+describe('otherGroupSpecs (shyden-labs/shydesk#175)', () => {
+  it.each(['chromium', 'firefox', 'safari'] as const)('keeps phone-only spec files from %s', (target) => {
+    expect(otherGroupSpecs(target)).toEqual(['./tests/e2e/**/*.phone.e2e.ts']);
+  });
+
+  it.each(['android', 'ios'] as const)('keeps desktop-only spec files from %s', (target) => {
+    expect(otherGroupSpecs(target)).toEqual(['./tests/e2e/**/*.desktop.e2e.ts']);
   });
 });

@@ -27,8 +27,10 @@ export function requireOriginOrGrant(): MiddlewareHandler<CustomerEnv> {
     const admitted = await (starting ? useGrant : grantLive)(c.env.DB, product.id, grant);
     if (!admitted) return c.json({ error: MESSAGES.notFound }, 404);
     const origin = c.req.header('Origin') ?? '';
-    if (product.allowedOrigins.includes(origin)) {
-      c.header('Access-Control-Allow-Origin', origin);
+    // The stored origin the request's matched, so nothing from the request is echoed (shyden-labs/shydesk#181).
+    const allowed = product.allowedOrigins.find((listed) => listed === origin);
+    if (allowed !== undefined) {
+      c.header('Access-Control-Allow-Origin', allowed);
       c.header('Vary', 'Origin');
     }
     c.set('product', product);

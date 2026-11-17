@@ -31,7 +31,15 @@ import {
   shydeskOrigin,
   wranglerDevArgs,
 } from './tests/e2e/harness/local-shydesk.ts';
-import { capabilitiesFor, suiteOriginFor, targetOf, targetsFrom, type Target, type TargetEnv } from './tests/e2e/harness/targets.ts';
+import {
+  capabilitiesFor,
+  otherGroupSpecs,
+  suiteOriginFor,
+  targetOf,
+  targetsFrom,
+  type Target,
+  type TargetEnv,
+} from './tests/e2e/harness/targets.ts';
 import { driver } from './tests/e2e/harness/driver.ts';
 import { savePhoneScreen, supportPieceState } from './tests/e2e/harness/report.ts';
 import { FORWARD_PORTS, adbProblem, checkForwards, setForwards, type Adb } from './tests/e2e/harness/adb-forwards.ts';
@@ -91,6 +99,8 @@ export const config: Options.Testrunner & Capabilities.WithRequestedTestrunnerCa
   capabilities: targets.map((target) => ({
     ...capabilitiesFor(target, targetEnv),
     ...(onPhone(target) ? appium : {}),
+    // A group-only spec file runs on its own group only (shyden-labs/shydesk#175).
+    'wdio:exclude': otherGroupSpecs(target),
   })),
   baseUrl: BASE,
   logLevel: 'warn',

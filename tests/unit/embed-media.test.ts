@@ -1,5 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { kilobytes, pickSmaller, planImage, planVideo, shrinkVideo, uploadAttachment, uploadShape } from '../../public/embed-media.js';
+import {
+  kilobytes,
+  pickSmaller,
+  planImage,
+  planVideo,
+  shrinkVideo,
+  softwareResizer,
+  uploadAttachment,
+  uploadShape,
+} from '../../public/embed-media.js';
 
 // What the shared piece decides about a file before and while it uploads
 // (shyden-labs/shydesk#21). Drawing and encoding need a browser: the e2e suite covers those.
@@ -224,9 +233,16 @@ describe('shrinkVideo', () => {
     execute?: () => Promise<void>;
   } = {}) {
     const asked: Options[] = [];
+    const order: string[] = [];
+    const registered: unknown[] = [];
     const cancel = vi.fn(() => Promise.resolve());
     const tools = {
       ALL_FORMATS: [],
+      VideoSample: Object,
+      registerVideoSampleTransformer: (transformer: unknown) => {
+        order.push('register');
+        registered.push(transformer);
+      },
       BlobSource: Object,
       Input: class {
         getPrimaryVideoTrack = () => Promise.resolve(track);
@@ -243,6 +259,7 @@ describe('shrinkVideo', () => {
       },
       Conversion: {
         init: (options: Options) => {
+          order.push('convert');
           asked.push(options);
           return Promise.resolve({
             isValid,
@@ -253,7 +270,7 @@ describe('shrinkVideo', () => {
         },
       },
     };
-    return { asked, cancel, load: () => Promise.resolve(tools as never) };
+    return { asked, order, registered, cancel, load: () => Promise.resolve(tools as never) };
   }
   const file = new File(['original'], 'clip.mp4', { type: 'video/mp4' });
 
@@ -285,6 +302,15 @@ describe('shrinkVideo', () => {
     const { asked, load } = videoTools({ track });
     await shrinkVideo(file, load);
     expect(asked[0]?.video).toMatchObject({ width: 640, height: 360, frameRate: 24 });
+  });
+
+  it('resizes frames on its own software canvas, registered before any conversion (shyden-labs/shydesk#88)', async () => {
+    const { order, registered, load } = videoTools();
+    await shrinkVideo(file, load);
+    expect(order[0]).toBe('register');
+    expect(order).toContain('convert');
+    expect(registered).toHaveLength(1);
+    expect(typeof registered[0]).toBe('function');
   });
 
   it('gives back the encoded MP4', async () => {
@@ -337,5 +363,214 @@ describe('shrinkVideo', () => {
     await vi.advanceTimersByTimeAsync(1);
     expect(await shrinking).toBeNull();
     expect(cancel).toHaveBeenCalledOnce();
+  });
+});
+
+// shyden-labs/shydesk#88: Mediabunny resizes on a GPU canvas, which has no pixels on a
+// browser with no usable GPU (CI's Safari), so its frames cannot be made. The resizer
+// draws each frame on a software canvas instead.
+describe('softwareResizer', () => {
+  /** A drawing context that records every call made on it. */
+  function recordingContext() {
+    const calls: unknown[][] = [];
+    const context = {
+      fillStyle: '',
+      fillRect: (...args: unknown[]) => calls.push(['fillRect', context.fillStyle, ...args]),
+    };
+    return { calls, context };
+  }
+
+  class Made {
+    data: unknown;
+    init: unknown;
+    constructor(data: unknown, init: unknown) {
+      this.data = data;
+      this.init = init;
+    }
+  }
+
+  function sampleOf(width: number, height: number, calls: unknown[][], extra: Record<string, unknown> = {}) {
+    return {
+      displayWidth: width,
+      displayHeight: height,
+      rotation: 0,
+      flip: false,
+      timestamp: 1.5,
+      duration: 0.04,
+      draw: (_context: unknown, ...args: unknown[]) => calls.push(['draw', ...args]),
+      ...extra,
+    };
+  }
+
+  const box = (width: number, height: number, extra: Record<string, unknown> = {}) => ({
+    width,
+    height,
+    fit: 'contain',
+    rotation: 0,
+    flip: false,
+    crop: { left: 0, top: 0, width: 3840, height: 2160 },
+    alpha: 'keep',
+    ...extra,
+  });
+
+  function resizer() {
+    const { calls, context } = recordingContext();
+    const made: { width: number; height: number }[] = [];
+    const makeCanvas = vi.fn((width: number, height: number) => {
+      const canvas = { width, height };
+      made.push(canvas);
+      return { canvas, context };
+    });
+    return { calls, made, makeCanvas, resize: softwareResizer(Made, makeCanvas) };
+  }
+
+  it('draws a 4K frame into a 1920×1080 box on its own canvas and gives it back as a new sample', () => {
+    const { calls, made, resize } = resizer();
+    const out = resize(sampleOf(3840, 2160, calls), box(1920, 1080) as never);
+    expect(made).toEqual([{ width: 1920, height: 1080 }]);
+    expect(calls).toEqual([
+      ['fillRect', 'black', 0, 0, 1920, 1080],
+      ['draw', 0, 0, 1920, 1080],
+    ]);
+    expect(out).toBeInstanceOf(Made);
+    expect((out as Made).data).toBe(made[0]);
+    expect((out as Made).init).toEqual({ timestamp: 1.5, duration: 0.04, rotation: 0, flip: false });
+  });
+
+  it('keeps the shape with black bars when the box is wider than the frame', () => {
+    const { calls, resize } = resizer();
+    const crop = { left: 0, top: 0, width: 1000, height: 1000 };
+    resize(sampleOf(1000, 1000, calls), box(1920, 1080, { crop }) as never);
+    expect(calls).toEqual([
+      ['fillRect', 'black', 0, 0, 1920, 1080],
+      ['draw', 420, 0, 1080, 1080],
+    ]);
+  });
+
+  it('keeps the shape with black bars when the box is taller than the frame', () => {
+    const { calls, resize } = resizer();
+    resize(sampleOf(3840, 2160, calls), box(1000, 1000) as never);
+    expect(calls).toEqual([
+      ['fillRect', 'black', 0, 0, 1000, 1000],
+      ['draw', 0, 218.75, 1000, 562.5],
+    ]);
+  });
+
+  it('stretches to the box when asked to fill it', () => {
+    const { calls, resize } = resizer();
+    resize(sampleOf(3840, 2160, calls), box(1000, 1000, { fit: 'fill' }) as never);
+    expect(calls).toEqual([
+      ['fillRect', 'black', 0, 0, 1000, 1000],
+      ['draw', 0, 0, 1000, 1000],
+    ]);
+  });
+
+  it('draws a turned phone video by its shown size, its turn baked in', () => {
+    const { calls, resize } = resizer();
+    const sample = sampleOf(2160, 3840, calls, { rotation: 90 });
+    const crop = { left: 0, top: 0, width: 2160, height: 3840 };
+    const out = resize(sample, box(1080, 1920, { rotation: 90, crop }) as never);
+    expect(calls).toEqual([
+      ['fillRect', 'black', 0, 0, 1080, 1920],
+      ['draw', 0, 0, 1080, 1920],
+    ]);
+    expect((out as Made).init).toMatchObject({ rotation: 0, flip: false });
+  });
+
+  it('uses one canvas for every frame of the same size', () => {
+    const { calls, makeCanvas, resize } = resizer();
+    resize(sampleOf(3840, 2160, calls), box(1920, 1080) as never);
+    resize(sampleOf(3840, 2160, calls), box(1920, 1080) as never);
+    expect(makeCanvas).toHaveBeenCalledOnce();
+  });
+
+  it('makes a new canvas when the size changes', () => {
+    const { calls, makeCanvas, resize } = resizer();
+    resize(sampleOf(3840, 2160, calls), box(1920, 1080) as never);
+    resize(sampleOf(3840, 2160, calls), box(1280, 720) as never);
+    expect(makeCanvas.mock.calls).toEqual([
+      [1920, 1080],
+      [1280, 720],
+    ]);
+  });
+
+  it('leaves a crop to the library', () => {
+    const { calls, makeCanvas, resize } = resizer();
+    const crop = { left: 10, top: 0, width: 3830, height: 2160 };
+    expect(resize(sampleOf(3840, 2160, calls) as never, box(1920, 1080, { crop }) as never)).toBeNull();
+    expect(makeCanvas).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['moved right', { left: 10, top: 0, width: 3840, height: 2160 }],
+    ['moved down', { left: 0, top: 10, width: 3840, height: 2160 }],
+    ['narrower', { left: 0, top: 0, width: 3000, height: 2160 }],
+  ])('leaves a crop %s than the whole frame to the library', (_name, crop) => {
+    const { calls, resize } = resizer();
+    expect(resize(sampleOf(3840, 2160, calls) as never, box(1920, 1080, { crop }) as never)).toBeNull();
+  });
+
+  it.each([
+    ['width', [1920, 1080], [1280, 1080]],
+    ['height', [1920, 1080], [1920, 720]],
+  ])('makes a new canvas when only the %s changes', (_name, first, second) => {
+    const { calls, makeCanvas, resize } = resizer();
+    resize(sampleOf(3840, 2160, calls), box(first[0] ?? 0, first[1] ?? 0, { fit: 'fill' }) as never);
+    resize(sampleOf(3840, 2160, calls), box(second[0] ?? 0, second[1] ?? 0, { fit: 'fill' }) as never);
+    expect(makeCanvas.mock.calls).toEqual([first, second]);
+  });
+
+  describe('its own canvas', () => {
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it('is a software one, its pixels kept in memory, at the box size', () => {
+      const asked: unknown[] = [];
+      const canvas = {
+        width: 0,
+        height: 0,
+        getContext: (...args: unknown[]) => {
+          asked.push(args);
+          return recordingContext().context;
+        },
+      };
+      vi.stubGlobal('document', { createElement: (tag: string) => (tag === 'canvas' ? canvas : null) });
+      const out = softwareResizer(Made)(sampleOf(3840, 2160, []), box(1920, 1080) as never);
+      expect(asked).toEqual([['2d', { willReadFrequently: true }]]);
+      expect(canvas).toMatchObject({ width: 1920, height: 1080 });
+      expect((out as Made).data).toBe(canvas);
+    });
+
+    it('leaves the frame to the library when the browser gives no 2D drawing', () => {
+      vi.stubGlobal('document', { createElement: () => ({ getContext: () => null }) });
+      expect(softwareResizer(Made as never)(sampleOf(3840, 2160, []) as never, box(1920, 1080) as never)).toBeNull();
+    });
+  });
+
+  it('leaves a crop smaller than the frame to the library', () => {
+    const { calls, resize } = resizer();
+    const crop = { left: 0, top: 0, width: 3840, height: 2000 };
+    expect(resize(sampleOf(3840, 2160, calls) as never, box(1920, 1080, { crop }) as never)).toBeNull();
+  });
+
+  it('leaves a cover fit to the library', () => {
+    const { calls, resize } = resizer();
+    expect(resize(sampleOf(3840, 2160, calls) as never, box(1920, 1080, { fit: 'cover' }) as never)).toBeNull();
+  });
+
+  it("leaves a turn other than the frame's own to the library", () => {
+    const { calls, resize } = resizer();
+    expect(resize(sampleOf(3840, 2160, calls) as never, box(1920, 1080, { rotation: 90 }) as never)).toBeNull();
+  });
+
+  it("leaves a flip other than the frame's own to the library", () => {
+    const { calls, resize } = resizer();
+    expect(resize(sampleOf(3840, 2160, calls) as never, box(1920, 1080, { flip: true }) as never)).toBeNull();
+  });
+
+  it('leaves the frame to the library when no canvas can be drawn on', () => {
+    const resize = softwareResizer(Made, () => null);
+    expect(resize(sampleOf(3840, 2160, []) as never, box(1920, 1080) as never)).toBeNull();
   });
 });

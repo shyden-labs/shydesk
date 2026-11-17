@@ -29,6 +29,12 @@ export function suiteOriginFor(target: Target, suiteOrigin: string): string {
   return url.origin;
 }
 
+/** The spec files of the group `target` is not in, which it never runs (shyden-labs/shydesk#175). */
+export function otherGroupSpecs(target: Target): string[] {
+  const other = target === 'android' || target === 'ios' ? 'desktop' : 'phone';
+  return [`./tests/e2e/**/*.${other}.e2e.ts`];
+}
+
 /** The targets named in `E2E_TARGETS`, comma-separated, in order. */
 export function targetsFrom(list: string): Target[] {
   const names = list

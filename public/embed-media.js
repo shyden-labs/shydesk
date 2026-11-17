@@ -110,8 +110,93 @@ export async function shrinkImage(file) {
  *   },
  *   Mp4OutputFormat: new () => unknown,
  *   Output: new (options: { format: unknown, target: unknown }) => unknown,
+ *   VideoSample: VideoSampleClass,
+ *   registerVideoSampleTransformer(transformer: (sample: Frame, box: FrameBox) => unknown): void,
  * }} VideoTools
  */
+
+/**
+ * A decoded frame, as the video library hands it over.
+ * @typedef {{
+ *   displayWidth: number,
+ *   displayHeight: number,
+ *   rotation: number,
+ *   flip: boolean,
+ *   timestamp: number,
+ *   duration: number,
+ *   draw(context: object, dx: number, dy: number, dWidth: number, dHeight: number): void,
+ * }} Frame
+ */
+
+/**
+ * What the library asks a frame to become.
+ * @typedef {{
+ *   width: number,
+ *   height: number,
+ *   fit: 'fill' | 'contain' | 'cover',
+ *   rotation: number,
+ *   flip: boolean,
+ *   crop: { left: number, top: number, width: number, height: number },
+ * }} FrameBox
+ */
+
+/** @typedef {new (data: unknown, init: { timestamp: number, duration: number, rotation: number, flip: boolean }) => unknown} VideoSampleClass */
+
+/**
+ * @typedef {{ fillStyle: string | CanvasGradient | CanvasPattern, fillRect(x: number, y: number, w: number, h: number): void }} DrawingContext
+ * @typedef {(w: number, h: number) => { canvas: unknown, context: DrawingContext } | null} CanvasMaker
+ */
+
+/**
+ * A canvas whose pixels live in memory: Safari with no usable GPU gives a default
+ * canvas no pixels, so no frame can be made from it (measured, shyden-labs/shydesk#88).
+ * @type {CanvasMaker}
+ */
+function softwareCanvas(w, h) {
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const context = canvas.getContext('2d', { willReadFrequently: true });
+  return context === null ? null : { canvas, context };
+}
+
+/**
+ * Resizes each frame on a software canvas instead of the video library's own, which
+ * is GPU-backed. It takes only what the planned shrink asks for: the whole frame,
+ * turned and flipped as it is shown, filled or contained in the box. Anything else
+ * gives null, which leaves the frame to the library.
+ * @param {VideoSampleClass} VideoSample
+ * @param {CanvasMaker} [makeCanvas]
+ */
+export function softwareResizer(VideoSample, makeCanvas = softwareCanvas) {
+  /** @type {{ canvas: unknown, context: DrawingContext, w: number, h: number } | null} */
+  let held = null;
+  return (/** @type {Frame} */ sample, /** @type {FrameBox} */ box) => {
+    const { crop } = box;
+    const whole = crop.left === 0 && crop.top === 0 && crop.width === sample.displayWidth && crop.height === sample.displayHeight;
+    if (!whole || box.fit === 'cover' || box.rotation !== sample.rotation || box.flip !== sample.flip) return null;
+    if (held === null || held.w !== box.width || held.h !== box.height) {
+      const made = makeCanvas(box.width, box.height);
+      if (made === null) return null;
+      held = { ...made, w: box.width, h: box.height };
+    }
+    const { canvas, context } = held;
+    let w = box.width;
+    let h = box.height;
+    if (box.fit === 'contain') {
+      // The edge that meets the box is set exactly, so no float error leaves a sliver or draws past it.
+      if (box.width * sample.displayHeight > box.height * sample.displayWidth) {
+        w = (sample.displayWidth * box.height) / sample.displayHeight;
+      } else {
+        h = (sample.displayHeight * box.width) / sample.displayWidth;
+      }
+    }
+    context.fillStyle = 'black';
+    context.fillRect(0, 0, box.width, box.height);
+    sample.draw(context, (box.width - w) / 2, (box.height - h) / 2, w, h);
+    return new VideoSample(canvas, { timestamp: sample.timestamp, duration: sample.duration, rotation: 0, flip: false });
+  };
+}
 
 /** @returns {Promise<VideoTools>} */
 function loadVideoTools() {
@@ -131,7 +216,9 @@ export async function shrinkVideo(file, load = loadVideoTools) {
   /** @type {ReturnType<typeof setTimeout> | undefined} */
   let timer;
   try {
-    const { ALL_FORMATS, BlobSource, BufferTarget, Conversion, Input, Mp4OutputFormat, Output } = await load();
+    const tools = await load();
+    const { ALL_FORMATS, BlobSource, BufferTarget, Conversion, Input, Mp4OutputFormat, Output } = tools;
+    tools.registerVideoSampleTransformer(softwareResizer(tools.VideoSample));
     const track = await new Input({ source: new BlobSource(file), formats: ALL_FORMATS }).getPrimaryVideoTrack();
     if (track === null) return null;
     const { averagePacketRate } = await track.computePacketStats(PACKETS_TO_MEASURE);
