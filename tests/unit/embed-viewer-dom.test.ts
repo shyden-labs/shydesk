@@ -171,12 +171,14 @@ describe('opening the viewer', () => {
     const late = heldLoad('image/jpeg');
     const failed = heldLoad('image/jpeg');
     const { media, press, status } = open([late.item, failed.item, photo('/c.jpg')]);
+    const first = media();
     press('Next');
     press('Next');
     late.answer('/late.jpg');
     failed.refuse();
     await flush();
     expect(media()?.getAttribute('src')).toBe('/c.jpg');
+    expect(first?.hasAttribute('src')).toBe(false);
     expect(status()).toBe('Photo 3 of 3, zoom 100%, rotated 0°');
   });
 });
@@ -240,7 +242,7 @@ describe('a video', () => {
     const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
     const view = open([video('/v.mp4')]);
     const over = view.stage.querySelector('.drag-layer') as Element;
-    drag(view, 100, 100, 108, 108, over);
+    drag(view, 100, 100, 106, 108, over);
     drag(view, 100, 100, 100, 100);
     expect(play).not.toHaveBeenCalled();
   });

@@ -331,10 +331,8 @@ export function openViewer({ doc, host, items, start, onClose }) {
   const lift = (/** @type {PointerEvent} */ event) => {
     if (!pointers.delete(event.pointerId)) return;
     const from = swipeStart;
-    if (pointers.size > 0 || from === null || event.type === 'pointercancel') {
-      if (pointers.size > 0) swipeStart = null;
-      return;
-    }
+    // A second pointer down has already ruled out a swipe.
+    if (pointers.size > 0 || from === null || event.type === 'pointercancel') return;
     swipeStart = null;
     const dx = event.clientX - from.x;
     const dy = event.clientY - from.y;
