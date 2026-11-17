@@ -7,7 +7,17 @@
 // recorder; what the timers then delete is proven in ticket-timers.test.ts.
 import { describe, expect, inject, it } from 'vitest';
 import type { Staff } from '../../src/auth/staff.ts';
-import { HoldNotFound, HoldRefused, liftHold, placeHold, type HoldEnv } from '../../src/holds/holds.ts';
+import {
+  HoldNotFound,
+  HoldRefused,
+  liftHold,
+  placeHold,
+  recordAuthorityReport,
+  recordNoReport,
+  renewHold,
+  setOrderPending,
+  type HoldEnv,
+} from '../../src/holds/holds.ts';
 import { saveProduct, saveTicketType, supportTypeId } from '../../src/products.ts';
 import { DAY_MS, type TimerPlan } from '../../src/tickets/status.ts';
 import { restD1 } from './d1.ts';
@@ -15,6 +25,8 @@ import { restD1 } from './d1.ts';
 const db = restD1(inject('databaseId'));
 const REP: Staff = { email: 'holds-rep@example.com', role: 'rep', products: ['it-hold'] };
 const ADMIN: Staff = { email: 'holds-admin@example.com', role: 'admin', products: ['it-hold', 'it-hold-other'] };
+/** An admin of the first product only, for scope. */
+const ADMIN_ONE: Staff = { email: 'holds-admin-one@example.com', role: 'admin', products: ['it-hold'] };
 const T = Date.UTC(2026, 9, 1, 9);
 
 const applied: { ticketId: string; plan: TimerPlan }[] = [];
@@ -31,8 +43,8 @@ const env = {
   },
 } as unknown as HoldEnv;
 
-// Some 20 calls at about 2 s each over D1's REST API (see appeals.test.ts).
-const JOURNEY_MS = 120_000;
+// Some 45 calls at about 2 s each over D1's REST API (see appeals.test.ts).
+const JOURNEY_MS = 240_000;
 
 async function product(id: string): Promise<void> {
   await saveProduct(
@@ -147,6 +159,66 @@ describe('legal holds on D1', () => {
 
       // Lifted holds are gone from the admin's reach: a second lift is not found.
       await expect.soft(liftHold(env, ADMIN, held, T + 366 * DAY_MS)).rejects.toBeInstanceOf(HoldNotFound);
+
+      // A preservation request: the admin renews it and marks an order pending; another product's admin and a rep cannot.
+      const kept = await placeHold(
+        env,
+        ADMIN,
+        { ticketId: 'it-hold-t2', reason: 'preservation', csam: false, note: 'Request 1', basisAt: T },
+        T,
+      );
+      await expect.soft(renewHold(env, REP, kept, 'x', T)).rejects.toBeInstanceOf(HoldNotFound);
+      await expect.soft(renewHold(env, ADMIN_ONE, kept, 'x', T)).rejects.toBeInstanceOf(HoldNotFound);
+      await renewHold(env, ADMIN, kept, 'Request 2', T + DAY_MS);
+      await setOrderPending(env, ADMIN, kept, true, T + 2 * DAY_MS);
+      expect
+        .soft(await one('SELECT renewals, order_pending FROM legal_holds WHERE id = ?', kept))
+        .toEqual({ renewals: 1, order_pending: 1 });
+      expect
+        .soft((await db.prepare('SELECT action, by, detail FROM legal_hold_events WHERE hold_id = ? ORDER BY at').bind(kept).all()).results)
+        .toEqual([
+          { action: 'placed', by: ADMIN.email, detail: 'Request 1' },
+          { action: 'renewed', by: ADMIN.email, detail: 'Request 2' },
+          { action: 'order', by: ADMIN.email, detail: 'pending' },
+        ]);
+      // A pending order keeps it past its renewed term; once answered it may be lifted at T + 180 d.
+      await expect.soft(liftHold(env, ADMIN, kept, T + 999 * DAY_MS)).rejects.toEqual(new HoldRefused('not_yet', null));
+      await setOrderPending(env, ADMIN, kept, false, T + 3 * DAY_MS);
+      await expect.soft(liftHold(env, ADMIN, kept, T + 179 * DAY_MS)).rejects.toEqual(new HoldRefused('not_yet', T + 180 * DAY_MS));
+      // Only a preservation hold is renewed: a possible crime is not.
+      const unreported = await placeHold(env, REP, { ticketId: 'it-hold-t1', reason: 'crime_unreported', csam: false, note: 'Threat' }, T);
+      await expect.soft(renewHold(env, ADMIN, unreported, 'x', T)).rejects.toBeInstanceOf(HoldNotFound);
+      // No report needed: recorded once, and the hold may then be lifted.
+      await recordNoReport(env, ADMIN, unreported, 'A joke between friends.', T + DAY_MS);
+      await expect.soft(recordNoReport(env, ADMIN, unreported, 'Again', T + DAY_MS)).rejects.toBeInstanceOf(HoldNotFound);
+      expect
+        .soft(await one('SELECT reason, no_report_reason FROM legal_holds WHERE id = ?', unreported))
+        .toEqual({ reason: 'crime_unreported', no_report_reason: 'A joke between friends.' });
+
+      // A report to the authorities on t2: refused outside the admin's products; then recorded once, turning t2's
+      // unreported hold into a reported one from the report's date, and leaving t1's alone.
+      const crime = await placeHold(env, ADMIN, { ticketId: 'it-hold-t2', reason: 'crime_unreported', csam: true, note: 'Image' }, T);
+      const report = { reportedTo: 'Bareskrim Polri', reportedAt: T + 5 * DAY_MS, reference: 'LP/123' };
+      await expect.soft(recordAuthorityReport(env, ADMIN_ONE, 'it-hold-t2', report, T + 6 * DAY_MS)).rejects.toBeInstanceOf(HoldNotFound);
+      await recordAuthorityReport(env, ADMIN, 'it-hold-t2', report, T + 6 * DAY_MS);
+      await expect
+        .soft(recordAuthorityReport(env, ADMIN, 'it-hold-t2', { ...report, reference: 'LP/999' }, T + 7 * DAY_MS))
+        .rejects.toEqual(new HoldRefused('already_reported'));
+      expect
+        .soft(await one('SELECT reported_to, reported_at, reference, recorded_by FROM authority_reports WHERE ticket_id = ?', 'it-hold-t2'))
+        .toEqual({
+          reported_to: 'Bareskrim Polri',
+          reported_at: T + 5 * DAY_MS,
+          reference: 'LP/123',
+          recorded_by: ADMIN.email,
+        });
+      expect
+        .soft(await one('SELECT reason, basis_at FROM legal_holds WHERE id = ?', crime))
+        .toEqual({ reason: 'reported', basis_at: T + 5 * DAY_MS });
+      expect
+        .soft(await one(`SELECT detail FROM legal_hold_events WHERE hold_id = ? AND action = 'reported'`, crime))
+        .toEqual({ detail: 'Bareskrim Polri LP/123' });
+      expect.soft(await one('SELECT reason FROM legal_holds WHERE id = ?', unreported)).toEqual({ reason: 'crime_unreported' });
     },
     JOURNEY_MS,
   );
