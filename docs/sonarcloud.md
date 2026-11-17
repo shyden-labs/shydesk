@@ -29,6 +29,18 @@ blocking.
   failure (`|| true`, `|| exit 0`, `|| :`, `continue-on-error: true`), a step
   gated on the token, and a scan with no verdict step after it.
 
+## What this repository leaves out of coverage
+
+The unit suite measures `src/`, `scripts/` and `public/` (`vitest.unit.config.ts`).
+Every other code file is in `sonar.coverage.exclusions`, each for the reason below;
+`tests/unit/sonar-coverage-scope.test.ts` fails on a code file in neither place, or
+an exclusion with no reason here (shyden-labs/shydesk#195).
+
+- `eslint.config.js`: lint settings read by ESLint, not code that runs in the product.
+- `vitest.unit.config.ts`: settings for the unit suite's runner, proven by the suite running.
+- `vitest.integration.config.ts`: settings for the integration suite's runner, which runs in CI only.
+- `wdio.conf.ts`: WebdriverIO settings for the desktop and device journeys, which run in CI and on phones only.
+
 ## One-time setup for a new repository
 
 1. On [sonarcloud.io](https://sonarcloud.io), sign in with GitHub, open the
