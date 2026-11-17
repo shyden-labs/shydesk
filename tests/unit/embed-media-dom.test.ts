@@ -144,7 +144,7 @@ describe('thumbnailOf', () => {
     expect(await (await making)?.text()).toBe('jpeg');
     expect(element.muted).toBe(true);
     expect(element.playsInline).toBe(true);
-    expect(element.preload).toBe('auto');
+    expect(element.getAttribute('preload')).toBe('auto');
     expect(element.src).toBe('blob:stand-in');
     expect(drawn[0]?.draws).toEqual([[element, 0, 0, 180, 320]]);
     expect(video.revoked).toEqual(['blob:stand-in']);
