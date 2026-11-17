@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   desktopFilePath,
   capabilitiesFor,
+  otherGroupSpecs,
   nativeFinder,
   pickerItem,
   targetOf,
@@ -28,6 +29,7 @@ import {
   coverOver,
   steadyFrom,
   steadyLongEnough,
+  unsteadyReason,
   STEADY_MS,
   swipeUp,
   centreInside,
@@ -446,6 +448,24 @@ describe('steadyFrom', () => {
   });
 });
 
+describe('unsteadyReason (shyden-labs/shydesk#163 AC2)', () => {
+  const viewport = { width: 1280, height: 800 };
+
+  it('says a control stood still outside the window, where, and how far a scroll still had to go', () => {
+    const steady = { box: { x: 20, y: 900, width: 600, height: 80 }, since: 1000 };
+    expect(unsteadyReason('Reply', steady, viewport, 3500)).toBe(
+      '"Reply" stood still for 2500 ms outside the 1280 x 800 window, drawn at 20, 900 (600 x 80): it needed 540 px more scroll',
+    );
+  });
+
+  it('says a control inside the window was still moving, where it was last drawn, and for how short a time', () => {
+    const steady = { box: { x: 20, y: 400.4, width: 600, height: 80 }, since: 3400 };
+    expect(unsteadyReason('Reply', steady, viewport, 3500)).toBe(
+      `"Reply" never stopped moving inside the 1280 x 800 window: last drawn at 20, 400 (600 x 80), there for 100 ms of the ${String(STEADY_MS)} needed`,
+    );
+  });
+});
+
 describe('sameBox', () => {
   it('is true for a control drawn in the same place twice', () => {
     expect(sameBox({ x: 1, y: 2, width: 3, height: 4 }, { x: 1, y: 2, width: 3, height: 4 })).toBe(true);
@@ -797,5 +817,15 @@ describe('coverOver', () => {
     expect(coverOver('the control', control, [{ name: 'the keyboard', box: { x: 0, y: 596, width: 420, height: 245 } }])).toBe(
       'ios: the keyboard (y 596 to 841) lies over the control (y 574 to 597)',
     );
+  });
+});
+
+describe('otherGroupSpecs (shyden-labs/shydesk#175)', () => {
+  it.each(['chromium', 'firefox', 'safari'] as const)('keeps phone-only spec files from %s', (target) => {
+    expect(otherGroupSpecs(target)).toEqual(['./tests/e2e/**/*.phone.e2e.ts']);
+  });
+
+  it.each(['android', 'ios'] as const)('keeps desktop-only spec files from %s', (target) => {
+    expect(otherGroupSpecs(target)).toEqual(['./tests/e2e/**/*.desktop.e2e.ts']);
   });
 });

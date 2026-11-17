@@ -29,6 +29,7 @@ import {
   targetOf,
   steadyFrom,
   steadyLongEnough,
+  unsteadyReason,
   type Steady,
   scrollInput,
   scrollKey,
@@ -86,7 +87,7 @@ async function nativeTap(on: Phone, selector: string, what: string): Promise<voi
  * the mouse at the element's middle instead, as a person would, after a real
  * wheel scroll when the element is outside the window.
  */
-async function clickDrawn(label: string): Promise<void> {
+async function clickDrawn(label: string, leaving = false): Promise<void> {
   const element = await named(label);
   // Reads where the element is drawn; the input itself is the real wheel and mouse actions below.
   const drawn = (): Promise<{ box: Box; viewport: { width: number; height: number } }> =>
@@ -135,14 +136,19 @@ async function clickDrawn(label: string): Promise<void> {
   }
   // A scroll animates: press only once the control has stopped moving, inside the window.
   let steady: Steady | undefined;
-  await driver().waitUntil(
-    async () => {
-      ({ box, viewport } = await drawn());
-      steady = steadyFrom(steady, box, Date.now());
-      return steadyLongEnough(steady, Date.now()) && scrollNeeded(box, viewport) === 0;
-    },
-    { timeout: WAIT, timeoutMsg: `"${label}" never stopped moving inside the window` },
-  );
+  try {
+    await driver().waitUntil(
+      async () => {
+        ({ box, viewport } = await drawn());
+        steady = steadyFrom(steady, box, Date.now());
+        return steadyLongEnough(steady, Date.now()) && scrollNeeded(box, viewport) === 0;
+      },
+      { timeout: WAIT, timeoutMsg: `"${label}" never stood still inside the window` },
+    );
+  } catch (error) {
+    if (steady === undefined) throw error;
+    throw new Error(unsteadyReason(label, steady, viewport, Date.now()), { cause: error });
+  }
   const at = viewportPoint(box, viewport, label);
   // Read only: notes where the next real press lands, so a press that misses the control fails naming where it went.
   await driver().execute(
@@ -156,6 +162,10 @@ async function clickDrawn(label: string): Promise<void> {
     .pause(50)
     .up()
     .perform();
+  // A press that loads a new page asks nothing more of the page it leaves: Chrome answered a script sent while
+  // its page was replaced with "Cannot find context" (run 43806120089, shyden-labs/shydesk#163). The caller
+  // waits for the new page, which fails naming the press if it missed.
+  if (leaving) return;
   // A new page has no note at all, which browsers answer differently: asked outright, so each says the same.
   const note = await driver().execute<{ stayed: boolean; landed: Landed | null }>(
     "return { stayed: '__e2ePress' in window, landed: window.__e2ePress ?? null };",
@@ -171,7 +181,7 @@ async function clickDrawn(label: string): Promise<void> {
  */
 export async function tapToNewPage(label: string): Promise<void> {
   await driver().execute('window.__e2eLeaving = true;');
-  await tap(label);
+  await tap(label, true);
   await driver().waitUntil(
     async () => driver().execute<boolean>("return window.__e2eLeaving === undefined && document.readyState === 'complete';"),
     { timeout: WAIT, timeoutMsg: `the press on "${label}" never loaded a new page` },
@@ -230,11 +240,11 @@ async function iosTapClear(selector: string, what: string): Promise<void> {
   await element.click();
 }
 
-/** A real click or touch on the control named `label`. */
-export async function tap(label: string): Promise<void> {
+/** A real click or touch on the control named `label`; `leaving` when the press loads a new page. */
+export async function tap(label: string, leaving = false): Promise<void> {
   const on = phone();
   if (on === undefined) {
-    await clickDrawn(label);
+    await clickDrawn(label, leaving);
     return;
   }
   if (on === 'android') {

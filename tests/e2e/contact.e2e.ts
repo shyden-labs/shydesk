@@ -13,6 +13,7 @@ import { JOURNEY_WAIT as WAIT, named, textHolding } from './harness/find.ts';
 import { openPage } from './harness/open-page.ts';
 import { clickMiddleOf, pickFile, press, swipeLeft, tap, tapToNewPage, type, zoomIn } from './harness/input.ts';
 import { SEEDED_TICKET_TOKEN, SHYDESK_PORT } from './harness/local-shydesk.ts';
+import { playing, sizeKnown, untilVideo } from './harness/video.ts';
 
 /** Waits until the page, shadow roots included, holds no media viewer: it closed. */
 async function viewerClosed(): Promise<void> {
@@ -36,19 +37,6 @@ async function zoomedIn(): Promise<void> {
     },
     { timeout: WAIT, timeoutMsg: `the viewer never zoomed in; its status said "${text}"` },
   );
-}
-
-/**
- * Waits until the video named `label` is playing. `paused` is read by a script: on the iPhone a
- * property read goes through Safari's attribute atom, which gives null for a false boolean, so it never
- * said false while the video played (measured 2026-11-15, shyden-labs/shydesk#99).
- */
-async function videoPlaying(label: string): Promise<void> {
-  const video = await named(label);
-  await driver().waitUntil(async () => !(await driver().execute<boolean>('return arguments[0].paused;', video)), {
-    timeout: WAIT,
-    timeoutMsg: `"${label}" never started playing`,
-  });
 }
 
 /** Fails unless the point a few pixels above the bottom middle of the video named `label` is the video itself. */
@@ -101,9 +89,9 @@ describe('the contact form', () => {
     await textHolding('Attachments', 'attached,', 150_000);
     await pickFile('Photos and videos', 'photo.jpg');
     const attached = await attachedTwo();
-    // shyden-labs/shydesk#21: each is stored smaller than its fixture, the 10,586 KB video and the 3,011 KB photo.
+    // shyden-labs/shydesk#21: each is stored smaller than its fixture, the 11,079 KB 2560×1440 video and the 3,011 KB photo.
     const [video = Infinity, photo = Infinity] = attached;
-    assert.ok(video < 10586 && photo < 3011, `not stored smaller than the originals: ${attached.join(', ')} KB`);
+    assert.ok(video < 11079 && photo < 3011, `not stored smaller than the originals: ${attached.join(', ')} KB`);
     // The test site key passes by itself; the button is enabled once it has.
     await textHolding('Support status', 'Ready to send');
     await tap('Send');
@@ -149,7 +137,15 @@ describe('the contact form', () => {
     // shyden-labs/shydesk#108: a click on the video's picture plays it, and the browser's own controls bar,
     // along the bottom of the picture, is left uncovered for the browser's play, pause and scrub.
     await clickMiddleOf('Video 1 full size');
-    await videoPlaying('Video 1 full size');
+    // Playing means time has moved: paused turns false before any data loads (shyden-labs/shydesk#188).
+    await untilVideo('Video 1 full size', playing, 'the video never started playing');
+    // shyden-labs/shydesk#88: the 2560×1440 video was stored at no more than 1920×1080, on every browser.
+    // The size is read once the metadata has loaded, never before (shyden-labs/shydesk#188).
+    const shown = await untilVideo('Video 1 full size', sizeKnown, 'the video never reported its size');
+    assert.ok(
+      shown.width === 1920 && shown.height === 1080,
+      `the video was stored at ${String(shown.width)}×${String(shown.height)}, not 1920×1080`,
+    );
     await controlsBarUncovered('Video 1 full size');
     // A sideways drag across the video moves on, as across a photo, on every browser.
     await swipeLeft('Viewer stage');
@@ -209,6 +205,7 @@ describe('the contact form', () => {
   it('cannot load on a page whose origin the product does not allow', async () => {
     // A known product whose only allowed origin is elsewhere: the browser refuses the answer (no CORS header).
     await openPage('/contact.html?product=demo-elsewhere');
-    await textHolding('Support status', 'The support form could not load here.');
+    const status = await textHolding('Support status', 'The support form could not load here.');
+    assert.equal(status.trim(), 'The support form could not load here.', 'the status says more than that the form could not load');
   });
 });

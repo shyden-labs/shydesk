@@ -29,6 +29,12 @@ export function suiteOriginFor(target: Target, suiteOrigin: string): string {
   return url.origin;
 }
 
+/** The spec files of the group `target` is not in, which it never runs (shyden-labs/shydesk#175). */
+export function otherGroupSpecs(target: Target): string[] {
+  const other = target === 'android' || target === 'ios' ? 'desktop' : 'phone';
+  return [`./tests/e2e/**/*.${other}.e2e.ts`];
+}
+
 /** The targets named in `E2E_TARGETS`, comma-separated, in order. */
 export function targetsFrom(list: string): Target[] {
   const names = list
@@ -503,6 +509,22 @@ export function steadyFrom(previous: Steady | undefined, box: Box, now: number):
 /** Whether the control has stayed in one place for at least STEADY_MS by `now`. */
 export function steadyLongEnough(steady: Steady, now: number): boolean {
   return now - steady.since >= STEADY_MS;
+}
+
+/**
+ * Why a control never became pressable: it stood still outside the window, or
+ * it was still moving. One message once said "never stopped moving" for both,
+ * with no positions (Safari, run 43815980050, shyden-labs/shydesk#163).
+ */
+export function unsteadyReason(label: string, steady: Steady, viewport: { width: number; height: number }, now: number): string {
+  const b = steady.box;
+  const window = `${String(viewport.width)} x ${String(viewport.height)} window`;
+  const at = `drawn at ${String(Math.round(b.x))}, ${String(Math.round(b.y))} (${String(Math.round(b.width))} x ${String(Math.round(b.height))})`;
+  const still = now - steady.since;
+  const delta = scrollNeeded(b, viewport);
+  if (delta !== 0)
+    return `"${label}" stood still for ${String(still)} ms outside the ${window}, ${at}: it needed ${String(delta)} px more scroll`;
+  return `"${label}" never stopped moving inside the ${window}: last ${at}, there for ${String(still)} ms of the ${String(STEADY_MS)} needed`;
 }
 
 /**

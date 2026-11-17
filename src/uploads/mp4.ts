@@ -13,6 +13,9 @@ interface Box {
   end: number;
 }
 
+/** Boxes read with their bodies. */
+type Boxes = (Box & { body: Uint8Array })[];
+
 const view = (bytes: Uint8Array): DataView => new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 
 /** The box whose header is at the start of `header`, or null if no valid box is there. */
@@ -69,8 +72,8 @@ function tkhdDuration(payload: Uint8Array): number | null {
 }
 
 /** The boxes directly inside `bytes`, or null if any is cut short or there are too many. */
-function children(bytes: Uint8Array): (Box & { body: Uint8Array })[] | null {
-  const found: (Box & { body: Uint8Array })[] = [];
+function children(bytes: Uint8Array): Boxes | null {
+  const found: Boxes = [];
   let at = 0;
   while (at < bytes.length) {
     if (found.length === MAX_CHILDREN) return null;
@@ -83,7 +86,7 @@ function children(bytes: Uint8Array): (Box & { body: Uint8Array })[] | null {
 }
 
 /** The one box of `type`; null when there is none or more than one, so a decoy copy can never hide the real one. */
-function only(boxes: (Box & { body: Uint8Array })[], type: string): Uint8Array | null {
+function only(boxes: Boxes, type: string): Uint8Array | null {
   const [one, ...more] = boxes.filter((b) => b.type === type);
   return one !== undefined && more.length === 0 ? one.body : null;
 }
@@ -120,7 +123,7 @@ function largestOffset(payload: Uint8Array): number | null {
 }
 
 /** A track's composition offsets' largest, or 0 with none; null when repeated or cut short. */
-function offsetsLargest(tableParts: (Box & { body: Uint8Array })[]): number | null {
+function offsetsLargest(tableParts: Boxes): number | null {
   const offsets = tableParts.filter((b) => b.type === 'ctts');
   if (offsets.length === 0) return 0;
   const one = only(tableParts, 'ctts');
@@ -152,7 +155,7 @@ function elstTotal(payload: Uint8Array): number | null {
  * A track's edits' total length in the movie's timescale: undefined when it
  * has none, null when they are repeated, missing or cut short.
  */
-function editsTotal(parts: (Box & { body: Uint8Array })[]): number | null | undefined {
+function editsTotal(parts: Boxes): number | null | undefined {
   const lists = parts.filter((b) => b.type === 'edts');
   if (lists.length === 0) return undefined;
   const editParts = only(parts, 'edts');
@@ -161,13 +164,15 @@ function editsTotal(parts: (Box & { body: Uint8Array })[]): number | null | unde
   return list && elstTotal(list);
 }
 
-/**
- * A track's lengths in ms: its header's (in the movie's timescale), its
- * media's, its samples' (players time a track by these) and its edits'; null
- * if any is missing, repeated or cut short, or the samples timed are not the
- * samples held.
- */
-function trackLengths(trak: Uint8Array, movieTimescale: number): number[] | null {
+/** The boxes a track's lengths are read from; null if any is missing, repeated or cut short. */
+function trackBoxes(trak: Uint8Array): {
+  parts: Boxes;
+  header: Uint8Array;
+  mediaHeader: Uint8Array;
+  tableParts: Boxes;
+  timing: Uint8Array;
+  sizes: Uint8Array;
+} | null {
   const parts = children(trak);
   const header = parts && only(parts, 'tkhd');
   const media = parts && only(parts, 'mdia');
@@ -179,15 +184,29 @@ function trackLengths(trak: Uint8Array, movieTimescale: number): number[] | null
   const tableParts = table && children(table);
   const timing = tableParts && only(tableParts, 'stts');
   const sizes = tableParts && only(tableParts, 'stsz');
-  const headerDuration = header && tkhdDuration(header);
-  const mediaLength = mediaHeader && scaled(mediaHeader);
-  const samples = timing && sttsTotal(timing);
-  const held = sizes && stszCount(sizes);
-  const edits = parts && editsTotal(parts);
-  const shift = tableParts && offsetsLargest(tableParts);
+  if (!parts || !header || !mediaHeader || !tableParts || !timing || !sizes) return null;
+  return { parts, header, mediaHeader, tableParts, timing, sizes };
+}
+
+/**
+ * A track's lengths in ms: its header's (in the movie's timescale), its
+ * media's, its samples' (players time a track by these) and its edits'; null
+ * if any is missing, repeated or cut short, or the samples timed are not the
+ * samples held.
+ */
+function trackLengths(trak: Uint8Array, movieTimescale: number): number[] | null {
+  const boxes = trackBoxes(trak);
+  if (!boxes) return null;
+  const headerDuration = tkhdDuration(boxes.header);
+  const mediaLength = scaled(boxes.mediaHeader);
+  const samples = sttsTotal(boxes.timing);
+  const edits = editsTotal(boxes.parts);
   // The sample table must time exactly the samples the track holds, or a player may time the rest its own way.
-  if (headerDuration === null || !mediaLength || !samples || held !== samples.count || edits === null) return null;
+  if (headerDuration === null || !mediaLength || !samples || stszCount(boxes.sizes) !== samples.count || edits === null) {
+    return null;
+  }
   const perMs = 1000 / mediaLength.timescale;
+  const shift = offsetsLargest(boxes.tableParts);
   // Composition offsets move frames later than the sample table times them: more than a second is refused.
   if (shift === null || shift * perMs > AGREE_MS) return null;
   const lengths = [(headerDuration * 1000) / movieTimescale, mediaLength.duration * perMs, samples.length * perMs];
