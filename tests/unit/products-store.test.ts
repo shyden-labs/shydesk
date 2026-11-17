@@ -174,6 +174,15 @@ describe('saveStaff', () => {
     expect(statements.filter((s) => s.method === 'batch')).toEqual([]);
   });
 
+  it('answers a 50,000-character hostile email within 50 ms (shyden-labs/shydesk#184)', async () => {
+    const { db } = standInDb();
+    const started = performance.now();
+    await expect(saveStaff(db, { email: 'a@' + '.'.repeat(50_000) + '@', role: 'rep', products: [] }, NOW)).rejects.toMatchObject({
+      errors: ['Email must be an email address ending in a domain.'],
+    });
+    expect(performance.now() - started).toBeLessThan(50);
+  });
+
   it('refuses an email address with no domain', async () => {
     const { db } = standInDb();
     await expect(saveStaff(db, { email: 'rep', role: 'rep', products: [] }, NOW)).rejects.toMatchObject({

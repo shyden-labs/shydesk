@@ -7,6 +7,7 @@ import { AttachmentError, createTicket, ticketLink } from '../tickets/create.ts'
 import { verifyTurnstile, type Fetch } from '../turnstile.ts';
 import { MESSAGES } from './messages.ts';
 import { requireProductOrigin } from './origin.ts';
+import { isEmailAddress } from '../email-address.ts';
 
 /**
  * The contact form's API (shyden-labs/shydesk#19; plan Task 5), called by the
@@ -28,7 +29,6 @@ const MAX_SUBJECT = 150;
 const MAX_MESSAGE = 10_000;
 const MAX_FIELD = 1_000;
 const MAX_EMAIL = 254;
-const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const HOUR = 3600;
 
 export interface ContactBindings extends Env {
@@ -97,7 +97,7 @@ function parse(body: unknown, type: TicketType): Parsed {
     attachmentIds: attachmentIds as string[],
     turnstileToken: text(body.turnstileToken),
   };
-  if (value.email.length > MAX_EMAIL || !EMAIL.test(value.email)) errors.email = MESSAGES.emailInvalid;
+  if (value.email.length > MAX_EMAIL || !isEmailAddress(value.email)) errors.email = MESSAGES.emailInvalid;
   if (value.subject === '') errors.subject = MESSAGES.subjectRequired;
   else if (value.subject.length > MAX_SUBJECT) errors.subject = MESSAGES.subjectTooLong;
   if (!(CATEGORIES as readonly string[]).includes(value.category)) errors.category = MESSAGES.categoryInvalid;

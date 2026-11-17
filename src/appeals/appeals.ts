@@ -5,6 +5,7 @@ import { hashKey } from '../products.ts';
 import { liftPunishment, type PunishEnv } from '../punishments/apply.ts';
 import type { Fetcher } from '../punishments/send.ts';
 import { ticketStatements } from '../tickets/create.ts';
+import { isEmailAddress } from '../email-address.ts';
 
 /**
  * Appeals (shyden-labs/shydesk#61; Release 2 plan Task 5). A punished user
@@ -90,7 +91,6 @@ export function appealStatus(p: Appealable): AppealStatus {
 
 const MAX_MESSAGE = 10_000;
 const MAX_EMAIL = 254;
-const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export interface AppealInput {
   email: string;
@@ -108,7 +108,7 @@ export function parseAppeal(body: unknown): ParsedAppeal {
   const given = body as Record<string, unknown>;
   const value: AppealInput = { email: text(given.email).toLowerCase(), message: text(given.message) };
   const errors: Record<string, string> = {};
-  if (value.email.length > MAX_EMAIL || !EMAIL.test(value.email)) errors.email = MESSAGES.emailInvalid;
+  if (value.email.length > MAX_EMAIL || !isEmailAddress(value.email)) errors.email = MESSAGES.emailInvalid;
   if (value.message === '') errors.message = MESSAGES.messageRequired;
   else if (value.message.length > MAX_MESSAGE) errors.message = MESSAGES.messageTooLong;
   return Object.keys(errors).length > 0 ? { ok: false, errors } : { ok: true, value };

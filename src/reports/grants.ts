@@ -1,5 +1,6 @@
 import type { D1Database } from '@cloudflare/workers-types';
 import { hashKey } from '../products.ts';
+import { base64url } from '../base64url.ts';
 
 /**
  * Evidence upload grants (shyden-labs/shydesk#59; Release 2 plan Task 3). A
@@ -13,12 +14,6 @@ import { hashKey } from '../products.ts';
 
 export const GRANT_TTL_MS = 15 * 60 * 1000;
 export const MAX_GRANT_FILES = 10;
-
-const base64url = (bytes: Uint8Array): string =>
-  btoa(String.fromCharCode(...bytes))
-    .replaceAll('+', '-')
-    .replaceAll('/', '_')
-    .replace(/=+$/, '');
 
 const grantKey = async (productId: string, grant: string): Promise<string> => `grant:${productId}:${await hashKey(grant)}`;
 
