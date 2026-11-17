@@ -4,10 +4,15 @@ import { STORED_BYTES } from '../storage.ts';
 /**
  * What a ticket's retention timers delete (shyden-labs/shydesk#22). Every
  * statement re-checks that the ticket is still closed, so a ticket reopened
- * after its timer fired loses nothing. Release 2 adds the legal-hold check here.
+ * after its timer fired loses nothing, and skips what is under an active legal
+ * hold (shyden-labs/shydesk#62): held evidence is never deleted automatically.
  */
 
 const STILL_CLOSED = `ticket_id IN (SELECT id FROM tickets WHERE id = ? AND status = 'closed')`;
+/** No active hold covers this attachment: none on its ticket as a whole, none on the attachment itself. */
+const NOT_HELD_ATTACHMENT = `NOT EXISTS (SELECT 1 FROM legal_holds h WHERE h.lifted_at IS NULL AND h.ticket_id = attachments.ticket_id AND (h.attachment_id IS NULL OR h.attachment_id = attachments.id))`;
+/** No active hold of any kind is on the ticket bound to `?`. */
+const TICKET_NOT_HELD = `NOT EXISTS (SELECT 1 FROM legal_holds WHERE lifted_at IS NULL AND ticket_id = ?)`;
 
 /** Deletes a closed ticket's stored attachments and thumbnails from R2, marks them deleted and takes their bytes off the total. */
 export async function deleteAttachments(
@@ -17,7 +22,7 @@ export async function deleteAttachments(
   now: number,
 ): Promise<void> {
   const { results } = await db
-    .prepare(`SELECT id, r2_key, thumb_key, bytes FROM attachments WHERE state = 'stored' AND ${STILL_CLOSED}`)
+    .prepare(`SELECT id, r2_key, thumb_key, bytes FROM attachments WHERE state = 'stored' AND ${STILL_CLOSED} AND ${NOT_HELD_ATTACHMENT}`)
     .bind(ticketId)
     .all<{ id: string; r2_key: string; thumb_key: string | null; bytes: number }>();
   if (results.length === 0) return;
@@ -35,7 +40,8 @@ export async function deleteAttachments(
 
 /**
  * Deletes a closed ticket's text: any attachments still stored first, then its attachment rows, messages, the staff
- * read marks that reference it (shyden-labs/shydesk#119) and the ticket itself.
+ * read marks that reference it (shyden-labs/shydesk#119) and the ticket itself; none of the text while any hold is
+ * active on the ticket.
  */
 export async function deleteText(
   db: D1Database,
@@ -45,9 +51,9 @@ export async function deleteText(
 ): Promise<void> {
   await deleteAttachments(db, files, ticketId, now);
   await db.batch([
-    db.prepare(`DELETE FROM attachments WHERE ${STILL_CLOSED}`).bind(ticketId),
-    db.prepare(`DELETE FROM messages WHERE ${STILL_CLOSED}`).bind(ticketId),
-    db.prepare(`DELETE FROM reads WHERE ${STILL_CLOSED}`).bind(ticketId),
-    db.prepare(`DELETE FROM tickets WHERE id = ? AND status = 'closed'`).bind(ticketId),
+    db.prepare(`DELETE FROM attachments WHERE ${STILL_CLOSED} AND ${TICKET_NOT_HELD}`).bind(ticketId, ticketId),
+    db.prepare(`DELETE FROM messages WHERE ${STILL_CLOSED} AND ${TICKET_NOT_HELD}`).bind(ticketId, ticketId),
+    db.prepare(`DELETE FROM reads WHERE ${STILL_CLOSED} AND ${TICKET_NOT_HELD}`).bind(ticketId, ticketId),
+    db.prepare(`DELETE FROM tickets WHERE id = ? AND status = 'closed' AND ${TICKET_NOT_HELD}`).bind(ticketId, ticketId),
   ]);
 }

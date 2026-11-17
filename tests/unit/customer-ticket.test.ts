@@ -308,6 +308,18 @@ describe('fetching a file', () => {
     expect((await (await world()).call('/support-api/files/a2/thumb')).status).toBe(404);
   });
 
+  it.each(['/support-api/files/a1', '/support-api/files/a1/thumb'])(
+    'withholds %s under a live csam hold, on the ticket or on that file, in SQL',
+    async (path) => {
+      // shyden-labs/shydesk#62: suspected child-abuse material is never served, the customer included.
+      const w = await world();
+      await w.call(path);
+      expect(w.statements.find((s) => s.sql.includes('r2_key'))?.sql).toMatch(
+        /NOT EXISTS \(SELECT 1 FROM legal_holds h WHERE h\.lifted_at IS NULL AND h\.csam = 1 AND h\.ticket_id = a\.ticket_id AND \(h\.attachment_id IS NULL OR h\.attachment_id = a\.id\)\)/,
+      );
+    },
+  );
+
   it('is 404 when the object has gone', async () => {
     expect((await (await world({ objects: {} })).call('/support-api/files/a1')).status).toBe(404);
   });
