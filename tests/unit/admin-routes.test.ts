@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll } from 'vitest';
-import { SignJWT, createLocalJWKSet, exportJWK, generateKeyPair, type JWTVerifyGetKey } from 'jose';
+import { SignJWT, createLocalJWKSet, type JWTVerifyGetKey } from 'jose';
+import { PUBLIC_JWK, signingKey } from '../fixtures/access-keys.ts';
 import { adminRoutes } from '../../src/admin/routes.ts';
 import type { StaffEnv } from '../../src/auth/staff.ts';
 import { hashKey } from '../../src/products.ts';
@@ -21,15 +22,15 @@ let jwks: JWTVerifyGetKey;
 let sign: (email: string) => Promise<string>;
 
 beforeAll(async () => {
-  const pair = await generateKeyPair('RS256');
-  jwks = createLocalJWKSet({ keys: [{ ...(await exportJWK(pair.publicKey)), kid: 'k1', alg: 'RS256' }] });
+  const privateKey = await signingKey();
+  jwks = createLocalJWKSet({ keys: [{ ...PUBLIC_JWK, kid: 'k1', alg: 'RS256' }] });
   sign = (email) =>
     new SignJWT({ email })
       .setProtectedHeader({ alg: 'RS256', kid: 'k1' })
       .setAudience(AUD)
       .setIssuer(`https://${TEAM}`)
       .setExpirationTime('5m')
-      .sign(pair.privateKey);
+      .sign(privateKey);
 });
 
 const productRow = (id: string, name = `Product ${id}`) => ({
