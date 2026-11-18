@@ -12,7 +12,11 @@
  */
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { runIfEntry } from './cli.ts';
+
+/** The npm CLI shipped beside the running node, so PATH is never searched for `npm` (Sonar S4036). */
+const NPM_CLI = join(dirname(process.execPath), '..', 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js');
 
 export interface AuditException {
   /** The advisory id, e.g. GHSA-fc5q-39xc-vjpf. */
@@ -79,7 +83,7 @@ export function problems(found: Advisory[], exceptions: AuditException[], today:
 }
 
 export function main(): number {
-  const run = spawnSync('npm', ['audit', '--json'], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+  const run = spawnSync(process.execPath, [NPM_CLI, 'audit', '--json'], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
   if (run.error) throw new Error(`npm audit did not run: ${run.error.message}`);
   const { exceptions } = JSON.parse(readFileSync(new URL('../audit-exceptions.json', import.meta.url), 'utf8')) as {
     exceptions: AuditException[];

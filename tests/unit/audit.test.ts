@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { spawnSync, type SpawnSyncReturns } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { advisories, main, problems, type AuditException } from '../../scripts/audit.ts';
 
 // npm and the exceptions file are stood in: a unit test starts no process.
@@ -107,7 +108,9 @@ describe('main', () => {
   it('runs npm audit as JSON and passes when every advisory is excepted', () => {
     spawn.mockReturnValue(ran(report(advisory(PICOMATCH, 'picomatch'))));
     expect(main()).toBe(0);
-    expect(spawn).toHaveBeenCalledWith('npm', ['audit', '--json'], expect.objectContaining({ encoding: 'utf8' }));
+    // npm is the CLI shipped beside this node, run by node's own path: PATH is never searched (Sonar S4036).
+    const npmCli = join(dirname(process.execPath), '..', 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js');
+    expect(spawn).toHaveBeenCalledWith(process.execPath, [npmCli, 'audit', '--json'], expect.objectContaining({ encoding: 'utf8' }));
   });
 
   it('fails naming each advisory that is not excepted', () => {
