@@ -24,6 +24,14 @@ describe('validateProduct', () => {
     expect(validateProduct(GOOD)).toEqual([]);
   });
 
+  it('answers a 50,000-character hostile sender address within 50 ms (shyden-labs/shydesk#184)', () => {
+    const started = performance.now();
+    expect(errorsFor({ senderAddress: 'a@' + '.'.repeat(50_000) + '@' })).toEqual([
+      'Sender address must be an email address ending in a domain.',
+    ]);
+    expect(performance.now() - started).toBeLessThan(50);
+  });
+
   it('accepts a product id of exactly 2 and exactly 40 characters', () => {
     expect(errorsFor({ id: 'ab' })).toEqual([]);
     expect(errorsFor({ id: 'a'.repeat(40) })).toEqual([]);

@@ -112,7 +112,8 @@ async function judge(path: string): Promise<{ ok: boolean; lines: string[]; dash
     await sleep(STEP_MS);
   }
   if (task.status !== 'SUCCESS') {
-    fail(`task ${report.ceTaskId} ended ${task.status}${task.errorMessage ? ` (${task.errorMessage})` : ''}; no verdict to read`);
+    const why = task.errorMessage ? ' (' + task.errorMessage + ')' : '';
+    fail(`task ${report.ceTaskId} ended ${task.status}${why}; no verdict to read`);
   }
   if (task.analysisId === undefined) fail(`task ${report.ceTaskId} made no analysis; no verdict to read`);
   const pullRequest = process.env.SONAR_PULL_REQUEST || '';

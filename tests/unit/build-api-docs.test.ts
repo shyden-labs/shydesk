@@ -62,22 +62,14 @@ describe('buildApiDocs', () => {
 describe('the shared piece', () => {
   // shyden-labs/shydesk#19: the same build puts public/embed.js at the
   // assets root, where the Worker serves it as /embed.js.
-  it('copies the media code unchanged to <out>/embed-media.js', () => {
+  it.each([
+    ['the media code', 'embed-media.js'],
+    ['the viewer (shyden-labs/shydesk#25)', 'embed-viewer.js'],
+    ['the shared piece', 'embed.js'],
+  ])('copies %s unchanged to <out>/%s', (_what, file) => {
     const dir = out();
     buildApiDocs(ROOT, dir);
-    expect(readFileSync(join(dir, 'embed-media.js')).equals(readFileSync(join(ROOT, 'public/embed-media.js')))).toBe(true);
-  });
-
-  it('copies the viewer unchanged to <out>/embed-viewer.js (shyden-labs/shydesk#25)', () => {
-    const dir = out();
-    buildApiDocs(ROOT, dir);
-    expect(readFileSync(join(dir, 'embed-viewer.js')).equals(readFileSync(join(ROOT, 'public/embed-viewer.js')))).toBe(true);
-  });
-
-  it('is copied unchanged to <out>/embed.js', () => {
-    const dir = out();
-    buildApiDocs(ROOT, dir);
-    expect(readFileSync(join(dir, 'embed.js')).equals(readFileSync(join(ROOT, 'public/embed.js')))).toBe(true);
+    expect(readFileSync(join(dir, file)).equals(readFileSync(join(ROOT, 'public', file)))).toBe(true);
   });
 });
 

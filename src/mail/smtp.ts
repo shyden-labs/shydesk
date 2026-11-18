@@ -108,7 +108,8 @@ async function dialogue(
   upgraded(secure);
   const extensions = await command(secure, 'EHLO shydesk', 'ehlo', ['250']);
   if (!offers(extensions, /^AUTH\b.*\bPLAIN\b/i)) throw new SmtpError('ehlo', 'server does not offer AUTH PLAIN');
-  await command(secure, `AUTH PLAIN ${base64(`\0${login.user}\0${login.pass}`)}`, 'auth', ['235']);
+  const credentials = `\0${login.user}\0${login.pass}`;
+  await command(secure, `AUTH PLAIN ${base64(credentials)}`, 'auth', ['235']);
   await command(secure, `MAIL FROM:<${mail.from}>`, 'mail-from', ['250']);
   await command(secure, `RCPT TO:<${mail.to}>`, 'rcpt-to', ['250', '251']);
   await command(secure, 'DATA', 'data', ['354']);

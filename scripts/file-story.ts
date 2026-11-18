@@ -226,7 +226,7 @@ export function main(args: string[]): number {
   if (problems.length > 0) fail(`${ref} was filed, but ${problems.join('; ')}`);
   process.stdout.write(
     `file-story: read back: board ${back.project.title}, Estimate ${story.estimate}, Priority ${story.priority}, ` +
-      `Status ${story.status}, blocked by ${list(blockers)}, parent ${parent === null ? 'none' : `#${parent}`}\n`,
+      `Status ${story.status}, blocked by ${list(blockers)}, parent ${parent === null ? 'none' : '#' + String(parent)}\n`,
   );
   return 0;
 }

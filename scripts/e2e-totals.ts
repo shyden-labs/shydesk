@@ -71,10 +71,10 @@ export interface SpecFile {
  */
 export function suiteCount(files: readonly SpecFile[]): number {
   return files.reduce((sum, file) => {
-    if (/^\s*it\.each\b/m.test(file.text)) {
+    if (/^[ \t]*it\.each\b/m.test(file.text)) {
       throw new Error(`${file.name}: it.each cannot be counted by reading the file; write one it() per case`);
     }
-    return sum + (file.text.match(/^\s*it\(/gm) ?? []).length;
+    return sum + (file.text.match(/^[ \t]*it\(/gm) ?? []).length;
   }, 0);
 }
 
