@@ -425,19 +425,13 @@ describe('pages with saved settings', () => {
     return { DB: db, ACCESS_TEAM_DOMAIN: TEAM, ACCESS_AUD: AUD, FIRST_ADMIN_EMAIL: ADMIN };
   }
 
-  it('shows the support fields one per line', async () => {
+  it.each([
+    ['shows the support fields one per line', 'Device; text; required\nArea; select; optional; Chat, Profile'],
+    ['offers canned replies on the support type', '<option value="shytalk:support">Help</option>'],
+    ['lists the canned replies', '<strong>Thanks</strong>: Thanks for writing.'],
+  ])('%s', async (_what, shown) => {
     const page = await (await get('/admin/products/shytalk', ADMIN, filled())).text();
-    expect(page).toContain('Device; text; required\nArea; select; optional; Chat, Profile');
-  });
-
-  it('offers canned replies on the support type', async () => {
-    const page = await (await get('/admin/products/shytalk', ADMIN, filled())).text();
-    expect(page).toContain('<option value="shytalk:support">Help</option>');
-  });
-
-  it('lists the canned replies', async () => {
-    const page = await (await get('/admin/products/shytalk', ADMIN, filled())).text();
-    expect(page).toContain('<strong>Thanks</strong>: Thanks for writing.');
+    expect(page).toContain(shown);
   });
 
   it('marks a revoked key and offers no revoke button for it', async () => {

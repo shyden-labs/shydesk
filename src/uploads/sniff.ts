@@ -1,6 +1,7 @@
 export type Sniffed = 'jpeg' | 'webp' | 'mp4';
 
-const ascii = (head: Uint8Array, at: number, text: string): boolean => Array.from(text).every((ch, i) => head[at + i] === ch.charCodeAt(0));
+const ascii = (head: Uint8Array, at: number, text: string): boolean =>
+  Array.from(text).every((ch, i) => head[at + i] === ch.codePointAt(0));
 
 /** What a file is by its first bytes, whatever it was called (shyden-labs/shydesk#20). */
 export function sniff(head: Uint8Array): Sniffed | null {

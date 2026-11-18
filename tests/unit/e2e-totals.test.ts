@@ -167,6 +167,12 @@ describe('suiteCount', () => {
     ).toBe(3);
   });
 
+  it('reads a file of 50,000 blank lines within 50 ms (shyden-labs/shydesk#184)', () => {
+    const started = performance.now();
+    expect(suiteCount([{ name: 'blank.e2e.ts', text: '\n'.repeat(50_000) + 'x' }])).toBe(0);
+    expect(performance.now() - started).toBeLessThan(50);
+  });
+
   it('counts a spec file with no tests as none', () => {
     expect(suiteCount([{ name: 'd.e2e.ts', text: "describe('d', () => {});\n" }])).toBe(0);
   });

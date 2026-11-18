@@ -58,7 +58,7 @@ type DeskContext = Context<DeskEnv>;
 type MailResult = NoticeResult | 'no-link';
 
 const MAX_REPLY = 10_000;
-const STATUSES = ['open', 'waiting', 'closed'];
+const STATUSES = new Set(['open', 'waiting', 'closed']);
 
 const reference = (c: DeskContext, name: string): string | undefined => c.req.query(name) || undefined;
 
@@ -95,19 +95,19 @@ export function deskRoutes(deps: DeskDeps, jwks?: JWTVerifyGetKey): Hono<DeskEnv
     const staff = c.var.staff;
     const selected = reference(c, 'product');
     const statusAsked = reference(c, 'status');
-    const status = statusAsked !== undefined && STATUSES.includes(statusAsked) ? statusAsked : undefined;
+    const status = statusAsked !== undefined && STATUSES.has(statusAsked) ? statusAsked : undefined;
     const typeId = reference(c, 'type');
     const asked = Number(c.req.query('cursor'));
     const cursor = Number.isInteger(asked) && asked > 0 ? asked : 0;
     const inScope = scope(staff, selected);
     const allProducts = await listProducts(c.env.DB);
     const products = allProducts.filter((p) => staff.products.includes(p.id));
+    const placeholders = inScope.map(() => '?').join(', ');
+    const appeals = staff.role === 'admin' ? '' : " AND kind != 'appeal'";
     const { results: types } =
       inScope.length === 0
         ? { results: [] }
-        : await c.env.DB.prepare(
-            `SELECT id, name FROM ticket_types WHERE product_id IN (${inScope.map(() => '?').join(', ')})${staff.role === 'admin' ? '' : " AND kind != 'appeal'"} ORDER BY name`,
-          )
+        : await c.env.DB.prepare(`SELECT id, name FROM ticket_types WHERE product_id IN (${placeholders})${appeals} ORDER BY name`)
             .bind(...inScope)
             .all<{ id: string; name: string }>();
     return c.html(

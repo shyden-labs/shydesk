@@ -3,6 +3,7 @@ import type { Staff } from '../auth/staff.ts';
 import type { PunishmentRow } from '../db/types.ts';
 import { getPunishments, hashKey } from '../products.ts';
 import { send, type CallbackTarget, type Fetcher } from './send.ts';
+import { base64url } from '../base64url.ts';
 
 /**
  * Applying, re-sending and lifting punishments (shyden-labs/shydesk#60; Release 2
@@ -39,13 +40,7 @@ export class PunishmentRefused extends Error {
   }
 }
 
-const base64url = (bytes: Uint8Array): string =>
-  btoa(String.fromCharCode(...bytes))
-    .replaceAll('+', '-')
-    .replaceAll('/', '_')
-    .replace(/=+$/, '');
-
-const keyBytes = (base64: string): Uint8Array<ArrayBuffer> => Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+const keyBytes = (base64: string): Uint8Array<ArrayBuffer> => Uint8Array.from(atob(base64), (c) => Number(c.codePointAt(0)));
 
 /** The punishment's appeal token: HMAC-SHA256 of its id under the ticket-link key, base64url. */
 export async function appealToken(tokenKey: string, punishmentId: string): Promise<string> {

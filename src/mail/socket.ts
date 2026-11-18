@@ -57,6 +57,7 @@ export function socketConnection(socket: SmtpSocket): SmtpConnection {
 
   return {
     async readReply() {
+      // A stream is read in order, one chunk after another (shyden-labs/shydesk#185).
       for (;;) {
         const reply = wholeReply(buffered);
         if (reply !== null) {
@@ -64,7 +65,7 @@ export function socketConnection(socket: SmtpSocket): SmtpConnection {
           return reply.lines;
         }
         if (buffered.length > MAX_REPLY_CHARS) throw new Error('the mail server sent a reply over 64 KiB');
-        const { done, value } = await reader.read();
+        const { done, value } = await reader.read(); // NOSONAR
         if (done) throw new Error('the mail server closed the connection before its reply ended');
         buffered += decoder.decode(value, { stream: true });
       }

@@ -118,20 +118,22 @@ async function clearAbandoned(env: UploadBindings): Promise<void> {
   )
     .bind(now - UNATTACHED_EXPIRES_MS)
     .all<Attachment>();
+  // One upload at a time: each is closed out after its object goes, and one failing does not stop the rest (shyden-labs/shydesk#185).
   for (const row of stale) {
     try {
       // With no upload id a `complete` stopped part way, and the object may exist.
-      if (row.r2_upload_id !== null) await env.FILES.resumeMultipartUpload(row.r2_key, row.r2_upload_id).abort();
-      else await env.FILES.delete(row.r2_key);
-      await closeOut(env, row.id, 'pending');
+      if (row.r2_upload_id !== null)
+        await env.FILES.resumeMultipartUpload(row.r2_key, row.r2_upload_id).abort(); // NOSONAR
+      else await env.FILES.delete(row.r2_key); // NOSONAR
+      await closeOut(env, row.id, 'pending'); // NOSONAR
     } catch (error) {
       console.error(`upload ${row.id} could not be aborted`, error);
     }
   }
   for (const row of unattached) {
     try {
-      await env.FILES.delete([row.r2_key, row.thumb_key]);
-      await closeOut(env, row.id, 'stored');
+      await env.FILES.delete([row.r2_key, row.thumb_key]); // NOSONAR
+      await closeOut(env, row.id, 'stored'); // NOSONAR
     } catch (error) {
       console.error(`upload ${row.id} could not be expired`, error);
     }

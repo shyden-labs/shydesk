@@ -105,14 +105,16 @@ async function judge(path: string): Promise<{ ok: boolean; lines: string[]; dash
   const report = parseReportTask(readFileSync(path, 'utf8'));
   const ceiling = Number(process.env.SONAR_CEILING_SECONDS || 300);
   let task: { status: string; analysisId?: string; pullRequest?: string; errorMessage?: string };
+  // Polling: each read waits for the one before it (shyden-labs/shydesk#185).
   for (let waited = 0; ; waited += STEP_MS / 1000) {
-    task = ((await get(`${report.serverUrl}/api/ce/task?id=${report.ceTaskId}`, token)) as { task: typeof task }).task;
+    task = ((await get(`${report.serverUrl}/api/ce/task?id=${report.ceTaskId}`, token)) as { task: typeof task }).task; // NOSONAR
     if (task.status !== 'PENDING' && task.status !== 'IN_PROGRESS') break;
     if (waited >= ceiling) fail(`task ${report.ceTaskId} is still ${task.status} after ${ceiling} s; no verdict to read`);
-    await sleep(STEP_MS);
+    await sleep(STEP_MS); // NOSONAR
   }
   if (task.status !== 'SUCCESS') {
-    fail(`task ${report.ceTaskId} ended ${task.status}${task.errorMessage ? ` (${task.errorMessage})` : ''}; no verdict to read`);
+    const why = task.errorMessage ? ' (' + task.errorMessage + ')' : '';
+    fail(`task ${report.ceTaskId} ended ${task.status}${why}; no verdict to read`);
   }
   if (task.analysisId === undefined) fail(`task ${report.ceTaskId} made no analysis; no verdict to read`);
   const pullRequest = process.env.SONAR_PULL_REQUEST || '';

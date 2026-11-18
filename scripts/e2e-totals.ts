@@ -71,10 +71,10 @@ export interface SpecFile {
  */
 export function suiteCount(files: readonly SpecFile[]): number {
   return files.reduce((sum, file) => {
-    if (/^\s*it\.each\b/m.test(file.text)) {
+    if (/^[ \t]*it\.each\b/m.test(file.text)) {
       throw new Error(`${file.name}: it.each cannot be counted by reading the file; write one it() per case`);
     }
-    return sum + (file.text.match(/^\s*it\(/gm) ?? []).length;
+    return sum + (file.text.match(/^[ \t]*it\(/gm) ?? []).length;
   }, 0);
 }
 
@@ -138,7 +138,7 @@ export function groupCounts(files: readonly SpecFile[]): GroupCounts {
     if (tag !== 'phone' && tag !== 'desktop') {
       throw new Error(`${file.name}: "${tag}" is not a device group; a test runs everywhere, or is tagged phone or desktop`);
     }
-    const reason = new RegExp(`^// ${tag}-only: \\S`).test(file.text);
+    const reason = new RegExp(String.raw`^// ${tag}-only: \S`).test(file.text);
     if (!reason) {
       throw new Error(
         `${file.name} runs on ${tag} only but gives no reason: its first line must be "// ${tag}-only: <the input or feature that differs>"`,

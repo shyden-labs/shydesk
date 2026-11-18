@@ -175,7 +175,7 @@ export function softwareResizer(VideoSample, makeCanvas = softwareCanvas) {
     const { crop } = box;
     const whole = crop.left === 0 && crop.top === 0 && crop.width === sample.displayWidth && crop.height === sample.displayHeight;
     if (!whole || box.fit === 'cover' || box.rotation !== sample.rotation || box.flip !== sample.flip) return null;
-    if (held === null || held.w !== box.width || held.h !== box.height) {
+    if (held?.w !== box.width || held.h !== box.height) {
       const made = makeCanvas(box.width, box.height);
       if (made === null) return null;
       held = { ...made, w: box.width, h: box.height };
@@ -377,10 +377,11 @@ export async function uploadAttachment({ host, product, file, kind, mime, thumbn
   );
   const { id, partSize, parts: count, thumbId } = /** @type {{ id: string, partSize: number, parts: number, thumbId: string }} */ (started);
   const parts = [];
+  // Parts go one at a time on purpose: progress reads in order and only one part is in memory (shyden-labs/shydesk#185).
   for (let n = 1; n <= count; n += 1) {
     const end = Math.min(n * partSize, file.size);
     const body = file.slice((n - 1) * partSize, end);
-    const sent = await answerOf(await ask(url(`/${id}/parts/${String(n)}`), { method: 'PUT', body }));
+    const sent = await answerOf(await ask(url(`/${id}/parts/${String(n)}`), { method: 'PUT', body })); // NOSONAR
     parts.push({ n, etag: sent.etag });
     onProgress?.(end / file.size);
   }

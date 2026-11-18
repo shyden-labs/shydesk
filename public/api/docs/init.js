@@ -17,11 +17,17 @@ async function allowedMethods() {
   }
 }
 
-void allowedMethods().then((methods) => {
+/** @param {string[]} methods */
+function startSwaggerUi(methods) {
   SwaggerUIBundle({
     url: 'shydesk.v1.yaml',
     dom_id: '#swagger-ui',
     deepLinking: true,
     supportedSubmitMethods: methods,
   });
-});
+}
+
+// A promise chain, not top-level await: index.html loads this as a classic
+// script, where await at the top level does not parse (Sonar S7785,
+// shyden-labs/shydesk#184).
+void allowedMethods().then(startSwaggerUi); // NOSONAR
