@@ -55,7 +55,7 @@ function checkInput(mail: SmtpMail): void {
   }
 }
 
-const base64 = (text: string): string => btoa(String.fromCharCode(...new TextEncoder().encode(text)));
+const base64 = (text: string): string => btoa(String.fromCodePoint(...new TextEncoder().encode(text)));
 
 const encodedSubject = (subject: string): string => (ASCII.test(subject) ? subject : `=?UTF-8?B?${base64(subject)}?=`);
 

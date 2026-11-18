@@ -1,6 +1,6 @@
 /** Bytes as base64url: `-` and `_` in place of `+` and `/`, with no `=` padding. */
 export function base64url(bytes: Uint8Array): string {
-  const padded = btoa(String.fromCharCode(...bytes))
+  const padded = btoa(String.fromCodePoint(...bytes))
     .replaceAll('+', '-')
     .replaceAll('/', '_');
   let end = padded.length;

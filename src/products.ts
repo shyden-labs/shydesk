@@ -27,8 +27,8 @@ export interface ProductInput {
 
 const PRODUCT_ID = /^[a-z0-9-]{2,40}$/;
 const HOST = /^[a-z0-9.-]+$/;
-const ROLES: readonly string[] = ['admin', 'rep'];
-const FIELD_KINDS: readonly string[] = ['text', 'select'];
+const ROLES: ReadonlySet<string> = new Set(['admin', 'rep']);
+const FIELD_KINDS: ReadonlySet<string> = new Set(['text', 'select']);
 
 /** True when `id` is a valid product id. */
 export const isProductId = (id: string): boolean => PRODUCT_ID.test(id);
@@ -189,7 +189,7 @@ export async function saveStaff(db: D1Database, s: StaffInput, now = Date.now())
   const errors: string[] = [];
   if (!isEmailAddress(email)) errors.push('Email must be an email address ending in a domain.');
   // Form input arrives untyped, so the role is checked at run time too.
-  if (!ROLES.includes(s.role)) errors.push('Role must be admin or rep.');
+  if (!ROLES.has(s.role)) errors.push('Role must be admin or rep.');
   const grants = s.role === 'rep' ? [...new Set(s.products)] : [];
   errors.push(...(await missingProducts(db, grants)));
   refuseIfAny(errors);
@@ -241,7 +241,7 @@ export const supportTypeId = (productId: string): string => `${productId}:suppor
 function fieldErrors(fields: SupportField[]): string[] {
   return fields.flatMap((f, i) => {
     if (!f.label.trim()) return [`Field ${i + 1} needs a label.`];
-    if (!FIELD_KINDS.includes(f.kind)) return [`Field "${f.label}" must be text or a choice list.`];
+    if (!FIELD_KINDS.has(f.kind)) return [`Field "${f.label}" must be text or a choice list.`];
     if (f.kind === 'select' && !f.options?.length) return [`Field "${f.label}" is a choice list and needs at least one option.`];
     return [];
   });

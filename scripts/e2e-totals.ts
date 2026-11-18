@@ -138,7 +138,7 @@ export function groupCounts(files: readonly SpecFile[]): GroupCounts {
     if (tag !== 'phone' && tag !== 'desktop') {
       throw new Error(`${file.name}: "${tag}" is not a device group; a test runs everywhere, or is tagged phone or desktop`);
     }
-    const reason = new RegExp(`^// ${tag}-only: \\S`).test(file.text);
+    const reason = new RegExp(String.raw`^// ${tag}-only: \S`).test(file.text);
     if (!reason) {
       throw new Error(
         `${file.name} runs on ${tag} only but gives no reason: its first line must be "// ${tag}-only: <the input or feature that differs>"`,

@@ -58,7 +58,7 @@ type DeskContext = Context<DeskEnv>;
 type MailResult = NoticeResult | 'no-link';
 
 const MAX_REPLY = 10_000;
-const STATUSES = ['open', 'waiting', 'closed'];
+const STATUSES = new Set(['open', 'waiting', 'closed']);
 
 const reference = (c: DeskContext, name: string): string | undefined => c.req.query(name) || undefined;
 
@@ -95,7 +95,7 @@ export function deskRoutes(deps: DeskDeps, jwks?: JWTVerifyGetKey): Hono<DeskEnv
     const staff = c.var.staff;
     const selected = reference(c, 'product');
     const statusAsked = reference(c, 'status');
-    const status = statusAsked !== undefined && STATUSES.includes(statusAsked) ? statusAsked : undefined;
+    const status = statusAsked !== undefined && STATUSES.has(statusAsked) ? statusAsked : undefined;
     const typeId = reference(c, 'type');
     const asked = Number(c.req.query('cursor'));
     const cursor = Number.isInteger(asked) && asked > 0 ? asked : 0;

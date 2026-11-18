@@ -9,8 +9,8 @@
 const NONCE_BYTES = 12;
 const KEY_BYTES = 32;
 
-const toBase64 = (bytes: Uint8Array): string => btoa(String.fromCharCode(...bytes));
-const fromBase64 = (text: string): Uint8Array<ArrayBuffer> => Uint8Array.from(atob(text), (c) => c.charCodeAt(0));
+const toBase64 = (bytes: Uint8Array): string => btoa(String.fromCodePoint(...bytes));
+const fromBase64 = (text: string): Uint8Array<ArrayBuffer> => Uint8Array.from(atob(text), (c) => Number(c.codePointAt(0)));
 
 function importKey(base64: string): Promise<CryptoKey> {
   let raw: Uint8Array<ArrayBuffer>;

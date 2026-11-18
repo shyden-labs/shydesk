@@ -134,7 +134,7 @@ export function planRulesets(existing: ExistingRuleset[], checks: string[]): Rul
     if (shape(found) === shape(body)) return { action: 'keep' as const, id: found.id, body };
     // Unmeasured whether a PUT leaving bypass_actors out keeps them, so the update carries them, and is never sent unseen.
     if (!Array.isArray(found.bypass_actors)) {
-      throw new Error(
+      throw new TypeError(
         `ruleset ${found.id} "${found.name}" differs, but its bypass list is hidden (read it with admin rights), so an update could drop a bypass`,
       );
     }

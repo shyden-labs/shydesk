@@ -75,6 +75,6 @@ export async function deleteText(
       .bind(now, ticketId, ticketId),
     db
       .prepare(`DELETE FROM tickets WHERE id = ? AND status = 'closed' AND ${TICKET_NOT_HELD} AND ${NOTHING_POINTS}`)
-      .bind(ticketId, ticketId, ...Array<string>(6).fill(ticketId)),
+      .bind(ticketId, ticketId, ...new Array<string>(6).fill(ticketId)),
   ]);
 }

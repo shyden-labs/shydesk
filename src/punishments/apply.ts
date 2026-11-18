@@ -40,7 +40,7 @@ export class PunishmentRefused extends Error {
   }
 }
 
-const keyBytes = (base64: string): Uint8Array<ArrayBuffer> => Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+const keyBytes = (base64: string): Uint8Array<ArrayBuffer> => Uint8Array.from(atob(base64), (c) => Number(c.codePointAt(0)));
 
 /** The punishment's appeal token: HMAC-SHA256 of its id under the ticket-link key, base64url. */
 export async function appealToken(tokenKey: string, punishmentId: string): Promise<string> {
