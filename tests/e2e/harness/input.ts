@@ -37,6 +37,8 @@ import {
   swipeUp,
   centreInside,
   viewportPoint,
+  videoControlPoint,
+  type VideoControl,
   type Box,
   ANDROID_KEYS,
   IOS_KEY_CONTROLS,
@@ -517,6 +519,24 @@ export async function clickMiddleOf(label: string): Promise<void> {
   await driver()
     .action('pointer', { parameters: { pointerType: 'mouse' } })
     .move({ x: at.x, y: at.y })
+    .down()
+    .up()
+    .perform();
+}
+
+/**
+ * A real mouse press on the browser's own `control` over the video named `label` (shyden-labs/shydesk#108
+ * AC2). The pointer rests there first, so a browser that hides its controls while playing shows them.
+ * Phones fail naming the ticket that measures their controls (shyden-labs/shydesk#176).
+ */
+export async function pressVideoControl(label: string, control: VideoControl): Promise<void> {
+  const video = await named(label);
+  const box = await driver().execute<Box>(PAGE_RECT, video);
+  const at = videoControlPoint(box, control, targetOf(driver().capabilities));
+  await driver()
+    .action('pointer', { parameters: { pointerType: 'mouse' } })
+    .move({ x: at.x, y: at.y })
+    .pause(500)
     .down()
     .up()
     .perform();

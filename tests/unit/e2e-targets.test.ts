@@ -10,6 +10,8 @@ import {
   targetsFrom,
   screenPoint,
   viewportPoint,
+  videoControlPoint,
+  ownControlsPoints,
   notNamedMessage,
   suiteOriginFor,
   typedMismatch,
@@ -827,5 +829,65 @@ describe('otherGroupSpecs (shyden-labs/shydesk#175)', () => {
 
   it.each(['android', 'ios'] as const)('keeps desktop-only spec files from %s', (target) => {
     expect(otherGroupSpecs(target)).toEqual(['./tests/e2e/**/*.desktop.e2e.ts']);
+  });
+});
+
+describe('videoControlPoint', () => {
+  // A 1000 × 500 video drawn at 10, 20: its bottom edge is at y 520.
+  const box = { x: 10, y: 20, width: 1000, height: 500 };
+
+  it("presses Chrome's pause in its button row, 24 in and 48 up", () => {
+    expect(videoControlPoint(box, 'pause', 'chromium')).toEqual({ x: 34, y: 472 });
+  });
+
+  it("presses Firefox's pause at its bar's left end, 20 in and 20 up", () => {
+    expect(videoControlPoint(box, 'pause', 'firefox')).toEqual({ x: 30, y: 500 });
+  });
+
+  it("presses the picture's middle on Safari, which draws no pause outside the picture", () => {
+    expect(videoControlPoint(box, 'pause', 'safari')).toEqual({ x: 510, y: 270 });
+  });
+
+  it('presses the scrub bar 60% across, 20 up, on Chrome and Firefox', () => {
+    expect(videoControlPoint(box, 'scrub', 'chromium')).toEqual({ x: 610, y: 500 });
+    expect(videoControlPoint(box, 'scrub', 'firefox')).toEqual({ x: 610, y: 500 });
+  });
+
+  it("presses Safari's scrub bar halfway across, 30 up, inside its centred bar", () => {
+    expect(videoControlPoint(box, 'scrub', 'safari')).toEqual({ x: 510, y: 490 });
+  });
+
+  it('rounds to whole pixels', () => {
+    expect(videoControlPoint({ x: 0.4, y: 0, width: 333, height: 100 }, 'scrub', 'chromium')).toEqual({ x: 200, y: 80 });
+  });
+
+  it('fails on a video that is not drawn', () => {
+    expect(() => videoControlPoint({ x: 0, y: 0, width: 0, height: 100 }, 'scrub', 'chromium')).toThrow(
+      'the video is not drawn (it has no size)',
+    );
+    expect(() => videoControlPoint({ x: 0, y: 0, width: 100, height: 0 }, 'pause', 'firefox')).toThrow(
+      'the video is not drawn (it has no size)',
+    );
+  });
+
+  it('fails on a phone, naming the ticket that measures it there', () => {
+    expect(() => videoControlPoint(box, 'pause', 'android')).toThrow(
+      "android: the video's own pause control is not yet measured on phones (shyden-labs/shydesk#176)",
+    );
+    expect(() => videoControlPoint(box, 'scrub', 'ios')).toThrow(
+      "ios: the video's own scrub control is not yet measured on phones (shyden-labs/shydesk#176)",
+    );
+  });
+});
+
+describe('ownControlsPoints', () => {
+  it("names each point of the browser's own controls the drag layer must leave free", () => {
+    expect(ownControlsPoints({ x: 10, y: 20, width: 1000, height: 500 })).toEqual([
+      { at: { x: 510, y: 512 }, where: 'the bottom bar' },
+      { at: { x: 34, y: 472 }, where: "Chrome's button row" },
+      { at: { x: 34, y: 450 }, where: "the top of Chrome's button row" },
+      { at: { x: 34, y: 48 }, where: "Safari's top-left pill" },
+      { at: { x: 986, y: 48 }, where: "Safari's top-right pill" },
+    ]);
   });
 });

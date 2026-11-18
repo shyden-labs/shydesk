@@ -123,10 +123,16 @@ const SWIPE_PX = 50;
 /** How far a press may wander and still count as a click on a video's picture. */
 const CLICK_PX = 10;
 /**
- * The height left free along the bottom of a video for the browser's own controls bar (shyden-labs/shydesk#108):
- * the drag layer stops this far above the picture's bottom edge.
+ * The height left free along the bottom of a video for the browser's own controls (shyden-labs/shydesk#108):
+ * the drag layer stops this far above the picture's bottom edge. Chrome draws its button row centred
+ * 48 px up, so the row's top is 72 px up.
  */
-const CONTROLS_BAR_PX = 48;
+const CONTROLS_BAR_PX = 80;
+/**
+ * The height left free along the top of a video, on every browser, for Safari's two pills drawn 28 px
+ * below the picture's top (Shyden's ruling (a), 2026-11-18, shyden-labs/shydesk#108).
+ */
+const TOP_PILLS_PX = 56;
 
 const VIEWER_CSS = `
 .shydesk-viewer{position:fixed;inset:0;z-index:2147483647;display:flex;flex-direction:column;background:rgba(0,0,0,.92);color:#fff;font:16px/1.4 system-ui,sans-serif}
@@ -217,13 +223,13 @@ export function openViewer({ doc, host, items, start, onClose }) {
     layer = null;
     if (media instanceof HTMLVideoElement) {
       // Firefox's own video controls keep a press from the page (shyden-labs/shydesk#108), so a layer over the
-      // picture takes drags and clicks; the controls bar along the bottom is left free.
+      // picture takes drags and clicks; the browser's controls along the bottom and the top are left free.
       const over = el('div', { class: 'drag-layer', 'aria-hidden': 'true' });
       const place = () => {
         over.style.left = `${String(media.offsetLeft)}px`;
-        over.style.top = `${String(media.offsetTop)}px`;
+        over.style.top = `${String(media.offsetTop + TOP_PILLS_PX)}px`;
         over.style.width = `${String(media.offsetWidth)}px`;
-        over.style.height = `${String(Math.max(0, media.offsetHeight - CONTROLS_BAR_PX))}px`;
+        over.style.height = `${String(Math.max(0, media.offsetHeight - TOP_PILLS_PX - CONTROLS_BAR_PX))}px`;
       };
       // The picture's size changes as its metadata loads and as the window resizes.
       const watch = new ResizeObserver(place);

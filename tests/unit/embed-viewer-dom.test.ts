@@ -198,7 +198,7 @@ describe('a video', () => {
     expect(shown.getAttribute('src')).toBe('/v.mp4');
   });
 
-  it('has a hidden drag layer over the picture, clear of the controls bar, kept placed as it resizes', () => {
+  it('has a hidden drag layer over the picture, clear of the top strip and the controls bar, kept placed as it resizes', () => {
     const sizes = { offsetLeft: 10, offsetTop: 20, offsetWidth: 640, offsetHeight: 360 };
     for (const [name, value] of Object.entries(sizes)) {
       vi.spyOn(HTMLElement.prototype, name as 'offsetLeft', 'get').mockImplementation(function (this: HTMLElement) {
@@ -208,10 +208,18 @@ describe('a video', () => {
     const { stage, media } = open([video('/v.mp4')]);
     const over = stage.querySelector<HTMLElement>('.drag-layer');
     expect(over?.getAttribute('aria-hidden')).toBe('true');
-    expect([over?.style.left, over?.style.top, over?.style.width, over?.style.height]).toEqual(['10px', '20px', '640px', '312px']);
+    // shyden-labs/shydesk#108: 56 px free along the top for Safari's pills, 80 px along the bottom for Chrome's button row.
+    expect([over?.style.left, over?.style.top, over?.style.width, over?.style.height]).toEqual(['10px', '76px', '640px', '224px']);
     expect(observers).toHaveLength(1);
     expect(observers[0]?.observed).toEqual([media()]);
     vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(30);
+    observers[0]?.callback();
+    expect(over?.style.height).toBe('0px');
+    // At the boundary: a 137 px picture leaves 1 px of layer, a 136 px one none.
+    vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(137);
+    observers[0]?.callback();
+    expect(over?.style.height).toBe('1px');
+    vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(136);
     observers[0]?.callback();
     expect(over?.style.height).toBe('0px');
   });

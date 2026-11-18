@@ -11,7 +11,8 @@ import { strict as assert } from 'node:assert';
 import { driver } from './harness/driver.ts';
 import { JOURNEY_WAIT as WAIT, named, textHolding } from './harness/find.ts';
 import { openPage } from './harness/open-page.ts';
-import { clickMiddleOf, pickFile, press, swipeLeft, tap, tapToNewPage, type, zoomIn } from './harness/input.ts';
+import { clickMiddleOf, pickFile, press, pressVideoControl, swipeLeft, tap, tapToNewPage, type, zoomIn } from './harness/input.ts';
+import { ownControlsPoints, type Box } from './harness/targets.ts';
 import { SEEDED_TICKET_TOKEN, SHYDESK_PORT } from './harness/local-shydesk.ts';
 import { playing, sizeKnown, untilVideo, watchVideo } from './harness/video.ts';
 
@@ -39,14 +40,45 @@ async function zoomedIn(): Promise<void> {
   );
 }
 
-/** Fails unless the point a few pixels above the bottom middle of the video named `label` is the video itself. */
-async function controlsBarUncovered(label: string): Promise<void> {
+/**
+ * Fails unless every point where a browser draws its own video controls over the video named `label`
+ * (its bottom bar, Chrome's button row, Safari's two top pills) is the video itself, not the drag layer.
+ */
+async function ownControlsUncovered(label: string): Promise<void> {
   const video = await named(label);
-  const top = await driver().execute<string>(
-    'const v = arguments[0]; const r = v.getBoundingClientRect(); const hit = v.getRootNode().elementFromPoint(r.x + r.width / 2, r.bottom - 8); return hit === v ? "video" : String(hit && hit.className);',
+  const box = await driver().execute<Box>(
+    'const r = arguments[0].getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height };',
     video,
   );
-  assert.equal(top, 'video', `the controls bar of "${label}" is covered by "${top}"`);
+  for (const { at, where } of ownControlsPoints(box)) {
+    const hit = await driver().execute<string>(
+      'const v = arguments[0]; const hit = v.getRootNode().elementFromPoint(arguments[1], arguments[2]); return hit === v ? "video" : String(hit && hit.className);',
+      video,
+      at.x,
+      at.y,
+    );
+    assert.equal(hit, 'video', `${where} of "${label}" at ${String(at.x)}, ${String(at.y)} is covered by "${hit}"`);
+  }
+}
+
+/** Waits until the drag layer lies over the middle of the video named `label`, where its press is made. */
+async function pictureTakesPress(label: string): Promise<void> {
+  const video = await named(label);
+  let hit = 'nothing read';
+  try {
+    await driver().waitUntil(
+      async () => {
+        hit = await driver().execute<string>(
+          'const v = arguments[0]; const r = v.getBoundingClientRect(); const hit = v.getRootNode().elementFromPoint(r.x + r.width / 2, r.y + r.height / 2); return String(hit && (hit.className || hit.tagName));',
+          video,
+        );
+        return hit === 'drag-layer';
+      },
+      { timeout: WAIT, timeoutMsg: `the middle of "${label}" never reached the drag layer` },
+    );
+  } catch (error) {
+    throw new Error(`the middle of "${label}" never reached the drag layer; it reached "${hit}"`, { cause: error });
+  }
 }
 
 /** Waits until the full-size picture named `label` has drawn. */
@@ -134,13 +166,10 @@ describe('the contact form', () => {
     await textHolding('Viewer status', 'Photo 3 of 3, zoom ');
     await press('ArrowRight');
     await textHolding('Viewer status', 'Video 1 of 3, zoom 100%, rotated 0°');
-    // shyden-labs/shydesk#108: a click on the video's picture plays it, and the browser's own controls bar,
-    // along the bottom of the picture, is left uncovered for the browser's play, pause and scrub.
+    // shyden-labs/shydesk#108: a click on the video's picture plays it, and the browser's own controls,
+    // along the bottom and the top of the picture, are left uncovered for the browser's pause and scrub.
     // What happens to the play is recorded, so a play Safari aborts names what aborted it (shyden-labs/shydesk#188).
     await watchVideo('Video 1 full size');
-    await clickMiddleOf('Video 1 full size');
-    // Playing means time has moved: paused turns false before any data loads (shyden-labs/shydesk#188).
-    await untilVideo('Video 1 full size', playing, 'the video never started playing');
     // shyden-labs/shydesk#88: the 2560×1440 video was stored at no more than 1920×1080, on every browser.
     // The size is read once the metadata has loaded, never before (shyden-labs/shydesk#188).
     const shown = await untilVideo('Video 1 full size', sizeKnown, 'the video never reported its size');
@@ -148,7 +177,22 @@ describe('the contact form', () => {
       shown.width === 1920 && shown.height === 1080,
       `the video was stored at ${String(shown.width)}×${String(shown.height)}, not 1920×1080`,
     );
-    await controlsBarUncovered('Video 1 full size');
+    // Until its size loads the video is drawn 150 px tall and the drag layer is too short to reach its
+    // middle (Safari, PR shyden-labs/shydesk#217's first run), so the press waits for the layer to be there.
+    await pictureTakesPress('Video 1 full size');
+    await clickMiddleOf('Video 1 full size');
+    // Playing means time has moved: paused turns false before any data loads (shyden-labs/shydesk#188).
+    await untilVideo('Video 1 full size', playing, 'the video never started playing');
+    await ownControlsUncovered('Video 1 full size');
+    // AC2: a real press on the browser's own pause pauses it, and one on its scrub bar moves it on.
+    await pressVideoControl('Video 1 full size', 'pause');
+    await untilVideo('Video 1 full size', (v) => v.paused, "the browser's own pause never paused the video");
+    await pressVideoControl('Video 1 full size', 'scrub');
+    await untilVideo(
+      'Video 1 full size',
+      (v) => v.paused && v.currentTime >= 3,
+      "the browser's own scrub bar never moved the 10 s video past 3 s",
+    );
     // A sideways drag across the video moves on, as across a photo, on every browser.
     await swipeLeft('Viewer stage');
     await textHolding('Viewer status', 'Photo 2 of 3, zoom 100%, rotated 0°');

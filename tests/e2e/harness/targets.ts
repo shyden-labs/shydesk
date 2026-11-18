@@ -220,6 +220,59 @@ export function pickerItem(phone: Phone, fixture: Fixture): string {
     : `${IOS_ITEM} label BEGINSWITH 'Video, ${SPOKEN[fixture]} seconds,'`;
 }
 
+/** A control of the browser's own video controls (shyden-labs/shydesk#108 AC2). */
+export type VideoControl = 'pause' | 'scrub';
+
+/**
+ * Where each desktop browser draws its own pause button and scrub bar, measured on CI: Chrome's
+ * button row is centred 48 px up with its pause 24 px in, Firefox's pause sits at its one bar's left
+ * end, 20 in and 20 up (run 43125326793). Safari draws no pause outside the picture, so its pause is
+ * the picture's own press, and its scrub bar runs 30 px up inside a floating bar centred under the
+ * picture (172 real presses, run 43460759813, recorded on shyden-labs/shydesk#108).
+ */
+const PAUSE_AT: Record<'chromium' | 'firefox', { inFromLeft: number; upFromBottom: number }> = {
+  chromium: { inFromLeft: 24, upFromBottom: 48 },
+  firefox: { inFromLeft: 20, upFromBottom: 20 },
+};
+const SCRUB_AT: Record<'chromium' | 'firefox' | 'safari', { across: number; upFromBottom: number }> = {
+  chromium: { across: 0.6, upFromBottom: 20 },
+  firefox: { across: 0.6, upFromBottom: 20 },
+  safari: { across: 0.5, upFromBottom: 30 },
+};
+
+/** Where to press the browser's own `control` on a video drawn at `box` on `target`, in viewport CSS px. */
+export function videoControlPoint(box: Box, control: VideoControl, target: Target): { x: number; y: number } {
+  if (target === 'android' || target === 'ios') {
+    throw new Error(`${target}: the video's own ${control} control is not yet measured on phones (shyden-labs/shydesk#176)`);
+  }
+  if (box.width <= 0 || box.height <= 0) throw new Error('the video is not drawn (it has no size)');
+  const bottom = box.y + box.height;
+  if (control === 'scrub') {
+    const scrub = SCRUB_AT[target];
+    return { x: Math.round(box.x + box.width * scrub.across), y: Math.round(bottom - scrub.upFromBottom) };
+  }
+  if (target === 'safari') return { x: Math.round(box.x + box.width / 2), y: Math.round(box.y + box.height / 2) };
+  const pause = PAUSE_AT[target];
+  return { x: Math.round(box.x + pause.inFromLeft), y: Math.round(bottom - pause.upFromBottom) };
+}
+
+/**
+ * The points over a video drawn at `box` where a browser draws its own controls, which the viewer's
+ * drag layer leaves free (shyden-labs/shydesk#108): the bottom bar, Chrome's button row (its top is
+ * 72 px up), and Safari's two pills, 28 px below the picture's top at each end.
+ */
+export function ownControlsPoints(box: Box): { at: { x: number; y: number }; where: string }[] {
+  const bottom = box.y + box.height;
+  const left = Math.round(box.x + 24);
+  return [
+    { at: { x: Math.round(box.x + box.width / 2), y: Math.round(bottom - 8) }, where: 'the bottom bar' },
+    { at: { x: left, y: Math.round(bottom - 48) }, where: "Chrome's button row" },
+    { at: { x: left, y: Math.round(bottom - 70) }, where: "the top of Chrome's button row" },
+    { at: { x: left, y: Math.round(box.y + 28) }, where: "Safari's top-left pill" },
+    { at: { x: Math.round(box.x + box.width - 24), y: Math.round(box.y + 28) }, where: "Safari's top-right pill" },
+  ];
+}
+
 /**
  * The viewport point, in CSS pixels, at the middle of a page element's box.
  * A desktop click goes there as a real mouse press: Safari's Element Click
