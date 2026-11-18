@@ -88,14 +88,10 @@ describe('problems', () => {
 });
 
 describe('the exceptions file', () => {
-  it('excepts only GHSA-fc5q-39xc-vjpf in picomatch, and has not expired', async () => {
+  it('excepts nothing, since GitHub withdrew picomatch’s GHSA-fc5q-39xc-vjpf (shyden-labs/shydesk#221)', async () => {
     const { readFileSync: realRead } = await vi.importActual<typeof import('node:fs')>('node:fs');
     const file = JSON.parse(realRead(new URL('../../audit-exceptions.json', import.meta.url), 'utf8')) as { exceptions: AuditException[] };
-    expect(file.exceptions.map((e) => [e.advisory, e.package, e.expires, e.ticket])).toEqual([
-      [PICOMATCH, 'picomatch', '2026-12-01', 'shyden-labs/shydesk#203'],
-    ]);
-    const today = new Date().toISOString().slice(0, 10);
-    for (const e of file.exceptions) expect(today < e.expires, `${e.advisory} expired on ${e.expires}`).toBe(true);
+    expect(file.exceptions).toEqual([]);
   });
 });
 
