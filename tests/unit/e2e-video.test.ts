@@ -15,6 +15,8 @@ const state = (over: Partial<VideoState> = {}): VideoState => ({
   height: 1080,
   error: null,
   playRefused: null,
+  events: [],
+  connected: true,
   ...over,
 });
 
@@ -53,13 +55,13 @@ describe('playing', () => {
 describe('videoStateNote', () => {
   it('names every part of the state, with the browser meaning of each number', () => {
     expect(videoStateNote('Video 1 full size', state({ readyState: 1, networkState: 2, currentTime: 0, width: 0, height: 0 }))).toBe(
-      '"Video 1 full size": readyState 1 (metadata), networkState 2 (loading), playing asked, time 0.00 s, size 0×0, error none, play refused none',
+      '"Video 1 full size": readyState 1 (metadata), networkState 2 (loading), playing asked, time 0.00 s, size 0×0, error none, play refused none, events none',
     );
   });
 
   it('names a media error by its code', () => {
     expect(videoStateNote('v', state({ readyState: 0, networkState: 3, paused: true, error: 4 }))).toBe(
-      '"v": readyState 0 (nothing), networkState 3 (no source), paused, time 0.50 s, size 1920×1080, error 4 (source not supported), play refused none',
+      '"v": readyState 0 (nothing), networkState 3 (no source), paused, time 0.50 s, size 1920×1080, error 4 (source not supported), play refused none, events none',
     );
   });
 
@@ -70,7 +72,17 @@ describe('videoStateNote', () => {
         state({ readyState: 1, paused: true, currentTime: 0, playRefused: 'NotAllowedError: The request is not allowed' }),
       ),
     ).toBe(
-      '"v": readyState 1 (metadata), networkState 1 (idle), paused, time 0.00 s, size 1920×1080, error none, play refused NotAllowedError: The request is not allowed',
+      '"v": readyState 1 (metadata), networkState 1 (idle), paused, time 0.00 s, size 1920×1080, error none, play refused NotAllowedError: The request is not allowed, events none',
     );
+  });
+
+  it('lists the media events seen since the watch began, in order, with their times', () => {
+    expect(videoStateNote('v', state({ events: ['loadstart@10', 'loadedmetadata@42', 'play@900', 'pause@903'] }))).toMatch(
+      /, events loadstart@10 loadedmetadata@42 play@900 pause@903$/,
+    );
+  });
+
+  it('says when the element is no longer on the page', () => {
+    expect(videoStateNote('v', state({ connected: false }))).toMatch(/, events none, removed from the page$/);
   });
 });
