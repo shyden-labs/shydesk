@@ -1,5 +1,7 @@
 import type { D1Database } from '@cloudflare/workers-types';
 import type { Role } from './auth/staff.ts';
+import { base64url } from './base64url.ts';
+import { isEmailAddress } from './email-address.ts';
 
 /**
  * Products and their settings, kept by admins on screen so self-hosters
@@ -24,10 +26,9 @@ export interface ProductInput {
 }
 
 const PRODUCT_ID = /^[a-z0-9-]{2,40}$/;
-const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const HOST = /^[a-z0-9.-]+$/;
-const ROLES: readonly string[] = ['admin', 'rep'];
-const FIELD_KINDS: readonly string[] = ['text', 'select'];
+const ROLES: ReadonlySet<string> = new Set(['admin', 'rep']);
+const FIELD_KINDS: ReadonlySet<string> = new Set(['text', 'select']);
 
 /** True when `id` is a valid product id. */
 export const isProductId = (id: string): boolean => PRODUCT_ID.test(id);
@@ -53,7 +54,7 @@ export function validateProduct(p: ProductInput): string[] {
   const errors: string[] = [];
   if (!isProductId(p.id)) errors.push('Product id must be 2 to 40 lowercase letters, digits or hyphens.');
   if (!p.name.trim()) errors.push('Name is required.');
-  if (!EMAIL.test(p.senderAddress)) errors.push('Sender address must be an email address ending in a domain.');
+  if (!isEmailAddress(p.senderAddress)) errors.push('Sender address must be an email address ending in a domain.');
   const page = parse(p.ticketPageUrl);
   const pageOk = page !== null && page.protocol === 'https:' && !p.ticketPageUrl.includes('#');
   if (!pageOk) errors.push('Ticket page URL must be an https address with no #fragment.');
@@ -186,9 +187,9 @@ export interface StaffInput {
 export async function saveStaff(db: D1Database, s: StaffInput, now = Date.now()): Promise<void> {
   const email = s.email.trim().toLowerCase();
   const errors: string[] = [];
-  if (!EMAIL.test(email)) errors.push('Email must be an email address ending in a domain.');
+  if (!isEmailAddress(email)) errors.push('Email must be an email address ending in a domain.');
   // Form input arrives untyped, so the role is checked at run time too.
-  if (!ROLES.includes(s.role)) errors.push('Role must be admin or rep.');
+  if (!ROLES.has(s.role)) errors.push('Role must be admin or rep.');
   const grants = s.role === 'rep' ? [...new Set(s.products)] : [];
   errors.push(...(await missingProducts(db, grants)));
   refuseIfAny(errors);
@@ -240,7 +241,7 @@ export const supportTypeId = (productId: string): string => `${productId}:suppor
 function fieldErrors(fields: SupportField[]): string[] {
   return fields.flatMap((f, i) => {
     if (!f.label.trim()) return [`Field ${i + 1} needs a label.`];
-    if (!FIELD_KINDS.includes(f.kind)) return [`Field "${f.label}" must be text or a choice list.`];
+    if (!FIELD_KINDS.has(f.kind)) return [`Field "${f.label}" must be text or a choice list.`];
     if (f.kind === 'select' && !f.options?.length) return [`Field "${f.label}" is a choice list and needs at least one option.`];
     return [];
   });
@@ -315,12 +316,6 @@ export async function hashKey(key: string): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(key));
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
-
-const base64url = (bytes: Uint8Array): string =>
-  btoa(String.fromCharCode(...bytes))
-    .replaceAll('+', '-')
-    .replaceAll('/', '_')
-    .replace(/=+$/, '');
 
 /** Makes a product API key: 32 random bytes, base64url. Returned once; only its hash is stored. */
 export async function createApiKey(db: D1Database, productId: string, label: string, now = Date.now()): Promise<string> {

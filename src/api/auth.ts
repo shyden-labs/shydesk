@@ -25,7 +25,7 @@ export function requireProductKey(): MiddlewareHandler<ApiEnv> {
           .bind(await hashKey(key))
           .first<{ product_id: string; revoked_at: number | null }>()
       : null;
-    if (!row || row.revoked_at !== null) {
+    if (row?.revoked_at !== null) {
       c.header('WWW-Authenticate', 'Bearer');
       return c.json({ error: 'A valid API key is required.' }, 401);
     }

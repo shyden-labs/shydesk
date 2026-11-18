@@ -67,7 +67,7 @@ function standInVideo() {
   /** Waits for the element, gives it the values a decoder would, then fires `event`. */
   const fire = async (event: string, values: Record<string, number> = {}) => {
     await vi.waitFor(() => {
-      expect(made.length).toBe(1);
+      expect(made).toHaveLength(1);
     });
     const video = made.first;
     for (const [name, value] of Object.entries(values)) Object.defineProperty(video, name, { value });

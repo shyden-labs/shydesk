@@ -13,7 +13,7 @@ import { JOURNEY_WAIT as WAIT, named, textHolding } from './harness/find.ts';
 import { openPage } from './harness/open-page.ts';
 import { clickMiddleOf, pickFile, press, swipeLeft, tap, tapToNewPage, type, zoomIn } from './harness/input.ts';
 import { SEEDED_TICKET_TOKEN, SHYDESK_PORT } from './harness/local-shydesk.ts';
-import { playing, sizeKnown, untilVideo } from './harness/video.ts';
+import { playing, sizeKnown, untilVideo, watchVideo } from './harness/video.ts';
 
 /** Waits until the page, shadow roots included, holds no media viewer: it closed. */
 async function viewerClosed(): Promise<void> {
@@ -136,6 +136,8 @@ describe('the contact form', () => {
     await textHolding('Viewer status', 'Video 1 of 3, zoom 100%, rotated 0°');
     // shyden-labs/shydesk#108: a click on the video's picture plays it, and the browser's own controls bar,
     // along the bottom of the picture, is left uncovered for the browser's play, pause and scrub.
+    // What happens to the play is recorded, so a play Safari aborts names what aborted it (shyden-labs/shydesk#188).
+    await watchVideo('Video 1 full size');
     await clickMiddleOf('Video 1 full size');
     // Playing means time has moved: paused turns false before any data loads (shyden-labs/shydesk#188).
     await untilVideo('Video 1 full size', playing, 'the video never started playing');

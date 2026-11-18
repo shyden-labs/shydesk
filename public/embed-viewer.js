@@ -100,7 +100,9 @@ const LINE_PX = 16;
  * @param {number} pageHeight the stage's height, which a page of travel is
  */
 export function wheelFactor(deltaY, deltaMode, pageHeight) {
-  const px = deltaY * (deltaMode === 1 ? LINE_PX : deltaMode === 2 ? pageHeight : 1);
+  /** @type {Record<number, number>} */
+  const unitPx = { 1: LINE_PX, 2: pageHeight };
+  const px = deltaY * (unitPx[deltaMode] ?? 1);
   return NOTCH_ZOOM ** (-px / NOTCH_PX);
 }
 

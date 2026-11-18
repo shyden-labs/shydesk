@@ -1,6 +1,7 @@
 import type { D1Database, D1PreparedStatement } from '@cloudflare/workers-types';
 import { sealToken } from './seal.ts';
 import { hashKey } from '../products.ts';
+import { base64url } from '../base64url.ts';
 
 /**
  * A new ticket from the contact form (shyden-labs/shydesk#19). The customer's
@@ -27,12 +28,6 @@ export interface NewTicket {
 export class AttachmentError extends Error {
   override name = 'AttachmentError';
 }
-
-const base64url = (bytes: Uint8Array): string =>
-  btoa(String.fromCharCode(...bytes))
-    .replaceAll('+', '-')
-    .replaceAll('/', '_')
-    .replace(/=+$/, '');
 
 export const newToken = (): string => base64url(crypto.getRandomValues(new Uint8Array(32)));
 

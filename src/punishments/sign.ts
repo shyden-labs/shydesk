@@ -19,14 +19,15 @@ async function hmacHex(secret: string, message: string): Promise<string> {
 
 /** The `ShyDesk-Signature` header for this timestamp and body. */
 export async function sign(secret: string, timestamp: number, rawBody: string): Promise<string> {
-  return `v1=${await hmacHex(secret, `${String(timestamp)}.${rawBody}`)}`;
+  const signed = `${String(timestamp)}.${rawBody}`;
+  return `v1=${await hmacHex(secret, signed)}`;
 }
 
 /** Compares two strings in time that depends only on their length. */
 function sameText(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
   let difference = 0;
-  for (let i = 0; i < a.length; i += 1) difference |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  for (let i = 0; i < a.length; i += 1) difference |= Number(a.codePointAt(i)) ^ Number(b.codePointAt(i));
   return difference === 0;
 }
 

@@ -319,12 +319,15 @@ export const productPage = (d: ProductPageData): Page => {
   );
 };
 
+/** A rep's granted products after their role; nothing for an admin, who sees every product. */
+const grantsOf = (s: StaffInput): Page | '' => (s.role === 'rep' ? html`, ${s.products.join(', ') || 'no products'}` : '');
+
 /** Staff and their product grants, with the add-or-change form. */
 export const staffPage = (staff: StaffInput[], products: Product[], errors: string[] = []): Page =>
   layout(
     'Staff',
     html`<ul>
-        ${staff.map((s) => html`<li>${s.email}: ${s.role}${s.role === 'rep' ? html`, ${s.products.join(', ') || 'no products'}` : ''}</li>`)}
+        ${staff.map((s) => html`<li>${s.email}: ${s.role}${grantsOf(s)}</li>`)}
       </ul>
       <h2>Add or change staff</h2>
       ${errorList(errors)}

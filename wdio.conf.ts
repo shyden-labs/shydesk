@@ -240,7 +240,8 @@ async function startShydesk(): Promise<void> {
       () => false,
     );
     if (up) return;
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    // Polling for the server to come up (shyden-labs/shydesk#185).
+    await new Promise((resolve) => setTimeout(resolve, 500)); // NOSONAR
   }
   shydesk.kill();
   throw new Error(

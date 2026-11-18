@@ -39,12 +39,13 @@ export class TicketTimer extends DurableObject<TicketTimerEnv> {
     const ticketId = await this.storage.get<string>('ticket');
     if (ticketId === undefined) return;
     const now = Date.now();
+    // In order on purpose: each timer is cleared before it runs, and one failing does not stop the next (shyden-labs/shydesk#185).
     for (const kind of KINDS) {
-      const at = await this.storage.get<number>(due(kind));
+      const at = await this.storage.get<number>(due(kind)); // NOSONAR
       if (at === undefined || at > now) continue;
-      await this.storage.delete(due(kind));
+      await this.storage.delete(due(kind)); // NOSONAR
       try {
-        await this.run(kind, ticketId, now);
+        await this.run(kind, ticketId, now); // NOSONAR
       } catch (error) {
         console.error(`ticket ${ticketId}: ${kind} timer failed: ${(error as Error).message}`);
       }
@@ -67,8 +68,9 @@ export class TicketTimer extends DurableObject<TicketTimerEnv> {
   }
 
   private async write(plan: TimerPlan): Promise<void> {
-    for (const kind of plan.cancel) await this.storage.delete(due(kind));
-    for (const [kind, at] of Object.entries(plan.schedule)) await this.storage.put(due(kind as Kind), at);
+    // Cancels land before the new times, in plan order (shyden-labs/shydesk#185).
+    for (const kind of plan.cancel) await this.storage.delete(due(kind)); // NOSONAR
+    for (const [kind, at] of Object.entries(plan.schedule)) await this.storage.put(due(kind as Kind), at); // NOSONAR
     await this.arm();
   }
 
