@@ -29,8 +29,8 @@ export async function togglePlay(video) {
   delete video.dataset.playRefused;
   try {
     await video.play();
-  } catch (refusal) {
-    video.dataset.playRefused = String(refusal); // an Error reads "Name: message"
+  } catch (error_) {
+    video.dataset.playRefused = String(error_); // an Error reads "Name: message"
   }
 }
 
