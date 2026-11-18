@@ -23,6 +23,7 @@ const NEVER_DEPLOYED_FILES = [
   'NOTICE',
   'package.json',
   'package-lock.json',
+  'audit-exceptions.json',
   'tsconfig.json',
   'eslint.config.js',
   'vitest.unit.config.ts',
