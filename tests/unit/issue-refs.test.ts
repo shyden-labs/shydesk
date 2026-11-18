@@ -37,11 +37,9 @@ describe('issue references in comments and docs', () => {
     expect(FILES).toEqual(expect.arrayContaining(['.githooks/pre-push', '.github/workflows/ci.yml', 'README.md']));
   });
 
-  it('cite owner/repo#N in full, never a bare #N', () => {
-    const bare = FILES.filter((file) => {
-      const text = readFileSync(file, 'utf8');
-      return count(text) > count(withoutComments(file, text));
-    });
-    expect(bare).toEqual([]);
+  // One test per file (shyden-labs/shydesk#211): a single test reading them all grew with the repository.
+  it.each(FILES)('%s cites owner/repo#N in full, never a bare #N', (file) => {
+    const text = readFileSync(file, 'utf8');
+    expect(count(text) - count(withoutComments(file, text)), `${file} has a bare #N in a comment or doc`).toBe(0);
   });
 });
