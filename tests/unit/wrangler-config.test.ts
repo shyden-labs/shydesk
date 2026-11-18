@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
+import * as entry from '../../src/index.ts';
+import { TicketTimer } from '../../src/timers/ticket-timer.ts';
 
 // The Worker's static assets hold the API docs (shyden-labs/shydesk#26). They
 // are built before every deploy and dry run, and every request reaches the
@@ -62,9 +64,9 @@ describe('the ticket timer in wrangler.jsonc', () => {
     expect(config.env.dev.migrations).toBeUndefined();
   });
 
-  it('is exported from the Worker entry point', async () => {
-    const entry = await import('../../src/index.ts');
-    const { TicketTimer } = await import('../../src/timers/ticket-timer.ts');
+  // The Worker loads with the file, not inside this test, so its transform time does not
+  // count against the test's 1 s (shyden-labs/shydesk#200).
+  it('is exported from the Worker entry point', () => {
     expect(entry.TicketTimer).toBe(TicketTimer);
   });
 
