@@ -6,8 +6,8 @@
  * Runs `npm audit --json` and fails naming every advisory (low severity and
  * up, as `--audit-level=low` did) unless `audit-exceptions.json` excepts that
  * advisory in that package and the exception has not expired. An exception is
- * Shyden's ruling only (2026-11-18: GHSA-fc5q-39xc-vjpf in picomatch, which has
- * no patched version, until 2026-12-01). npm failing to run or to print a
+ * Shyden's ruling only (2026-11-18: GHSA-fc5q-39xc-vjpf in picomatch, until
+ * GitHub withdrew it; dropped in shyden-labs/shydesk#221). npm failing to run or to print a
  * report fails closed, naming why.
  */
 import { spawnSync } from 'node:child_process';
