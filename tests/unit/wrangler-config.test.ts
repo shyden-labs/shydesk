@@ -18,6 +18,7 @@ const config = JSON.parse(
   build?: unknown;
   durable_objects?: unknown;
   migrations?: unknown;
+  observability?: unknown;
   vars?: Record<string, string>;
   routes?: unknown;
   workers_dev?: unknown;
@@ -27,6 +28,7 @@ const config = JSON.parse(
       build?: unknown;
       durable_objects?: unknown;
       migrations?: unknown;
+      observability?: unknown;
       routes?: unknown;
       vars?: Record<string, string>;
     };
@@ -40,6 +42,13 @@ describe('wrangler.jsonc', () => {
 
   it('builds the docs before every deploy', () => {
     expect(config.build).toEqual({ command: 'node scripts/build-api-docs.ts' });
+  });
+
+  // shyden-labs/shydesk#218: Workers Logs stay on through every deploy. Wrangler
+  // treats `observability` as inheritable, so dev takes live's block unchanged.
+  it('keeps Workers Logs on for live and, by inheriting, for dev', () => {
+    expect(config.observability).toEqual({ enabled: true });
+    expect(config.env.dev.observability).toBeUndefined();
   });
 
   it('lets dev inherit both, so dev and live serve the same docs the same way', () => {

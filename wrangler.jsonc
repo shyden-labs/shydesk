@@ -8,6 +8,8 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-10-20",
   "workers_dev": false,
+  // shyden-labs/shydesk#218: Workers Logs on; `--env dev` inherits it.
+  "observability": { "enabled": true },
   // shyden-labs/shydesk#13: live is served on its own domain only.
   "routes": [{ "pattern": "shydesk.dpdns.org", "custom_domain": true }],
   // Public values only; TURNSTILE_SECRET, SMTP_LOGINS and TICKET_TOKEN_KEY are Worker secrets.
