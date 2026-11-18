@@ -15,7 +15,30 @@ export interface VideoState {
   height: number;
   /** The MediaError code, or null when there is none. */
   error: number | null;
+  /** Why the viewer's last play was refused (`data-play-refused`), or null when none was. */
+  playRefused: string | null;
+  /** Each media event since `watchVideo`, as `type@ms` (page time), in order: what aborted a play. */
+  events: string[];
+  /** Whether the element is still on the page; a play is aborted when it is removed. */
+  connected: boolean;
 }
+
+/** The media events that show what happened to a play: a pause, a load starting over, an abort. */
+const WATCHED = [
+  'loadstart',
+  'emptied',
+  'abort',
+  'loadedmetadata',
+  'loadeddata',
+  'canplay',
+  'play',
+  'playing',
+  'pause',
+  'waiting',
+  'stalled',
+  'suspend',
+  'error',
+];
 
 const READY = ['nothing', 'metadata', 'current data', 'future data', 'enough data'];
 const NETWORK = ['empty', 'idle', 'loading', 'no source'];
@@ -37,14 +60,29 @@ export function videoStateNote(label: string, s: VideoState): string {
     `time ${s.currentTime.toFixed(2)} s`,
     `size ${String(s.width)}×${String(s.height)}`,
     `error ${error}`,
+    `play refused ${s.playRefused ?? 'none'}`,
+    `events ${s.events.length > 0 ? s.events.join(' ') : 'none'}`,
+    ...(s.connected ? [] : ['removed from the page']),
   ].join(', ');
 }
 
 /** Reads the state of the video named `label` from the page. */
 export async function videoState(label: string): Promise<VideoState> {
   return driver().execute<VideoState>(
-    'const v = arguments[0]; return { readyState: v.readyState, networkState: v.networkState, paused: v.paused, currentTime: v.currentTime, width: v.videoWidth, height: v.videoHeight, error: v.error ? v.error.code : null };',
+    'const v = arguments[0]; return { readyState: v.readyState, networkState: v.networkState, paused: v.paused, currentTime: v.currentTime, width: v.videoWidth, height: v.videoHeight, error: v.error ? v.error.code : null, playRefused: v.dataset.playRefused ?? null, events: v.shydeskEvents ?? [], connected: v.isConnected };',
     await named(label),
+  );
+}
+
+/**
+ * Starts recording the media events of the video named `label` (shyden-labs/shydesk#188), so a play
+ * that never starts says whether a pause, a fresh load or the element's removal aborted it.
+ */
+export async function watchVideo(label: string): Promise<void> {
+  await driver().execute(
+    'const v = arguments[0]; v.shydeskEvents = []; for (const type of arguments[1]) v.addEventListener(type, () => v.shydeskEvents.push(type + "@" + String(Math.round(performance.now()))));',
+    await named(label),
+    WATCHED,
   );
 }
 

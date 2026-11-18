@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { Hono } from 'hono';
-import { SignJWT, createLocalJWKSet, exportJWK, generateKeyPair, type JWTVerifyGetKey } from 'jose';
+import { SignJWT, createLocalJWKSet, type JWTVerifyGetKey } from 'jose';
+import { PUBLIC_JWK, signingKey } from '../fixtures/access-keys.ts';
 import type { D1Database } from '@cloudflare/workers-types';
 import { loadStaff, requireStaff, scope, type Staff, type StaffEnv } from '../../src/auth/staff.ts';
 
@@ -168,15 +169,15 @@ describe('requireStaff', () => {
   let sign: (email: string) => Promise<string>;
 
   beforeAll(async () => {
-    const pair = await generateKeyPair('RS256');
-    jwks = createLocalJWKSet({ keys: [{ ...(await exportJWK(pair.publicKey)), kid: 'k1', alg: 'RS256' }] });
+    const privateKey = await signingKey();
+    jwks = createLocalJWKSet({ keys: [{ ...PUBLIC_JWK, kid: 'k1', alg: 'RS256' }] });
     sign = (email) =>
       new SignJWT({ email })
         .setProtectedHeader({ alg: 'RS256', kid: 'k1' })
         .setAudience(AUD)
         .setIssuer(`https://${TEAM}`)
         .setExpirationTime('5m')
-        .sign(pair.privateKey);
+        .sign(privateKey);
   });
 
   function desk() {

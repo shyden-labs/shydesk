@@ -1,30 +1,30 @@
 import { describe, it, expect, beforeAll, afterEach, vi } from 'vitest';
-import { SignJWT, createLocalJWKSet, exportJWK, generateKeyPair, type JWK, type JWTVerifyGetKey } from 'jose';
+import { SignJWT, createLocalJWKSet, type JWK, type JWTVerifyGetKey } from 'jose';
+import { PUBLIC_JWK, otherSigningKey, signingKey } from '../fixtures/access-keys.ts';
 import { AuthError, verifyAccess, type AccessEnv } from '../../src/auth/access.ts';
 
 /**
  * Staff sign-in through Cloudflare Access (shyden-labs/shydesk#16): the Worker
  * verifies the Access JWT itself and never trusts a header alone. Tokens are
- * signed by a key made here; the key set is a local stand-in, and the one test
- * of the default key set stands in `fetch`, so no connection is opened.
+ * signed by a fixed test key (tests/fixtures/access-keys.ts); the key set is a
+ * local stand-in, and the one test of the default key set stands in `fetch`, so
+ * no connection is opened.
  */
 
 const TEAM = 'shydesk-test.cloudflareaccess.com';
 const AUD = 'aud-tag-for-the-desk';
 const env: AccessEnv = { ACCESS_TEAM_DOMAIN: TEAM, ACCESS_AUD: AUD };
 
-type Key = Awaited<ReturnType<typeof generateKeyPair>>['privateKey'];
+type Key = Awaited<ReturnType<typeof signingKey>>;
 let signer: Key;
 let otherSigner: Key;
 let publicJwk: JWK;
 let jwks: JWTVerifyGetKey;
 
 beforeAll(async () => {
-  const pair = await generateKeyPair('RS256');
-  const other = await generateKeyPair('RS256');
-  signer = pair.privateKey;
-  otherSigner = other.privateKey;
-  publicJwk = { ...(await exportJWK(pair.publicKey)), kid: 'k1', alg: 'RS256', use: 'sig' };
+  signer = await signingKey();
+  otherSigner = await otherSigningKey();
+  publicJwk = { ...PUBLIC_JWK, kid: 'k1', alg: 'RS256', use: 'sig' };
   jwks = createLocalJWKSet({ keys: [publicJwk] });
 });
 

@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import { SignJWT, createLocalJWKSet, exportJWK, generateKeyPair, type JWTVerifyGetKey } from 'jose';
+import { SignJWT, createLocalJWKSet, type JWTVerifyGetKey } from 'jose';
+import { PUBLIC_JWK, signingKey } from '../fixtures/access-keys.ts';
 import { deskRoutes, type DeskBindings } from '../../src/desk/routes.ts';
 import { fillCanned } from '../../src/desk/queries.ts';
 import type { SmtpLogin, SmtpMail } from '../../src/mail/smtp.ts';
@@ -20,15 +21,15 @@ let jwks: JWTVerifyGetKey;
 let sign: (email: string) => Promise<string>;
 
 beforeAll(async () => {
-  const pair = await generateKeyPair('RS256');
-  jwks = createLocalJWKSet({ keys: [{ ...(await exportJWK(pair.publicKey)), kid: 'k1', alg: 'RS256' }] });
+  const privateKey = await signingKey();
+  jwks = createLocalJWKSet({ keys: [{ ...PUBLIC_JWK, kid: 'k1', alg: 'RS256' }] });
   sign = (email) =>
     new SignJWT({ email })
       .setProtectedHeader({ alg: 'RS256', kid: 'k1' })
       .setAudience(AUD)
       .setIssuer(`https://${TEAM}`)
       .setExpirationTime('5m')
-      .sign(pair.privateKey);
+      .sign(privateKey);
 });
 
 const productRow = (id: string) => ({
