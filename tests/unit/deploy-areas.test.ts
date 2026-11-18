@@ -24,6 +24,7 @@ describe('undeployedPaths', () => {
         'README.md',
         'package.json',
         'package-lock.json',
+        'audit-exceptions.json',
         'tsconfig.json',
         'eslint.config.js',
         'vitest.unit.config.ts',
