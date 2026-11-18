@@ -61,6 +61,26 @@ async function ownControlsUncovered(label: string): Promise<void> {
   }
 }
 
+/** Waits until the drag layer lies over the middle of the video named `label`, where its press is made. */
+async function pictureTakesPress(label: string): Promise<void> {
+  const video = await named(label);
+  let hit = 'nothing read';
+  try {
+    await driver().waitUntil(
+      async () => {
+        hit = await driver().execute<string>(
+          'const v = arguments[0]; const r = v.getBoundingClientRect(); const hit = v.getRootNode().elementFromPoint(r.x + r.width / 2, r.y + r.height / 2); return String(hit && (hit.className || hit.tagName));',
+          video,
+        );
+        return hit === 'drag-layer';
+      },
+      { timeout: WAIT, timeoutMsg: `the middle of "${label}" never reached the drag layer` },
+    );
+  } catch (error) {
+    throw new Error(`the middle of "${label}" never reached the drag layer; it reached "${hit}"`, { cause: error });
+  }
+}
+
 /** Waits until the full-size picture named `label` has drawn. */
 async function pictureDrew(label: string): Promise<void> {
   const picture = await named(label);
@@ -150,9 +170,6 @@ describe('the contact form', () => {
     // along the bottom and the top of the picture, are left uncovered for the browser's pause and scrub.
     // What happens to the play is recorded, so a play Safari aborts names what aborted it (shyden-labs/shydesk#188).
     await watchVideo('Video 1 full size');
-    await clickMiddleOf('Video 1 full size');
-    // Playing means time has moved: paused turns false before any data loads (shyden-labs/shydesk#188).
-    await untilVideo('Video 1 full size', playing, 'the video never started playing');
     // shyden-labs/shydesk#88: the 2560×1440 video was stored at no more than 1920×1080, on every browser.
     // The size is read once the metadata has loaded, never before (shyden-labs/shydesk#188).
     const shown = await untilVideo('Video 1 full size', sizeKnown, 'the video never reported its size');
@@ -160,6 +177,12 @@ describe('the contact form', () => {
       shown.width === 1920 && shown.height === 1080,
       `the video was stored at ${String(shown.width)}×${String(shown.height)}, not 1920×1080`,
     );
+    // Until its size loads the video is drawn 150 px tall and the drag layer is too short to reach its
+    // middle (Safari, PR shyden-labs/shydesk#217's first run), so the press waits for the layer to be there.
+    await pictureTakesPress('Video 1 full size');
+    await clickMiddleOf('Video 1 full size');
+    // Playing means time has moved: paused turns false before any data loads (shyden-labs/shydesk#188).
+    await untilVideo('Video 1 full size', playing, 'the video never started playing');
     await ownControlsUncovered('Video 1 full size');
     // AC2: a real press on the browser's own pause pauses it, and one on its scrub bar moves it on.
     await pressVideoControl('Video 1 full size', 'pause');
