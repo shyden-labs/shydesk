@@ -29,11 +29,18 @@ export type NoticeResult = 'sent' | 'share-used-up' | 'failed';
 const COUNT_SEND =
   'INSERT INTO counters (key, value) VALUES (?, 1) ON CONFLICT(key) DO UPDATE SET value = value + 1 WHERE value < ? RETURNING value';
 
+/** Gives a failed send's place back, so the share counts only mail that was sent (shyden-labs/shydesk#223). */
+const GIVE_BACK = 'UPDATE counters SET value = value - 1 WHERE key = ? AND value > 0';
+
+/** The product's share counter for the month of `now`. */
+function shareKey(product: Product, now: Date): string {
+  return `mail:${product.id}:${now.toISOString().slice(0, 7)}`;
+}
+
 /** True when this send fits in the product's share for the month of `now`, counting it; false once the share is used. */
 async function countSend(db: D1Database, product: Product, now: Date): Promise<boolean> {
   if (product.monthlyEmailShare < 1) return false;
-  const key = `mail:${product.id}:${now.toISOString().slice(0, 7)}`;
-  return (await db.prepare(COUNT_SEND).bind(key, product.monthlyEmailShare).first()) !== null;
+  return (await db.prepare(COUNT_SEND).bind(shareKey(product, now), product.monthlyEmailShare).first()) !== null;
 }
 
 /** The sender's login from SMTP_LOGINS; throws naming what is missing or malformed. */
@@ -75,6 +82,7 @@ export async function sendNoReply(
     return 'sent';
   } catch (error) {
     console.error(`mail for ${product.id} failed: ${(error as Error).message}`);
+    await env.DB.prepare(GIVE_BACK).bind(shareKey(product, now)).run();
     return 'failed';
   }
 }
