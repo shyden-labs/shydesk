@@ -7,7 +7,8 @@ import { standInDb } from './d1-stand-in.ts';
 /**
  * The no-reply notice (shyden-labs/shydesk#18 AC2 to AC4). The copy is fixed
  * and never carries reply text, the product's monthly share is counted before
- * anything is delivered, and every failure is returned as `failed`, once.
+ * anything is delivered, and every failure is returned as `failed`, once, giving
+ * its place in the share back (shyden-labs/shydesk#223).
  */
 
 const LINK = 'https://shytalk.app/support#ticket=abc';
@@ -33,6 +34,13 @@ function world(opts: { shareLeft: boolean; logins?: string | undefined }) {
   const deliver = vi.fn<Deliver>(() => Promise.resolve());
   return { env, statements, deliver };
 }
+
+const COUNT = {
+  sql: 'INSERT INTO counters (key, value) VALUES (?, 1) ON CONFLICT(key) DO UPDATE SET value = value + 1 WHERE value < ? RETURNING value',
+  values: ['mail:shytalk:2026-11', 500],
+};
+/** A failed send gives its place back, so only sent mail uses the share (shyden-labs/shydesk#223). */
+const GIVE_BACK = { sql: 'UPDATE counters SET value = value - 1 WHERE key = ? AND value > 0', values: ['mail:shytalk:2026-11'] };
 
 const logged = () => vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
@@ -65,12 +73,7 @@ describe('the monthly share', () => {
   it("is counted in one capped statement on this product's month", async () => {
     const { env, statements, deliver } = world({ shareLeft: true });
     await sendNoReply(env, shytalk(), 'pat@example.com', LINK, deliver, NOW);
-    expect(statements.map(({ sql, values }) => ({ sql, values }))).toEqual([
-      {
-        sql: 'INSERT INTO counters (key, value) VALUES (?, 1) ON CONFLICT(key) DO UPDATE SET value = value + 1 WHERE value < ? RETURNING value',
-        values: ['mail:shytalk:2026-11', 500],
-      },
-    ]);
+    expect(statements.map(({ sql, values }) => ({ sql, values }))).toEqual([COUNT]);
   });
 
   it('once used up, returns share-used-up and delivers nothing', async () => {
@@ -94,10 +97,11 @@ describe('a failure', () => {
     ['the sender has no login', '{}', 'mail for shytalk failed: no SMTP login for no-reply@shytalk.app'],
   ])('when %s returns failed, names it, and delivers nothing', async (_case, logins, message) => {
     const error = logged();
-    const { env, deliver } = world({ shareLeft: true, logins });
+    const { env, statements, deliver } = world({ shareLeft: true, logins });
     await expect(sendNoReply(env, shytalk(), 'pat@example.com', LINK, deliver, NOW)).resolves.toBe('failed');
     expect(deliver).not.toHaveBeenCalled();
     expect(error.mock.calls).toEqual([[message]]);
+    expect(statements.map(({ sql, values }) => ({ sql, values }))).toEqual([COUNT, GIVE_BACK]);
   });
 
   it.each([
@@ -105,10 +109,11 @@ describe('a failure', () => {
     ['a connection that cannot open', new Error('connect timed out'), 'mail for shytalk failed: connect timed out'],
   ])('on %s returns failed, names it, and delivers once', async (_case, thrown, message) => {
     const error = logged();
-    const { env, deliver } = world({ shareLeft: true });
+    const { env, statements, deliver } = world({ shareLeft: true });
     deliver.mockRejectedValueOnce(thrown);
     await expect(sendNoReply(env, shytalk(), 'pat@example.com', LINK, deliver, NOW)).resolves.toBe('failed');
     expect(deliver).toHaveBeenCalledTimes(1);
     expect(error.mock.calls).toEqual([[message]]);
+    expect(statements.map(({ sql, values }) => ({ sql, values }))).toEqual([COUNT, GIVE_BACK]);
   });
 });
