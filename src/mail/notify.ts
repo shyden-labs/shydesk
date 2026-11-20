@@ -22,6 +22,14 @@ export interface MailEnv {
   SMTP_LOGINS?: string | undefined;
   /** The mail host every product sends through (Sparked Host), on port 587 (shyden-labs/shydesk#68). */
   SMTP_HOST?: string | undefined;
+  /** The domain bounces come back to (shyden-labs/shydesk#232); unset, notices are sent as before and not written down. */
+  BOUNCE_DOMAIN?: string | undefined;
+}
+
+/** The ticket a notice is about, and the reply it announces (null for a new ticket or appeal). */
+export interface NoticeAbout {
+  ticketId: string;
+  messageId: string | null;
 }
 
 export type NoticeResult = 'sent' | 'share-used-up' | 'failed';
@@ -31,6 +39,10 @@ const COUNT_SEND =
 
 /** Gives a failed send's place back, so the share counts only mail that was sent (shyden-labs/shydesk#223). */
 const GIVE_BACK = 'UPDATE counters SET value = value - 1 WHERE key = ? AND value > 0';
+
+const INSERT_NOTICE = 'INSERT INTO notices (id, ticket_id, message_id, to_address, sent_at) VALUES (?, ?, ?, ?, ?)';
+/** A notice that never left is not shown as sent. */
+const DELETE_NOTICE = 'DELETE FROM notices WHERE id = ?';
 
 /** The product's share counter for the month of `now`. */
 function shareKey(product: Product, now: Date): string {
@@ -74,24 +86,30 @@ export async function sendNoReply(
   to: string,
   link: string,
   deliver: Deliver,
-  now: Date = new Date(),
+  now: Date,
+  about: NoticeAbout,
 ): Promise<NoticeResult> {
   if (!(await countSend(env.DB, product, now))) return 'share-used-up';
+  let noticeId: string | null = null;
   try {
     const { login, host } = senderLogin(env.SMTP_LOGINS, product.senderAddress);
-    await deliver(
-      login,
-      {
-        from: product.senderAddress,
-        to,
-        subject: NOTICE_SUBJECT,
-        text: `${product.name} support\r\n\r\nThere is a new update on your support request. Open it here: ${link}`,
-      },
-      host ?? env.SMTP_HOST,
-    );
+    const mail: SmtpMail = {
+      from: product.senderAddress,
+      to,
+      subject: NOTICE_SUBJECT,
+      text: `${product.name} support\r\n\r\nThere is a new update on your support request. Open it here: ${link}`,
+    };
+    // Written down before it leaves, so a bounce that comes back fast finds its row (shyden-labs/shydesk#232).
+    if (env.BOUNCE_DOMAIN !== undefined) {
+      noticeId = crypto.randomUUID();
+      await env.DB.prepare(INSERT_NOTICE).bind(noticeId, about.ticketId, about.messageId, to, now.getTime()).run();
+      mail.envelopeFrom = `bounce-${noticeId}@${env.BOUNCE_DOMAIN}`;
+    }
+    await deliver(login, mail, host ?? env.SMTP_HOST);
     return 'sent';
   } catch (error) {
     console.error(`mail for ${product.id} failed: ${(error as Error).message}`);
+    if (noticeId !== null) await env.DB.prepare(DELETE_NOTICE).bind(noticeId).run();
     await env.DB.prepare(GIVE_BACK).bind(shareKey(product, now)).run();
     return 'failed';
   }

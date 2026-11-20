@@ -66,6 +66,8 @@ export async function deleteText(
     db.prepare(`DELETE FROM attachments WHERE ${whileClosed} AND id NOT IN (${HOLD_NAMED})`).bind(ticketId, ticketId),
     db.prepare(`DELETE FROM messages WHERE ${whileClosed}`).bind(ticketId, ticketId),
     db.prepare(`DELETE FROM reads WHERE ${whileClosed}`).bind(ticketId, ticketId),
+    // A notice row holds the customer's address (shyden-labs/shydesk#232).
+    db.prepare(`DELETE FROM notices WHERE ${whileClosed}`).bind(ticketId, ticketId),
     db.prepare(`UPDATE reports SET reporter_id = '', reason = '', context_json = '{}' WHERE ${whileClosed}`).bind(ticketId, ticketId),
     db
       .prepare(

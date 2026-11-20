@@ -24,7 +24,7 @@ describe('retention and legal holds', () => {
     const { db, statements } = standInDb();
     await deleteText(db, files, 't1', NOW);
     const writes = statements.filter((s) => /^(DELETE|UPDATE)/.test(s.sql));
-    expect(writes).toHaveLength(7);
+    expect(writes).toHaveLength(8);
     for (const s of writes) {
       expect.soft(squash(s.sql)).toContain('NOT EXISTS (SELECT 1 FROM legal_holds WHERE lifted_at IS NULL AND ticket_id = ?)');
     }
@@ -49,6 +49,16 @@ describe('a bare ticket row after the text goes', () => {
     expect(writes[1]?.sql).toMatch(
       /^DELETE FROM attachments WHERE .*id NOT IN \(SELECT attachment_id FROM legal_holds WHERE attachment_id IS NOT NULL\)/,
     );
+  });
+
+  // shyden-labs/shydesk#232: a notice row holds the customer's address, so it goes with the text.
+  it("deletes the ticket's notices in the same batch, while closed and not held", async () => {
+    const writes = await textWrites();
+    const notices = writes.findIndex((w) => w.sql.startsWith('DELETE FROM notices WHERE '));
+    expect(notices).toBeGreaterThanOrEqual(0);
+    expect(writes[notices]?.sql).toContain("ticket_id IN (SELECT id FROM tickets WHERE id = ? AND status = 'closed')");
+    expect(writes[notices]?.values).toEqual(['t1', 't1']);
+    expect(notices).toBeLessThan(writes.findIndex((w) => w.sql.startsWith('UPDATE tickets')));
   });
 
   it('blanks the report text and reporter, keeping who and what was reported', async () => {

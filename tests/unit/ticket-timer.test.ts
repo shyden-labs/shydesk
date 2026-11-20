@@ -177,7 +177,7 @@ describe('TicketTimer.alarm', () => {
     expect(writes(statements)).toEqual([]);
   });
 
-  it('text: deletes the stored attachments first, then the attachment rows, messages, staff read marks and ticket, all only if still closed', async () => {
+  it('text: deletes the stored attachments first, then the attachment rows, messages, staff read marks, notices and ticket, all only if still closed', async () => {
     const { timer, store, statements, deleted } = timerWith('closed', [{ id: 'a1', r2_key: 'k1', thumb_key: null, bytes: 7 }]);
     await timer.apply('t1', { schedule: { text: NOW + DAY_MS }, cancel: [] });
     vi.setSystemTime(NOW + DAY_MS);
@@ -188,6 +188,7 @@ describe('TicketTimer.alarm', () => {
       'DELETE FROM attachments',
       'DELETE FROM messages',
       'DELETE FROM reads',
+      'DELETE FROM notices',
       'DELETE FROM tickets',
     ]);
     for (const d of deletes) {
@@ -204,8 +205,8 @@ describe('TicketTimer.alarm', () => {
     await timer.alarm();
     const writes = statements.filter((s) => /^(DELETE|UPDATE)/.test(s.sql));
     // Every write carries the closed check, so on an open ticket they match nothing (its read marks included,
-    // shyden-labs/shydesk#119; the bare-row updates too, shyden-labs/shydesk#191).
-    expect(writes).toHaveLength(7);
+    // shyden-labs/shydesk#119; the bare-row updates too, shyden-labs/shydesk#191; its notices, shyden-labs/shydesk#232).
+    expect(writes).toHaveLength(8);
     for (const w of writes) expect(w.sql).toContain("status = 'closed'");
   });
 

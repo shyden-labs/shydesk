@@ -48,6 +48,9 @@
         "ACCESS_AUD": "cecc27a55c169053120557c748cd105f9b4199f3a66d9ef313eaf5700db39973",
         // The API docs let staff try requests that write here only (shyden-labs/shydesk#83).
         "TRY_WRITES": "true",
+        // Failure reports for dev's notices come back here through Email Routing (shyden-labs/shydesk#232).
+        // Live sets none until its release.
+        "BOUNCE_DOMAIN": "shydeskdev.dpdns.org",
       },
     },
   },
