@@ -25,7 +25,7 @@
 - Held items are never deleted automatically. A hold cannot be lifted before its earliest release date, even by the admin.
 - Minimum keeps (spec, builder proposal pending the lawyer check): possible crime not yet reported: until the admin reports it or records why no report is needed; reported to authorities: **365 days** from the report date; law-enforcement preservation request: **90 days** from the request, **+90** for each renewal, and while a production order is unanswered.
 - A hold marked suspected child-abuse material hides the files from every viewer, admin included.
-- **Release 2's legal-hold and report-to-authorities features do not go live until the lawyer check is in** (spec). The launch story is blocked by the lawyer-check story.
+- **The lawyer check gates no release** (spec; Shyden, 2026-11-20): Release 2's legal-hold and report-to-authorities features may go live before it, and the launch story is not blocked by the lawyer-check story.
 
 Values this plan fixes (builder calls the spec left open, each named again where it is used):
 - Report rate: **120 per minute per product**, through Release 1's `hit()`.
@@ -289,11 +289,11 @@ CREATE TABLE authority_reports (
 
 ### Task 7: Lawyer check (Shyden)
 
-Not code. Shyden gets legal advice for Indonesia and the main user countries covering the questions in the spec's "Lawyer check before Release 2 ships". The result is recorded in the spec. Where the advice changes a minimum keep or a duty, `earliestRelease`'s values and their tests change in one PR before the launch.
+Not code. Shyden gets legal advice for Indonesia and the main user countries covering the questions in the spec's "Lawyer check". It gates no release (Shyden, 2026-11-20). The result is recorded in the spec. Where the advice changes a minimum keep or a duty, `earliestRelease`'s values and their tests change in one PR, before or after the launch.
 
 ### Task 8: Release 2 launch
 
-**Blocked by:** Tasks 1–6 and Task 7.
+**Blocked by:** Tasks 1–6 (not Task 7: the lawyer check gates no release, Shyden 2026-11-20).
 
 - [ ] Run the E2E journey gauntlet once on every target, as the release's last gate. Shyden signs off on real phones, then the `release/*` cut goes to production with his approval.
 - [ ] Send the ShyTalk session the live callback contract (link to the OpenAPI `webhooks:` section), the reports API path and the appeal page requirement.
