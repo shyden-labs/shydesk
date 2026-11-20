@@ -14,3 +14,12 @@ describe('the integration database migrations', () => {
     expect(MIGRATIONS).toEqual(files);
   });
 });
+
+// Most integration tests are journeys of 10–30 REST calls to D1 at up to about 2 s each on a slow day; a
+// 10 s limit failed correct changes (shyden-labs/shydesk#247). A hang still fails, at a minute.
+describe('the integration time limit', () => {
+  it("gives each test a journey's time, a minute", async () => {
+    const { default: integration } = await import('../../vitest.integration.config.ts');
+    expect(integration.test.testTimeout).toBe(60_000);
+  });
+});
