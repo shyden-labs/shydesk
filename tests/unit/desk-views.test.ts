@@ -484,19 +484,25 @@ describe('bounced notices', () => {
 
   it("shows a bounced reply notice inside that reply's article", async () => {
     const [first, second] = await articles([bounced()]);
-    expect(second).toContain('<p role="alert">Email to a@b.example bounced at 2026-11-20 01:02: 550 5.1.1 user unknown</p>');
+    expect(second).toContain(
+      '<p role="alert">Email to a@b.example bounced at 2026-11-20 01:02. Reason given in the failure report (not checked by ShyDesk): 550 5.1.1 user unknown</p>',
+    );
     expect(first).not.toContain('bounced');
   });
 
   it('shows a bounced new-ticket notice (no message) under the first message', async () => {
     const [first, second] = await articles([bounced({ message_id: null })]);
-    expect(first).toContain('Email to a@b.example bounced at 2026-11-20 01:02: 550 5.1.1 user unknown');
+    expect(first).toContain(
+      'Email to a@b.example bounced at 2026-11-20 01:02. Reason given in the failure report (not checked by ShyDesk): 550 5.1.1 user unknown',
+    );
     expect(second).not.toContain('bounced');
   });
 
   it('falls back to the status when the reason is empty', async () => {
     const [, second] = await articles([bounced({ bounce_reason: '' })]);
-    expect(second).toContain('Email to a@b.example bounced at 2026-11-20 01:02: 5.1.1</p>');
+    expect(second).toContain(
+      'Email to a@b.example bounced at 2026-11-20 01:02. Reason given in the failure report (not checked by ShyDesk): 5.1.1</p>',
+    );
   });
 
   it('shows the reason as text, never as markup', async () => {

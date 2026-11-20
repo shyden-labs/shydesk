@@ -62,7 +62,7 @@ A dev build sends, from each sender server (shyden.co.uk, shytalk.app, yaweloidl
 
 ### Desk
 
-- Ticket page: under the message the notice was about, the line "Email to <address> bounced at <time>: <reason>".
+- Ticket page: under the message the notice was about, the line "Email to <address> bounced at <time>. Reason given in the failure report (not checked by ShyDesk): <reason>" (wording ruled 2026-11-21, shyden-labs/shydesk#246: anyone who sees the bounce address can send a report, so the reason is labelled as unverified).
 - Ticket list: an "Email bounced" marker when the ticket's latest notice bounced.
 - No new staff action.
 
