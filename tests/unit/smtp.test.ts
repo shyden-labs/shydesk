@@ -195,6 +195,33 @@ describe('sendSmtp', () => {
     expect(lines[2]).toBe(`Subject: =?UTF-8?B?${encoded}?=`);
   });
 
+  // Bounces come back to the envelope sender, not the From: address (shyden-labs/shydesk#232).
+  it('uses envelopeFrom for MAIL FROM and keeps From: as the sender', async () => {
+    const server = new StandIn(HAPPY);
+    await sendSmtp(server, login, { ...mail, envelopeFrom: 'bounce-1@bounce.example' }, now);
+    expect(server.sent).toContain('MAIL FROM:<bounce-1@bounce.example>');
+    const lines = (server.sent.find((line) => line.includes('\r\n')) ?? '').split('\r\n');
+    expect(lines).toContain('From: no-reply@shyden.co.uk');
+    expect(server.sent.some((line) => line.startsWith('MAIL FROM:<no-reply@'))).toBe(false);
+  });
+
+  it('uses from for MAIL FROM when envelopeFrom is absent', async () => {
+    const server = new StandIn(HAPPY);
+    await sendSmtp(server, login, mail, now);
+    expect(server.sent).toContain('MAIL FROM:<no-reply@shyden.co.uk>');
+  });
+
+  it.each([
+    ['bounce-1@bounce.example\r\nRCPT TO:<b@example.com>', 'envelopeFrom holds a line break'],
+    ['bounce-1@bounce.example\n', 'envelopeFrom holds a line break'],
+    ['not-an-address', 'envelopeFrom is not a plain address'],
+    ['<bounce-1@bounce.example>', 'envelopeFrom is not a plain address'],
+  ])('refuses the envelopeFrom %j before opening the dialogue', async (envelopeFrom, reason) => {
+    const server = new StandIn(HAPPY);
+    await expect(sendSmtp(server, login, { ...mail, envelopeFrom }, now)).rejects.toThrow(new SmtpError('input', reason));
+    expect(server.sent).toEqual([]);
+  });
+
   // Header injection: a CR or LF would start a new header or command.
   it.each([
     ['subject', { subject: 'Hi\r\nBcc: x@example.com' }],
