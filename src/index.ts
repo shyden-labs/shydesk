@@ -15,6 +15,7 @@ import { uploadRoutes, type UploadBindings } from './uploads/routes.ts';
 
 // The Durable Object classes wrangler.jsonc binds must be exported from the entry point.
 export { TicketTimer } from './timers/ticket-timer.ts';
+import { handleBounce, type BounceEnv, type BounceMessage } from './mail/bounces.ts';
 
 /**
  * ShyDesk's single Worker (shyden-labs/shydesk#14). Staff routes need the
@@ -55,4 +56,11 @@ export function createApp(jwks?: JWTVerifyGetKey): Hono<{ Bindings: AppBindings 
 
 export const app = createApp();
 
-export default app;
+/**
+ * The Worker: requests go to the app; mail Email Routing hands over is a failed delivery report
+ * (shyden-labs/shydesk#232). The third argument Workers passes is the context, never the time.
+ */
+export default {
+  fetch: app.fetch,
+  email: (message: BounceMessage, env: BounceEnv) => handleBounce(message, env),
+};

@@ -16,6 +16,8 @@ interface Envelope<T> {
 export interface Statement {
   results: Record<string, unknown>[];
   success: boolean;
+  /** What the statement did, as the binding reports it: `changes` is how many rows a write changed. */
+  meta?: { changes?: number };
 }
 
 /** Reads a required variable, failing with where to set it. */
@@ -97,7 +99,11 @@ export function restD1(id: string): D1Database {
     bind: (...bound: unknown[]) => prepared(sql, bound),
     first: async () => (await rowsOf(sql, values))[0] ?? null,
     all: async () => ({ results: await rowsOf(sql, values), success: true, meta: {} }),
-    run: async () => ({ results: await rowsOf(sql, values), success: true, meta: {} }),
+    // A write's `changes` comes through, so code that checks how many rows it changed runs as on the binding.
+    run: async () => {
+      const [statement] = await query(id, sql, values);
+      return { results: statement?.results ?? [], success: true, meta: { changes: statement?.meta?.changes ?? 0 } };
+    },
   });
   const batch = async (list: { sql: string; values: unknown[] }[]) => {
     const out = [];
