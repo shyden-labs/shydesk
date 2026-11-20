@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { readBounce } from '../../src/mail/bounce-report.ts';
 
@@ -124,5 +125,19 @@ describe('readBounce', () => {
   it('gives null for a message with no headers end or no Content-Type', () => {
     expect(readBounce('just one line')).toBeNull();
     expect(readBounce('Subject: hi\r\n\r\nbody')).toBeNull();
+  });
+});
+
+// A real report, addresses and the MailBaby link replaced: web-par-03's Postfix, after MailBaby refused the mail
+// during sending (shydesk-no-reply@yaweloidle.com, 2026-11-20 08:16 UTC). The top Content-Type folds with a tab
+// and the Diagnostic-Code with four spaces, as received.
+describe('readBounce on real reports', () => {
+  it('reads web-par-03 Postfix: the status and the whole unfolded reason', () => {
+    const raw = readFileSync('tests/fixtures/bounces/web-par-03-postfix.eml', 'utf8');
+    expect(readBounce(raw)).toEqual({
+      status: '5.0.0',
+      reason:
+        '550 This message was classified as rSPAM and may not be delivered https://mail.outboundspamprotection.com/mailinfo?id=EXAMPLE&user=EXAMPLE',
+    });
   });
 });
