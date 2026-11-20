@@ -10,6 +10,7 @@ import {
   type AppealPanel,
   type DeskAttachment,
   type DeskMessage,
+  type DeskNotice,
   type DeskTicket,
   type ReportPanel,
 } from './queries.ts';
@@ -221,6 +222,9 @@ const nextPageLink = (d: ListData): Page | '' => {
   return html`<p><a href="${next}">Next page</a></p>`;
 };
 
+/** The list's marker for a ticket whose latest notice bounced (shyden-labs/shydesk#232). */
+const bouncedMark = (t: DeskTicket) => (t.last_notice_bounced === 1 ? html` · <strong>Email bounced</strong>` : '');
+
 export const listPage = (d: ListData): Page =>
   layout(
     'Tickets',
@@ -271,7 +275,7 @@ export const listPage = (d: ListData): Page =>
                       html`<tr>
                         <td><a href="/desk/tickets/${t.id}">${subjectOf(t)}</a></td>
                         <td>${d.productNames.get(t.product_id) ?? t.product_id}</td>
-                        <td>${STATUS_NAMES[t.status] ?? t.status}</td>
+                        <td>${STATUS_NAMES[t.status] ?? t.status}${bouncedMark(t)}</td>
                         <td>${when(t.updated_at)}</td>
                       </tr>`,
                   )}
@@ -316,6 +320,8 @@ export interface TicketData {
   ticket: DeskTicket;
   messages: DeskMessage[];
   attachments: DeskAttachment[];
+  /** Notices that bounced (shyden-labs/shydesk#232); none when absent. */
+  notices?: DeskNotice[];
   canned: Canned[];
   mail: string | undefined;
   error: string | undefined;
@@ -550,6 +556,12 @@ const noticeLine = (d: TicketData): string | undefined => {
   );
 };
 
+/** A notice that bounced, under the message it announced (shyden-labs/shydesk#232). */
+const bounceLine = (n: DeskNotice) => {
+  const reason = n.bounce_reason === '' ? n.bounce_status : n.bounce_reason;
+  return html`<p role="alert">Email to ${n.to_address} bounced at ${when(n.bounced_at)}: ${reason}</p>`;
+};
+
 export const ticketPage = (d: TicketData): Page => {
   const line = noticeLine(d);
   const values = { customer_email: d.ticket.customer_email, ticket_subject: d.ticket.subject };
@@ -570,10 +582,11 @@ export const ticketPage = (d: TicketData): Page => {
       ${d.appeal && d.isAdmin === true ? appealSection(d.appeal, d.ticket.id) : ''} ${holdsPanel(d, order)}
       <section role="log" aria-label="Conversation">
         ${d.messages.map(
-          (m) =>
+          (m, index) =>
             html`<article>
               <strong>${m.author === 'staff' ? (m.staff_email ?? 'Staff') : 'Customer'}</strong> · ${when(m.created_at)}
               <p class="body">${m.body}</p>
+              ${(d.notices ?? []).filter((n) => n.message_id === m.id || (n.message_id === null && index === 0)).map(bounceLine)}
               <ul>
                 ${d.attachments.filter((a) => a.message_id === m.id).map((a) => attachmentLine(a, order.indexOf(a) + 1))}
               </ul>

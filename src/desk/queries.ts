@@ -30,6 +30,17 @@ export interface DeskTicket {
   token_sealed: string | null;
   /** When the text timer left a bare row (shyden-labs/shydesk#191); null while the text is kept. */
   text_deleted_at: number | null;
+  /** 1 while the ticket's latest notice bounced (shyden-labs/shydesk#232), else 0. */
+  last_notice_bounced: 0 | 1;
+}
+
+/** A notice that bounced: the reply it announced (null for a new ticket), where it went, and the server's answer. */
+export interface DeskNotice {
+  message_id: string | null;
+  to_address: string;
+  bounced_at: number;
+  bounce_status: string;
+  bounce_reason: string;
 }
 
 export interface DeskMessage {
@@ -58,7 +69,8 @@ export interface TicketFilter {
 }
 
 const COLUMNS =
-  'id, product_id, type_id, status, customer_email, subject, category, fields_json, created_at, updated_at, seq, token_sealed, text_deleted_at';
+  'id, product_id, type_id, status, customer_email, subject, category, fields_json, created_at, updated_at, seq, token_sealed, text_deleted_at, ' +
+  'COALESCE((SELECT n.bounced_at IS NOT NULL FROM notices n WHERE n.ticket_id = tickets.id ORDER BY n.sent_at DESC, n.rowid DESC LIMIT 1), 0) AS last_notice_bounced';
 const marks = (values: unknown[]): string => values.map(() => '?').join(', ');
 
 /** Whose desk is asking: the products in scope, and whether appeals are theirs to see. */
@@ -104,7 +116,7 @@ export async function getTicket(
   db: D1Database,
   scope: Scope,
   id: string,
-): Promise<{ ticket: DeskTicket; messages: DeskMessage[]; attachments: DeskAttachment[] } | null> {
+): Promise<{ ticket: DeskTicket; messages: DeskMessage[]; attachments: DeskAttachment[]; notices: DeskNotice[] } | null> {
   const { products } = scope;
   if (products.length === 0) return null;
   const ticket = await db
@@ -123,7 +135,14 @@ export async function getTicket(
     )
     .bind(id)
     .all<DeskAttachment>();
-  return { ticket, messages, attachments };
+  const { results: notices } = await db
+    .prepare(
+      `SELECT message_id, to_address, bounced_at, bounce_status, bounce_reason FROM notices WHERE ticket_id = ? AND bounced_at IS NOT NULL
+       ORDER BY sent_at, rowid`,
+    )
+    .bind(id)
+    .all<DeskNotice>();
+  return { ticket, messages, attachments, notices };
 }
 
 /** A stored attachment on a ticket in scope and not withheld under a csam hold, or null (shyden-labs/shydesk#25, shyden-labs/shydesk#62). */

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getFile, getTicket, listTickets, markRead, unreadCount, type DeskTicket } from '../../src/desk/queries.ts';
+import { getFile, getTicket, listTickets, markRead, unreadCount, type DeskNotice, type DeskTicket } from '../../src/desk/queries.ts';
 import { listPage, ticketPage, type ListData, type TicketData } from '../../src/desk/views.ts';
 import { standInDb } from './d1-stand-in.ts';
 
@@ -19,6 +19,7 @@ const ticket: DeskTicket = {
   seq: 1,
   token_sealed: null,
   text_deleted_at: null,
+  last_notice_bounced: 0,
 };
 
 const list = (over: Partial<ListData> = {}): ListData => ({
@@ -461,5 +462,70 @@ describe('the queries', () => {
     const rep = standInDb();
     await markRead(rep.db, { email: 'a@b.c', role: 'rep', products: [] }, 't1');
     expect(rep.statements.map((s) => s.sql.includes('INTO staff'))).toEqual([false]);
+  });
+});
+
+// A notice that bounced shows on its ticket and marks the list (shyden-labs/shydesk#232).
+describe('bounced notices', () => {
+  const AT = Date.UTC(2026, 10, 20, 1, 2);
+  const messages = [
+    { id: 'm1', author: 'customer', staff_email: null, body: 'Help', created_at: 1 },
+    { id: 'm2', author: 'staff', staff_email: 'rep@example.com', body: 'Fixed', created_at: 2 },
+  ];
+  const bounced = (over: Partial<DeskNotice> = {}): DeskNotice => ({
+    message_id: 'm2',
+    to_address: 'a@b.example',
+    bounced_at: AT,
+    bounce_status: '5.1.1',
+    bounce_reason: '550 5.1.1 user unknown',
+    ...over,
+  });
+  const articles = async (notices: DeskNotice[]) => (await render(ticketPage(view({ messages, notices })))).split('<article>').slice(1);
+
+  it("shows a bounced reply notice inside that reply's article", async () => {
+    const [first, second] = await articles([bounced()]);
+    expect(second).toContain('<p role="alert">Email to a@b.example bounced at 2026-11-20 01:02: 550 5.1.1 user unknown</p>');
+    expect(first).not.toContain('bounced');
+  });
+
+  it('shows a bounced new-ticket notice (no message) under the first message', async () => {
+    const [first, second] = await articles([bounced({ message_id: null })]);
+    expect(first).toContain('Email to a@b.example bounced at 2026-11-20 01:02: 550 5.1.1 user unknown');
+    expect(second).not.toContain('bounced');
+  });
+
+  it('falls back to the status when the reason is empty', async () => {
+    const [, second] = await articles([bounced({ bounce_reason: '' })]);
+    expect(second).toContain('Email to a@b.example bounced at 2026-11-20 01:02: 5.1.1</p>');
+  });
+
+  it('shows the reason as text, never as markup', async () => {
+    const [, second] = await articles([bounced({ bounce_reason: '<script>x</script>' })]);
+    expect(second).toContain('&lt;script&gt;x&lt;/script&gt;');
+    expect(second).not.toContain('<script>');
+  });
+
+  it('shows nothing when no notice bounced', async () => {
+    expect(await render(ticketPage(view({ messages, notices: [] })))).not.toContain('bounced');
+  });
+
+  it('marks the list "Email bounced" only when the latest notice bounced', async () => {
+    const marked = await render(listPage(list({ tickets: [{ ...ticket, last_notice_bounced: 1 }] })));
+    expect(marked).toContain('Email bounced');
+    expect(await render(listPage(list({ tickets: [{ ...ticket, last_notice_bounced: 0 }] })))).not.toContain('Email bounced');
+  });
+
+  it('reads the bounced notices with the ticket, and the latest notice with each list row', async () => {
+    const { db, statements } = standInDb((sql): Record<string, unknown>[] =>
+      sql.includes('FROM notices WHERE') ? [{ ...bounced() }] : sql.includes('FROM tickets') ? [{ ...ticket }] : [],
+    );
+    const found = await getTicket(db, { products: ['shytalk'], role: 'admin' }, 't1');
+    expect(found?.notices).toEqual([bounced()]);
+    const notices = statements.find((s) => s.sql.includes('FROM notices WHERE'));
+    expect(notices?.sql).toContain('bounced_at IS NOT NULL');
+    expect(notices?.values).toEqual(['t1']);
+    const { db: listDb, statements: listed } = standInDb();
+    await listTickets(listDb, { products: ['shytalk'], role: 'admin' }, {});
+    expect(listed[0]?.sql).toContain('ORDER BY n.sent_at DESC, n.rowid DESC LIMIT 1), 0) AS last_notice_bounced');
   });
 });
