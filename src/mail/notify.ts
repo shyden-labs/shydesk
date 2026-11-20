@@ -18,7 +18,7 @@ export type Deliver = (login: SmtpLogin, mail: SmtpMail, host: string | undefine
 
 export interface MailEnv {
   DB: D1Database;
-  /** JSON object mapping each product sender address to its `{ user, pass }`. */
+  /** JSON object mapping each product sender address to its `{ user, pass }`, plus `host` when its mailbox is not on SMTP_HOST. */
   SMTP_LOGINS?: string | undefined;
   /** The mail host every product sends through (Sparked Host), on port 587 (shyden-labs/shydesk#68). */
   SMTP_HOST?: string | undefined;
@@ -43,18 +43,28 @@ async function countSend(db: D1Database, product: Product, now: Date): Promise<b
   return (await db.prepare(COUNT_SEND).bind(shareKey(product, now), product.monthlyEmailShare).first()) !== null;
 }
 
-/** The sender's login from SMTP_LOGINS; throws naming what is missing or malformed. */
-function senderLogin(logins: string | undefined, sender: string): SmtpLogin {
+/** One SMTP_LOGINS entry: the login, and the mail server when the sender's mailbox is not on SMTP_HOST (shyden-labs/shydesk#228). */
+type LoginEntry = SmtpLogin & { host?: unknown };
+
+/** A bare host name: letters, digits, dots and hyphens, no port or spaces. */
+const HOST_NAME = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/i;
+
+/** The sender's login and its own mail server, if it names one, from SMTP_LOGINS; throws naming what is missing or malformed. */
+function senderLogin(logins: string | undefined, sender: string): { login: SmtpLogin; host: string | undefined } {
   if (logins === undefined) throw new Error('SMTP_LOGINS is not set');
-  let table: Record<string, SmtpLogin>;
+  let table: Record<string, LoginEntry>;
   try {
-    table = JSON.parse(logins) as Record<string, SmtpLogin>;
+    table = JSON.parse(logins) as Record<string, LoginEntry>;
   } catch {
     throw new Error('SMTP_LOGINS is not valid JSON');
   }
-  const login = table[sender];
-  if (login === undefined) throw new Error(`no SMTP login for ${sender}`);
-  return login;
+  const entry = table[sender];
+  if (entry === undefined) throw new Error(`no SMTP login for ${sender}`);
+  const { host, user, pass } = entry;
+  if (host !== undefined && (typeof host !== 'string' || !HOST_NAME.test(host))) {
+    throw new Error(`the SMTP_LOGINS host for ${sender} is not a host name`);
+  }
+  return { login: { user, pass }, host };
 }
 
 /** Tells the customer at `to` that their ticket has something new, linking to its private page. */
@@ -68,7 +78,7 @@ export async function sendNoReply(
 ): Promise<NoticeResult> {
   if (!(await countSend(env.DB, product, now))) return 'share-used-up';
   try {
-    const login = senderLogin(env.SMTP_LOGINS, product.senderAddress);
+    const { login, host } = senderLogin(env.SMTP_LOGINS, product.senderAddress);
     await deliver(
       login,
       {
@@ -77,7 +87,7 @@ export async function sendNoReply(
         subject: NOTICE_SUBJECT,
         text: `${product.name} support\r\n\r\nThere is a new update on your support request. Open it here: ${link}`,
       },
-      env.SMTP_HOST,
+      host ?? env.SMTP_HOST,
     );
     return 'sent';
   } catch (error) {

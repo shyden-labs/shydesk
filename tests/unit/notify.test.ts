@@ -42,6 +42,13 @@ const COUNT = {
 /** A failed send gives its place back, so only sent mail uses the share (shyden-labs/shydesk#223). */
 const GIVE_BACK = { sql: 'UPDATE counters SET value = value - 1 WHERE key = ? AND value > 0', values: ['mail:shytalk:2026-11'] };
 
+/** A failure case whose login names a malformed mail server (shyden-labs/shydesk#228). */
+const badHost = (what: string, host: unknown): [string, string, string] => [
+  `the login names ${what}`,
+  JSON.stringify({ 'no-reply@shytalk.app': { user: 'u', pass: 'p', host } }),
+  'mail for shytalk failed: the SMTP_LOGINS host for no-reply@shytalk.app is not a host name',
+];
+
 const logged = () => vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
 afterEach(() => {
@@ -66,6 +73,15 @@ describe('the notice', () => {
       ],
     ]);
     expect(NOTICE_SUBJECT).toBe('Your support request: something new');
+  });
+
+  // shyden-labs/shydesk#228: a sender whose mailbox lives on another server names it.
+  it("goes through the sender's own mail server when its login names one, with the login alone", async () => {
+    const logins = JSON.stringify({ 'no-reply@shytalk.app': { user: 'u', pass: 'p', host: 'mail.yaweloidle.com' } });
+    const { env, deliver } = world({ shareLeft: true, logins });
+    await expect(sendNoReply(env, shytalk(), 'pat@example.com', LINK, deliver, NOW)).resolves.toBe('sent');
+    expect(deliver.mock.calls[0]?.[0]).toEqual({ user: 'u', pass: 'p' });
+    expect(deliver.mock.calls[0]?.[2]).toBe('mail.yaweloidle.com');
   });
 });
 
@@ -95,6 +111,10 @@ describe('a failure', () => {
     ['SMTP_LOGINS is not set', undefined, 'mail for shytalk failed: SMTP_LOGINS is not set'],
     ['SMTP_LOGINS is not JSON', 'not json', 'mail for shytalk failed: SMTP_LOGINS is not valid JSON'],
     ['the sender has no login', '{}', 'mail for shytalk failed: no SMTP login for no-reply@shytalk.app'],
+    badHost('an empty host', ''),
+    badHost('a host with a space', 'mail .example'),
+    badHost('a host with a port', 'mail.example:587'),
+    badHost('a host that is not text', 587),
   ])('when %s returns failed, names it, and delivers nothing', async (_case, logins, message) => {
     const error = logged();
     const { env, statements, deliver } = world({ shareLeft: true, logins });
