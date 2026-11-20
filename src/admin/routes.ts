@@ -26,6 +26,7 @@ import {
   type ProductInput,
   type PunishmentDef,
   type SupportField,
+  productsWithoutType,
 } from '../products.ts';
 import { productPage, productsPage, staffPage, type Health, type ProductForm, type ProductPageData } from './views.ts';
 import { overdue } from '../desk/overdue.ts';
@@ -57,6 +58,7 @@ const num = (s: string): number => (s.trim() === '' ? Number.NaN : Number(s));
 const health = async (db: D1Database): Promise<Health> => ({
   warning: storageWarning(await storedBytes(db)),
   overdue: await overdue(db, Date.now()),
+  untyped: await productsWithoutType(db),
 });
 
 const productForm = (form: Form): ProductForm => ({

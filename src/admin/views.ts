@@ -135,11 +135,14 @@ export interface Health {
   /** The storage warning from 80 % of the free tier, or null. */
   warning: string | null;
   overdue: Overdue[];
+  /** Products with no ticket type, whose support form cannot draw (shyden-labs/shydesk#237). */
+  untyped: { id: string; name: string }[];
 }
 
 const healthPanel = (h: Health) =>
   html`<h2>Storage and timers</h2>
     ${h.warning === null ? '' : html`<p role="alert">${h.warning}</p>`}
+    ${h.untyped.map((p) => html`<p role="alert">${p.name} has no ticket type, so its support form cannot draw.</p>`)}
     ${
       h.overdue.length === 0
         ? html`<p>Nothing is past its due date.</p>`
@@ -247,7 +250,7 @@ const moderationSection = (d: ProductPageData): Page => {
 /** A product's settings: the product, its support fields, canned replies and API keys. */
 export const productPage = (d: ProductPageData): Page => {
   const id = d.product.id;
-  const support = d.supportForm ?? { name: d.type?.name ?? 'Support', fields: fieldsToText(d.type?.fields ?? []) };
+  const support = d.supportForm ?? { name: d.type?.name ?? '', fields: fieldsToText(d.type?.fields ?? []) };
   return layout(
     d.product.name,
     html`<h2>Settings</h2>
@@ -257,6 +260,7 @@ export const productPage = (d: ProductPageData): Page => {
       </form>
 
       <h2>Support form fields</h2>
+      ${d.type === null ? html`<p role="alert">No ticket type is saved yet, so the support form cannot draw. Save one below.</p>` : ''}
       ${errorList(d.errors?.support ?? [])}
       <form method="post" action="/admin/products/${id}/support">
         <label for="supportName">Ticket type name</label>
