@@ -153,3 +153,42 @@ describe('unread', () => {
     expect(row?.role).toBe('admin');
   });
 });
+
+// shyden-labs/shydesk#232: a bounced notice on real D1 shows with its ticket, and the list marks the ticket only
+// while its latest notice bounced.
+describe('bounced notices', () => {
+  it('reads the bounced notice with the ticket and marks the list until a later notice is sent fine', async () => {
+    await db
+      .prepare(
+        "INSERT INTO messages (id, ticket_id, author, staff_email, body, created_at) VALUES ('d-bm1', 'd-open-old', 'staff', ?, 'Fixed', 1000)",
+      )
+      .bind(REP)
+      .run();
+    await db
+      .prepare(
+        `INSERT INTO notices (id, ticket_id, message_id, to_address, sent_at, bounced_at, bounce_status, bounce_reason)
+         VALUES ('d-n1', 'd-open-old', 'd-bm1', 'someone@example.com', 2000, 2100, '5.1.1', '550 5.1.1 user unknown'),
+                ('d-n0', 'd-open-old', NULL, 'someone@example.com', 1000, NULL, NULL, NULL)`,
+      )
+      .run();
+    const found = await getTicket(db, asRep(['desk-a']), 'd-open-old');
+    expect.soft(found?.notices).toEqual([
+      {
+        message_id: 'd-bm1',
+        to_address: 'someone@example.com',
+        bounced_at: 2100,
+        bounce_status: '5.1.1',
+        bounce_reason: '550 5.1.1 user unknown',
+      },
+    ]);
+    const marked = (rows: Awaited<ReturnType<typeof listTickets>>) => rows.find((t) => t.id === 'd-open-old')?.last_notice_bounced;
+    expect.soft(marked(await listTickets(db, asRep(['desk-a']), {}))).toBe(1);
+    expect.soft((await listTickets(db, asRep(['desk-a']), {})).find((t) => t.id === 'd-open-new')?.last_notice_bounced).toBe(0);
+    await db
+      .prepare(
+        "INSERT INTO notices (id, ticket_id, message_id, to_address, sent_at) VALUES ('d-n2', 'd-open-old', NULL, 'someone@example.com', 3000)",
+      )
+      .run();
+    expect.soft(marked(await listTickets(db, asRep(['desk-a']), {}))).toBe(0);
+  });
+});
