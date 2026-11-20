@@ -45,7 +45,7 @@ A dev build sends, from each sender server (shyden.co.uk, shytalk.app, yaweloidl
 ### Domains and records
 
 - **Live:** Email Routing on `shydesk.dpdns.org`, catch-all to the `shydesk` Worker. SPF on that domain: `v=spf1 include:spf-c.mailbaby.net ip4:45.43.163.116 ip4:45.43.163.10 ~all` (both sender servers plus MailBaby). This changes the production zone, so it waits for Shyden's approval.
-- **Dev:** a second free dpdns name in the ShyDesk Non-Prod account, with the same records, routed to the Non-Prod Worker. Registering it is Shyden's call (see Open for Shyden).
+- **Dev:** `shydeskdev.dpdns.org` in the ShyDesk Non-Prod account, with the same records, routed to the Non-Prod Worker.
 - New setting `BOUNCE_DOMAIN` per environment. Without it, sends keep today's envelope sender and nothing changes.
 
 ### Sending
@@ -72,7 +72,7 @@ When a ticket's text is deleted, its `notices` rows are deleted with it (inside 
 
 ## Open for Shyden
 
-1. The dev domain: register a second dpdns name (for example `shydesk-dev.dpdns.org`) for the Non-Prod account? This is an account-level step done in his dpdns login.
+1. Resolved: the dev domain is `shydeskdev.dpdns.org`, registered 2026-11-20 (DigitalPlat, renew by 2027-11-20); its zone is active in ShyDesk Non-Prod.
 2. The live records (Email Routing and SPF on `shydesk.dpdns.org`) are a production change: approved at the release that ships this.
 
 ## Left to the builder
