@@ -366,6 +366,48 @@ describe('the contact form', () => {
     expect(sent('tickets')).toMatchObject({ turnstileToken: 'token-2' });
   });
 
+  // shyden-labs/shydesk#242: Turnstile's new token after a refusal must not hide why the request was refused.
+  it('keeps saying why a request was refused when the check hands over a new token, until the form changes', async () => {
+    const view = await contact();
+    view.options.callback('token-1');
+    routes['POST tickets'] = () => json({ error: 'Too many requests for now. Try again in an hour.' }, 429);
+    submit(view.form);
+    await vi.waitFor(() => {
+      expect(view.status()).toBe('Too many requests for now. Try again in an hour.');
+    });
+    view.options.callback('token-2');
+    expect(view.status()).toBe('Too many requests for now. Try again in an hour.');
+    expect(view.send?.disabled).toBe(false);
+    view.fields.Subject?.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(view.status()).toBe('Ready to send');
+  });
+
+  it('asks for the check again when the form changes after a refusal before a new token comes', async () => {
+    const view = await contact();
+    view.options.callback('token-1');
+    routes['POST tickets'] = () => json({ error: 'No.' }, 400);
+    submit(view.form);
+    await vi.waitFor(() => {
+      expect(view.status()).toBe('No.');
+    });
+    view.fields.Subject?.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(view.status()).toBe('Complete the check below to send.');
+    view.fields.Subject?.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(view.status()).toBe('Complete the check below to send.');
+  });
+
+  it('keeps the field errors summary when the check hands over a new token', async () => {
+    const view = await contact();
+    view.options.callback('token-1');
+    routes['POST tickets'] = () => json({ errors: { email: 'Enter an email.' } }, 400);
+    submit(view.form);
+    await vi.waitFor(() => {
+      expect(view.status()).toBe('Check the fields marked below.');
+    });
+    view.options.callback('token-2');
+    expect(view.status()).toBe('Check the fields marked below.');
+  });
+
   it('says it was not sent when the answer says nothing it can read', async () => {
     const view = await contact();
     view.options.callback('token-1');

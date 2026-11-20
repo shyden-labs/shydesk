@@ -331,6 +331,14 @@
       const updateSend = () => {
         send.disabled = this.token === '' || uploads.busy();
       };
+      // A refusal stays on the status line until the customer changes the form, so Turnstile's
+      // new token never hides why the request was refused (shyden-labs/shydesk#242).
+      let refused = false;
+      form.addEventListener('input', () => {
+        if (!refused) return;
+        refused = false;
+        this.tell(this.token === '' ? TEXT.needsCheck : TEXT.ready);
+      });
 
       const holder = make('div', { slot: 'turnstile' });
       // In the light DOM too: WebDriver file input does not reach inside a shadow root on Safari (shyden-labs/shydesk#21).
@@ -344,7 +352,7 @@
             callback: (/** @type {string} */ token) => {
               this.token = token;
               updateSend();
-              this.tell(TEXT.ready);
+              if (!refused) this.tell(TEXT.ready);
             },
             'expired-callback': () => {
               this.token = '';
@@ -397,6 +405,7 @@
             if (target !== undefined) target.textContent = line;
           }
           this.tell(body.errors === undefined ? (body.error ?? TEXT.notSent) : TEXT.fixFields);
+          refused = true;
           // Each Turnstile token is good for one try; the widget makes a new one.
           this.token = '';
           const id = widget;
