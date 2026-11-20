@@ -31,18 +31,20 @@ describe('deploy-dev', () => {
     );
   });
 
-  // What keeps the credential out of a pull request is dev letting only develop
-  // deploy (shyden-labs/repo-template#117); this line only picks an environment a pull request may use.
+  // A pull request's automatic run rehearses with no credential; every branch may still deploy dev by a
+  // hand-started run (shyden-labs/shydesk#136). Forks get no secrets on pull_request.
   it('deploys from the dev environment, and rehearses in dev-rehearsal, which holds no credential', () => {
     const jobs = topLevel(workflow(), 'jobs').split('\n');
     expect(jobs).toContain('    environment: ${{ github.event_name == pull_request && dev-rehearsal || dev }}');
     expect(jobs.filter((line) => /^ {4}environment:/.test(line))).toHaveLength(1);
   });
 
-  // A pull_request event has no `before`, so a rehearsal diffs against the base.
-  it('lists what a pull request changes against its base', () => {
+  // A later push to a pull request has a `before` (its previous push), so the base is chosen
+  // by event, never by `before` alone: the rehearsal judges every file the pull request changes
+  // (shyden-labs/shydesk#210).
+  it('lists what a pull request changes against its base, on every push to it', () => {
     expect(topLevel(workflow(), 'jobs').split('\n')).toContain(
-      '          BEFORE: ${{ github.event.before || github.event.pull_request.base.sha }}',
+      '          BEFORE: ${{ github.event_name == pull_request && github.event.pull_request.base.sha || github.event.before }}',
     );
   });
 
@@ -69,23 +71,64 @@ describe('deploy-dev', () => {
     expect(keys).toEqual(['if', 'runs-on', 'environment', 'steps']);
   });
 
-  // Only the template's rehearsal passes the placeholder: the template has
-  // nothing to deploy (shyden-labs/repo-template#121). Anywhere else, or on a real deploy, it fails
-  // until the project fills it in.
-  it('still fails in a repository made from the template until it fills in its deploy', () => {
+  // The verdict step fails naming any path no deploy area covers, and
+  // pipefail keeps tee from hiding that failure (shyden-labs/shydesk#14).
+  it('runs the deploy verdict script on the changed files, failing when it fails', () => {
     const jobs = topLevel(workflow(), 'jobs').split('\n');
-    const step = jobs.indexOf('      - name: Deploy the changed areas to dev');
-    expect(jobs.slice(step, step + 10)).toEqual([
-      '      - name: Deploy the changed areas to dev',
+    const step = jobs.indexOf('      - name: Decide which areas deploy');
+    const next = jobs.indexOf('      - name: Deploy the Worker to dev');
+    expect(jobs.slice(step, next).filter((line) => line.trim() !== '')).toEqual([
+      '      - name: Decide which areas deploy',
+      '        id: areas',
+      '        run: |',
+      '          set -o pipefail',
+      '          node scripts/deploy-dev.ts changed-files.txt $GITHUB_OUTPUT | tee -a $GITHUB_STEP_SUMMARY',
+    ]);
+  });
+
+  // A pull request builds the Worker with no credential; develop deploys with
+  // the dev environment's token and fails, naming it, when a secret is missing.
+  // The schema goes first, so the new Worker never reads a table not there yet (shyden-labs/shydesk#15).
+  // FIRST_ADMIN_EMAIL is a person's email in a public repo, so it lives as a dev environment secret and is put on
+  // the Worker as a Worker secret on each deploy (shyden-labs/shydesk#81).
+  it('builds the Worker on a pull request and migrates and deploys it from develop, refusing a missing secret', () => {
+    const jobs = topLevel(workflow(), 'jobs').split('\n');
+    const step = jobs.indexOf('      - name: Deploy the Worker to dev');
+    expect(jobs.slice(step).filter((line) => line.trim() !== '')).toEqual([
+      '      - name: Deploy the Worker to dev',
+      '        if: ${{ steps.areas.outputs.worker == true }}',
       '        env:',
       '          DEPLOY_REHEARSAL: ${{ github.event_name == pull_request }}',
+      '          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}',
+      '          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}',
+      '          FIRST_ADMIN_EMAIL: ${{ secrets.FIRST_ADMIN_EMAIL }}',
+      '          TICKET_TOKEN_KEY: ${{ secrets.TICKET_TOKEN_KEY }}',
+      '          WRANGLER_SEND_METRICS: false',
       '        run: |',
-      '          if [ $GITHUB_REPOSITORY = shyden-labs/repo-template ] && [ $DEPLOY_REHEARSAL = true ]; then',
-      '            echo The template hosts nothing, so its rehearsal deploys nothing.',
+      '          node scripts/npm-ci.ts',
+      '          if [ $DEPLOY_REHEARSAL = true ]; then',
+      '            ./node_modules/.bin/wrangler deploy --env dev --dry-run --outdir dist',
+      '            ./node_modules/.bin/wrangler deploy --config demo-host/wrangler.jsonc --dry-run --outdir dist/demo',
       '            exit 0',
       '          fi',
-      '          echo ::error title=deploy-dev is not filled in::Replace this step with the projects own dev deploy, acting only on the areas in changed-files.txt, and deploying nothing when DEPLOY_REHEARSAL is true (README, Using it, step 7).',
-      '          exit 1',
+      '          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID FIRST_ADMIN_EMAIL TICKET_TOKEN_KEY; do',
+      '            if [ -z ${!name} ]; then',
+      '              echo ::error title=No $name in the dev environment::Add it to the dev environment before the Worker can deploy.',
+      '              exit 1',
+      '            fi',
+      '          done',
+      '          ./node_modules/.bin/wrangler d1 migrations apply shydesk --env dev --remote',
+      '          ./node_modules/.bin/wrangler deploy --env dev',
+      '          printf %s $FIRST_ADMIN_EMAIL | ./node_modules/.bin/wrangler secret put FIRST_ADMIN_EMAIL --env dev',
+      '          printf %s $TICKET_TOKEN_KEY | ./node_modules/.bin/wrangler secret put TICKET_TOKEN_KEY --env dev',
+      '          ./node_modules/.bin/wrangler d1 execute shydesk --env dev --remote --file demo-host/seed.sql',
+      '          ./node_modules/.bin/wrangler deploy --config demo-host/wrangler.jsonc',
     ]);
+  });
+
+  it('sets up the exact Node before running the script', () => {
+    const jobs = topLevel(workflow(), 'jobs');
+    expect(jobs).toContain('      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1');
+    expect(jobs.indexOf('actions/setup-node')).toBeLessThan(jobs.indexOf('node scripts/deploy-dev.ts'));
   });
 });

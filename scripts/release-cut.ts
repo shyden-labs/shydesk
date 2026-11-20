@@ -49,7 +49,7 @@ export interface ReleaseCutFacts {
 }
 
 const SHA = /^[0-9a-f]{40}$/;
-const PULL_NUMBER = /^[1-9][0-9]*$/;
+const PULL_NUMBER = /^[1-9]\d*$/;
 /** Where the pull request's merge commit is fetched to. */
 export const MERGE_REF = 'refs/remotes/pull/merge';
 /** GitHub refuses a commit status description longer than this. */

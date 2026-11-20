@@ -67,7 +67,7 @@ export function nextTicket(items: NextItem[]): ScoredItem | null {
   const unscored = open.filter((i) => i.priority === null);
   if (unscored.length > 0) {
     throw new Error(
-      `${unscored.length} open tickets have no Priority: ${unscored.map((i) => `#${i.number}`).join(', ')}. Score them on the board first.`,
+      `${unscored.length} open tickets have no Priority: ${unscored.map((i) => '#' + String(i.number)).join(', ')}. Score them on the board first.`,
     );
   }
   for (const i of scored) {
@@ -219,6 +219,19 @@ export function parseNextItems(pages: RawPage[]): NextItem[] {
   );
 }
 
+/** The line naming the next ticket, or why there is none. */
+function nextLine(items: NextItem[]): string {
+  const next = nextTicket(items);
+  if (next === null) {
+    return items.some((i) => i.state === 'OPEN' && i.status === PARKED)
+      ? `Next: nothing before the release; the rest is in "${PARKED}".\n`
+      : 'Next: nothing is open.\n';
+  }
+  const blockers = next.blockedBy.map((b) => label(b, next.repo)).join(', ');
+  const blocked = next.blockedBy.length > 0 ? ', blocked by ' + blockers : '';
+  return `Next: #${next.number} ${next.title} (${next.priority}, ${next.status ?? 'no status'}${blocked}).\n`;
+}
+
 export function main(args: string[]): number {
   const [id, title] = args;
   if (id === undefined || title === undefined) {
@@ -236,16 +249,7 @@ export function main(args: string[]): number {
   for (const note of offBoardBlockers(items)) {
     process.stderr.write(`Note: ${note}.\n`);
   }
-  const next = nextTicket(items);
-  process.stdout.write(
-    next === null
-      ? items.some((i) => i.state === 'OPEN' && i.status === PARKED)
-        ? `Next: nothing before the release; the rest is in "${PARKED}".\n`
-        : 'Next: nothing is open.\n'
-      : `Next: #${next.number} ${next.title} (${next.priority}, ${next.status ?? 'no status'}${
-          next.blockedBy.length > 0 ? `, blocked by ${next.blockedBy.map((b) => label(b, next.repo)).join(', ')}` : ''
-        }).\n`,
-  );
+  process.stdout.write(nextLine(items));
   return 0;
 }
 

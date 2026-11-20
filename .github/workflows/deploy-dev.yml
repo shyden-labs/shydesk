@@ -1,13 +1,16 @@
 # Every merge into `develop` deploys to dev (shyden-labs/repo-template#12; operator 2026-10-14), so dev
 # always shows develop's head and nobody has to remember a deploy. A project
 # replaces the last step with its own deploy, acting only on the areas the
-# merge changed (`changed-files.txt`); until it does, the run fails and names
-# that step. Every pull request runs the same job as a rehearsal (shyden-labs/repo-template#35 AC3), so
+# merge changed (`changed-files.txt`). ShyDesk has no deployable app yet, so
+# `scripts/deploy-dev.ts` deploys nothing and fails naming any file that would
+# need a deploy (shyden-labs/shydesk#7). Every pull request runs the same job as a rehearsal (shyden-labs/repo-template#35 AC3), so
 # its lines run on the pull request's own commit: it uses `dev-rehearsal`, an
 # environment that holds no credential, with DEPLOY_REHEARSAL=true, so it
-# deploys nothing. A pull request runs its own copy of this file, so what
-# keeps the dev credential out of one is `dev` letting only `develop` deploy
-# (shyden-labs/repo-template#117), not this file. A repository that hosts nothing deletes this file and
+# deploys nothing. Anything can deploy to dev at any time (Shyden 2026-11-13,
+# shyden-labs/shydesk#136): `dev` lets every branch deploy, so a hand-started run
+# (workflow_dispatch) from any branch deploys that branch to dev. Fork pull requests
+# get no secrets, and no job naming a dev environment runs on pull_request_target
+# (tests/unit/deploy-dev-anywhere.test.ts). A repository that hosts nothing deletes this file and
 # `tests/unit/deploy-dev.test.ts`, and says why in its README.
 #
 # Third-party actions are pinned to full SHAs with a `# vX.Y.Z` comment, as in
@@ -40,20 +43,31 @@ jobs:
     # the last step is filled in.
     if: ${{ github.repository != 'shyden-labs/repo-template' || github.event_name == 'pull_request' }}
     runs-on: ubuntu-26.04
-    # The dev credential lives in `dev`, which must let only `develop` deploy
-    # (shyden-labs/repo-template#117), never as a repository secret. A pull request rehearses in
+    # The dev credential lives in `dev`, which every branch may deploy to
+    # (shyden-labs/shydesk#136), never as a repository secret. A pull request rehearses in
     # `dev-rehearsal`, which GitHub creates on first use and which holds nothing.
     environment: ${{ github.event_name == 'pull_request' && 'dev-rehearsal' || 'dev' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+      # The exact Node, from the one file Dependabot bumps (shyden-labs/repo-template#143).
+      - id: node
+        run: |
+          version=$(sed -nE 's/^FROM node:([0-9]+\.[0-9]+\.[0-9]+)$/\1/p' docker/node/Dockerfile)
+          test -n "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ steps.node.outputs.version }}
       # What this deploy covers: the files the push changed, or every file on
       # a hand-started run or a branch's first push (no earlier commit to diff).
-      # A pull request has no `before`, so its rehearsal diffs against its base.
+      # A pull request always diffs against its base: a later push to it has a
+      # `before` (its previous push), which would hide files from earlier pushes
+      # (shyden-labs/shydesk#210).
       - name: List the files this merge changed
         env:
-          BEFORE: ${{ github.event.before || github.event.pull_request.base.sha }}
+          BEFORE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
         run: |
           if [ -n "$BEFORE" ] && git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
             git diff --name-only "$BEFORE" "$GITHUB_SHA" > changed-files.txt
@@ -66,13 +80,47 @@ jobs:
             cat changed-files.txt
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
-      - name: Deploy the changed areas to dev
+      - name: Decide which areas deploy
+        id: areas
+        # Fails naming any changed path no deploy area covers, so new
+        # deployable code cannot land without a dev deploy for it
+        # (shyden-labs/shydesk#14); pipefail keeps tee from hiding that.
+        run: |
+          set -o pipefail
+          node scripts/deploy-dev.ts changed-files.txt "$GITHUB_OUTPUT" | tee -a "$GITHUB_STEP_SUMMARY"
+      # A pull request builds the Worker without credentials (`--dry-run`);
+      # develop deploys it with the dev environment's token, and fails naming
+      # the missing secret rather than skipping when it is not there.
+      # The demo support page (shyden-labs/shydesk#19) goes with it: its product
+      # is upserted into the dev D1, then its static Worker deploys.
+      - name: Deploy the Worker to dev
+        if: ${{ steps.areas.outputs.worker == 'true' }}
         env:
           DEPLOY_REHEARSAL: ${{ github.event_name == 'pull_request' }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          # The first admin's email: a person's address in a public repo, so a
+          # dev environment secret, put on the Worker as a Worker secret
+          # (shyden-labs/shydesk#81).
+          FIRST_ADMIN_EMAIL: ${{ secrets.FIRST_ADMIN_EMAIL }}
+          TICKET_TOKEN_KEY: ${{ secrets.TICKET_TOKEN_KEY }}
+          WRANGLER_SEND_METRICS: false
         run: |
-          if [ "$GITHUB_REPOSITORY" = shyden-labs/repo-template ] && [ "$DEPLOY_REHEARSAL" = true ]; then
-            echo "The template hosts nothing, so its rehearsal deploys nothing."
+          node scripts/npm-ci.ts
+          if [ "$DEPLOY_REHEARSAL" = "true" ]; then
+            ./node_modules/.bin/wrangler deploy --env dev --dry-run --outdir dist
+            ./node_modules/.bin/wrangler deploy --config demo-host/wrangler.jsonc --dry-run --outdir dist/demo
             exit 0
           fi
-          echo "::error title=deploy-dev is not filled in::Replace this step with the project's own dev deploy, acting only on the areas in changed-files.txt, and deploying nothing when DEPLOY_REHEARSAL is true (README, Using it, step 7)."
-          exit 1
+          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID FIRST_ADMIN_EMAIL TICKET_TOKEN_KEY; do
+            if [ -z "${!name}" ]; then
+              echo "::error title=No $name in the dev environment::Add it to the dev environment before the Worker can deploy."
+              exit 1
+            fi
+          done
+          ./node_modules/.bin/wrangler d1 migrations apply shydesk --env dev --remote
+          ./node_modules/.bin/wrangler deploy --env dev
+          printf '%s' "$FIRST_ADMIN_EMAIL" | ./node_modules/.bin/wrangler secret put FIRST_ADMIN_EMAIL --env dev
+          printf '%s' "$TICKET_TOKEN_KEY" | ./node_modules/.bin/wrangler secret put TICKET_TOKEN_KEY --env dev
+          ./node_modules/.bin/wrangler d1 execute shydesk --env dev --remote --file demo-host/seed.sql
+          ./node_modules/.bin/wrangler deploy --config demo-host/wrangler.jsonc

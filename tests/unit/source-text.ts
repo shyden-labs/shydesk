@@ -232,7 +232,10 @@ export function withoutTsComments(source: string): string {
 
     if (char === '/' && next === '*') {
       i += 2;
-      while (i < source.length && !(source[i] === '*' && source[i + 1] === '/')) i += 1;
+      while (i < source.length && !(source[i] === '*' && source[i + 1] === '/')) {
+        if (source[i] === '\n') out += '\n';
+        i += 1;
+      }
       i += 1;
       continue;
     }

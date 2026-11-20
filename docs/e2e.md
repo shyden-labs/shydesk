@@ -1,0 +1,81 @@
+# End-to-end suite
+
+One WebdriverIO suite, `tests/e2e/**/*.e2e.ts`, runs unchanged on every target
+(shyden-labs/shydesk#42): desktop Chrome, Firefox and Safari in CI, and a real
+Android phone (Chrome) and a real iPhone (Safari) over USB. Nothing is skipped
+on any target; `tests/unit/no-skips.test.ts` fails on any skip, focus or filter.
+
+Tests act only through `tests/e2e/harness/input.ts` (`tap`, `type`, `pickFile`),
+which finds controls by their accessible name, so every control a test touches
+needs one. On the phones the helpers use Appium's native layer: a real touch, real
+key presses and the phone's own photo picker.
+
+Before any target starts, the suite runs this branch's ShyDesk locally
+(`wrangler dev` on port 8787, a fresh local D1 with the migrations and a seed,
+Cloudflare's always-pass Turnstile test keys; `tests/e2e/harness/local-shydesk.ts`),
+so a pull request tests its own code. `/contact.html` serves the demo support
+page (`demo-host/public/index.html`) with its piece loaded from that ShyDesk;
+`?product=demo-elsewhere` names a product allowed only on another origin. The
+local ShyDesk's log is `.e2e-runs/shydesk.log`.
+
+Each run prints the total per target and the suite's count (read from the spec
+files), and fails naming any target that ran fewer tests than another or than
+the whole suite (`scripts/e2e-totals.ts`). The browsers run in CI and the
+phones on this Mac, so each run is held to the suite's full count on its own.
+
+Phones and desktop browsers are two groups. Within each group, every target runs
+the identical set. A test runs everywhere unless its behaviour differs by device
+kind: then it goes in `<name>.phone.e2e.ts` or `<name>.desktop.e2e.ts`, whose
+first line is `// phone-only: <the input or feature that differs>` (or
+`desktop-only`). That file runs on its own group only, and the totals check
+counts each group's set (shyden-labs/shydesk#175).
+
+## Desktop (CI)
+
+The `e2e-desktop` job in `.github/workflows/ci.yml` runs
+`E2E_TARGETS=chromium,firefox,safari npm run test:e2e` on macOS. Chrome and
+Firefox use the runner image's own drivers, passed as `E2E_DESKTOP_CHROMEDRIVER`
+and `E2E_GECKODRIVER`, so nothing is downloaded mid-run (shyden-labs/shydesk#77);
+a run without either fails naming the variable.
+
+The runner's installed Chrome updates itself partway through a job (run
+43468019143: 156.0.8078.80 before the suite, 157.0.8103.51 after), so CI copies
+Chrome.app before the suite and passes the copy as `E2E_DESKTOP_CHROME`; every
+Chrome session in a run then starts the same Chrome, matching the image's
+chromedriver (shyden-labs/shydesk#135). Locally it is optional: without it
+Chrome starts the installed browser.
+
+## Phones
+
+One-time set-up:
+
+- Appium 3 with the `xcuitest` and `uiautomator2` drivers, started with
+  `ANDROID_HOME` set: `appium --port 4723`.
+- Android: copy the test files into their own folder and index them:
+  `adb push tests/fixtures/media/. /sdcard/DCIM/ShyDeskTests/`, then a media scan
+  for each file. The picker's From this device > ShyDeskTests then shows only them.
+- iPhone: AirDrop the three files in `tests/fixtures/media/` and put them in a
+  Photos album named `ShyDesk tests`.
+- Android needs a chromedriver matching the phone's Chrome, passed as
+  `E2E_CHROMEDRIVER`.
+
+Each run, with the phones unlocked and auto-lock off:
+
+```sh
+E2E_TARGETS=android,ios E2E_ORIGIN=http://<this Mac's LAN address>:8765 \
+  E2E_IOS_UDID=<xcrun xctrace list devices> E2E_ANDROID_SERIAL=<adb devices> \
+  E2E_CHROMEDRIVER=<path> npm run test:e2e:device
+```
+
+`test:e2e:device` is the same command as `test:e2e`; only real-device runs use
+it on a laptop, where every other suite is CI's.
+
+The suite serves its pages on port 8765 and the local ShyDesk on 8787; the
+iPhone reaches both over the LAN, Android through `adb reverse` on localhost.
+Android must read localhost: Chrome keeps WebCodecs, and so video shrinking,
+from an insecure page, and a LAN http address is one (shyden-labs/shydesk#21).
+The run sets both forwards on `E2E_ANDROID_SERIAL` itself before any session
+starts, and stops at once naming a port adb does not then list. After each
+Android spec it lists them again: a lost forward stops the run naming the port
+and when it was last seen (shyden-labs/shydesk#153), instead of a connection
+refused in a later spec.

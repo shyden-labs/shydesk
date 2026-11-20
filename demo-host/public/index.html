@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Demo support page</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 16px;
+        font-family: system-ui, sans-serif;
+        background: #f6f6f8;
+        color: #1b1b1f;
+      }
+      main {
+        max-width: 640px;
+        margin: 0 auto;
+      }
+      shydesk-support {
+        --shydesk-accent: #4b3fd8;
+      }
+    </style>
+    <!-- Loaded from the Non-Prod ShyDesk exactly as docs/embedding.md tells products. -->
+    <script src="https://shydesk.shydesk-non-prod.workers.dev/embed.js" defer></script>
+  </head>
+  <body>
+    <main>
+      <h1>Demo support page</h1>
+      <p>A test page on its own origin showing the ShyDesk support piece embedded the way a product embeds it.</p>
+      <shydesk-support product="demo" view="contact" lang="en"></shydesk-support>
+    </main>
+  </body>
+</html>

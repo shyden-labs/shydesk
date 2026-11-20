@@ -18,9 +18,9 @@
  * requires release-cut and lets main be created before its checks have run
  * (issue shyden-labs/repo-template#171), and unless develop takes pull requests by squash alone
  * and main by merge commit alone (issue shyden-labs/repo-template#115). It sets the repository to
- * delete merged head branches and refuse rebase merges, reads that back, then gives the `dev` environment, which holds the
- * dev credential, a deployment branch policy naming `develop` alone, and reads
- * that back too (issue shyden-labs/repo-template#117).
+ * delete merged head branches and refuse rebase merges, reads that back, then lets every branch deploy to
+ * the `dev` environment, which holds the dev credential, and reads that back too (Shyden 2026-11-13: anything
+ * can deploy to dev at any time; shyden-labs/shydesk#136).
  */
 import { execFileSync } from 'node:child_process';
 import { runIfEntry } from './cli.ts';
@@ -134,7 +134,7 @@ export function planRulesets(existing: ExistingRuleset[], checks: string[]): Rul
     if (shape(found) === shape(body)) return { action: 'keep' as const, id: found.id, body };
     // Unmeasured whether a PUT leaving bypass_actors out keeps them, so the update carries them, and is never sent unseen.
     if (!Array.isArray(found.bypass_actors)) {
-      throw new Error(
+      throw new TypeError(
         `ruleset ${found.id} "${found.name}" differs, but its bypass list is hidden (read it with admin rights), so an update could drop a bypass`,
       );
     }
@@ -148,51 +148,62 @@ interface ChecksParameters {
   do_not_enforce_on_create?: boolean;
 }
 
-/** Every way a branch's rules (as `rules/branches/<branch>` reports them) fall short; empty when none. */
-export function auditBranchRules(branch: Branch, rules: Rule[]): string[] {
-  const problems: string[] = [];
-  // The repository deletes merged head branches (shyden-labs/repo-template#28), so a deletable
-  // develop would go the first time a develop -> main pull request merges.
-  if (!rules.some((r) => r.type === 'deletion')) {
-    problems.push(`${branch}: no rule forbids deleting it`);
-  }
+/** How a branch's pull-request rules fall short: none, or one allowing a merge method other than its own. */
+function pullRequestProblems(branch: Branch, rules: Rule[]): string[] {
   const pullRequests = rules.filter((r) => r.type === 'pull_request');
-  if (pullRequests.length === 0) {
-    problems.push(`${branch}: no rule requires a pull request`);
-  }
-  for (const r of pullRequests) {
+  if (pullRequests.length === 0) return [`${branch}: no rule requires a pull request`];
+  return pullRequests.flatMap((r) => {
     const methods = (r.parameters as { allowed_merge_methods?: string[] } | undefined)?.allowed_merge_methods;
-    if (methods?.length !== 1 || methods[0] !== MERGE_METHOD[branch]) {
-      const named = methods === undefined ? 'an unstated method' : methods.join(', ');
-      problems.push(`${branch}: pull requests may merge by ${named}, not ${MERGE_METHOD[branch]} alone`);
-    }
+    if (methods?.length === 1 && methods[0] === MERGE_METHOD[branch]) return [];
+    const named = methods === undefined ? 'an unstated method' : methods.join(', ');
+    return [`${branch}: pull requests may merge by ${named}, not ${MERGE_METHOD[branch]} alone`];
+  });
+}
+
+/** How develop's required-checks rules fall short: strict, never needing the release cut, enforced on creation. */
+function developChecksProblems(checks: ChecksParameters[], requiresReleaseCut: boolean): string[] {
+  const problems: string[] = [];
+  if (checks.some((c) => c.strict_required_status_checks_policy !== true)) {
+    problems.push('develop: a required-checks rule is not strict');
   }
-  const checks = rules.filter((r) => r.type === 'required_status_checks').map((r) => (r.parameters ?? {}) as ChecksParameters);
-  const requiresReleaseCut = checks.some((c) => c.required_status_checks?.some((s) => s.context === RELEASE_CUT) === true);
-  if (checks.length === 0) {
-    problems.push(`${branch}: no rule requires status checks`);
-  } else if (branch === 'develop') {
-    if (checks.some((c) => c.strict_required_status_checks_policy !== true)) {
-      problems.push(`${branch}: a required-checks rule is not strict`);
-    }
-    if (requiresReleaseCut) {
-      problems.push(`${branch}: a rule requires ${RELEASE_CUT}, which runs only on pull requests into main`);
-    }
-    if (checks.some((c) => c.do_not_enforce_on_create === true)) {
-      problems.push(`${branch}: a required-checks rule is not enforced when develop is created`);
-    }
-  } else {
-    if (checks.some((c) => c.strict_required_status_checks_policy !== false)) {
-      problems.push(`${branch}: a required-checks rule is strict, so a second release cut could never merge`);
-    }
-    if (!requiresReleaseCut) {
-      problems.push(`${branch}: no rule requires ${RELEASE_CUT}`);
-    }
-    if (checks.some((c) => c.do_not_enforce_on_create !== true)) {
-      problems.push(`${branch}: a required-checks rule is enforced when main is created, so a new main can never be made`);
-    }
+  if (requiresReleaseCut) {
+    problems.push(`develop: a rule requires ${RELEASE_CUT}, which runs only on pull requests into main`);
+  }
+  if (checks.some((c) => c.do_not_enforce_on_create === true)) {
+    problems.push('develop: a required-checks rule is not enforced when develop is created');
   }
   return problems;
+}
+
+/** How main's required-checks rules fall short: not strict (a second cut must merge), needing the release cut, not enforced on creation. */
+function mainChecksProblems(checks: ChecksParameters[], requiresReleaseCut: boolean): string[] {
+  const problems: string[] = [];
+  if (checks.some((c) => c.strict_required_status_checks_policy !== false)) {
+    problems.push('main: a required-checks rule is strict, so a second release cut could never merge');
+  }
+  if (!requiresReleaseCut) {
+    problems.push(`main: no rule requires ${RELEASE_CUT}`);
+  }
+  if (checks.some((c) => c.do_not_enforce_on_create !== true)) {
+    problems.push('main: a required-checks rule is enforced when main is created, so a new main can never be made');
+  }
+  return problems;
+}
+
+/** How a branch's required-checks rules fall short; empty when none. */
+function checksProblems(branch: Branch, rules: Rule[]): string[] {
+  const checks = rules.filter((r) => r.type === 'required_status_checks').map((r) => (r.parameters ?? {}) as ChecksParameters);
+  if (checks.length === 0) return [`${branch}: no rule requires status checks`];
+  const requiresReleaseCut = checks.some((c) => c.required_status_checks?.some((s) => s.context === RELEASE_CUT) === true);
+  return branch === 'develop' ? developChecksProblems(checks, requiresReleaseCut) : mainChecksProblems(checks, requiresReleaseCut);
+}
+
+/** Every way a branch's rules (as `rules/branches/<branch>` reports them) fall short; empty when none. */
+export function auditBranchRules(branch: Branch, rules: Rule[]): string[] {
+  // The repository deletes merged head branches (shyden-labs/repo-template#28), so a deletable
+  // develop would go the first time a develop -> main pull request merges.
+  const deletion = rules.some((r) => r.type === 'deletion') ? [] : [`${branch}: no rule forbids deleting it`];
+  return [...deletion, ...pullRequestProblems(branch, rules), ...checksProblems(branch, rules)];
 }
 
 /** The repository settings a template copy does not carry, so the script sets them (shyden-labs/repo-template#28, shyden-labs/repo-template#115). */
@@ -212,93 +223,52 @@ export function auditRepoSettings(repo: RepoSettings): string[] {
     .map(([key, want]) => `${want.problem} (${key} is ${String(repo[key as keyof RepoSettings])})`);
 }
 
-/** The environment that holds the dev credential, and the one branch that may deploy to it (shyden-labs/repo-template#117). */
+/** The environment that holds the dev credential, which every branch may deploy to (shyden-labs/shydesk#136). */
 export const DEV_ENVIRONMENT = 'dev';
-const DEV_BRANCH = 'develop';
-
-/** One of an environment's deployment branch policies. */
-export interface BranchPolicy {
-  id: number;
-  name: string;
-  type?: string;
-}
-
-const isDevelopBranch = (p: BranchPolicy) => p.name === DEV_BRANCH && p.type === 'branch';
-
-/** Which of `dev`'s branch policies to delete by id, and whether `develop` must be added. */
-export function planDevPolicies(existing: BranchPolicy[]): { remove: number[]; add: boolean } {
-  return { remove: existing.filter((p) => !isDevelopBranch(p)).map((p) => p.id), add: !existing.some(isDevelopBranch) };
-}
 
 interface DevEnvironment {
   deployment_branch_policy?: { protected_branches?: boolean; custom_branch_policies?: boolean } | null;
 }
 
 /**
- * Every way `dev` (as `environments/dev` and its branch policies report it)
- * lets more than `develop` deploy; empty when none (shyden-labs/repo-template#117). A pull_request run
- * uses the pull request's own workflows, so without this a same-repository
- * branch could name `environment: dev` and read its secrets.
+ * How `dev` (as `environments/dev` reports it) falls short of letting every branch deploy; empty when it
+ * does (shyden-labs/shydesk#136). Fork pull requests get no secrets, and no job naming a dev environment
+ * runs on pull_request_target (tests/unit/deploy-dev-anywhere.test.ts), so only those who can push reach it.
  */
-export function auditDevEnvironment(env: DevEnvironment | undefined, policies: BranchPolicy[]): string[] {
+export function auditDevEnvironment(env: DevEnvironment | undefined): string[] {
   if (env === undefined) return [`${DEV_ENVIRONMENT}: missing; deploy-dev.yml deploys there`];
   const policy = env.deployment_branch_policy;
-  if (policy === null || policy === undefined) return [`${DEV_ENVIRONMENT}: no deployment branch policy, so any branch may deploy`];
-  if (policy.protected_branches !== false)
-    return [`${DEV_ENVIRONMENT}: lets every protected branch deploy (main included), not develop alone`];
-  if (policy.custom_branch_policies !== true) return [`${DEV_ENVIRONMENT}: names no custom branches, so develop alone is not set`];
-  if (policies.length === 1 && isDevelopBranch(policies[0] as BranchPolicy)) return [];
-  const named = policies.length === 0 ? 'no branch' : policies.map((p) => `${p.name} (${String(p.type)})`).join(', ');
-  return [`${DEV_ENVIRONMENT}: lets ${named} deploy, not develop alone`];
+  if (policy === null || policy === undefined) return [];
+  return [
+    `${DEV_ENVIRONMENT}: limits which branches may deploy (protected_branches ${String(policy.protected_branches)}, custom_branch_policies ${String(policy.custom_branch_policies)}), not every branch`,
+  ];
 }
 
-/** gh's JSON answer; an empty one (a DELETE's 204) reads as nothing. */
+/** gh's JSON answer. */
 function gh(args: string[], input?: string): unknown {
-  const answer = execFileSync('gh', args, { encoding: 'utf8', input });
-  return answer.trim() === '' ? undefined : JSON.parse(answer);
-}
-
-/** `dev`'s branch policies, from one page; a longer list fails closed rather than being read in part. */
-function devPolicies(repo: string): BranchPolicy[] {
-  const path = `repos/${repo}/environments/${DEV_ENVIRONMENT}/deployment-branch-policies?per_page=100`;
-  const page = gh(['api', path]) as { total_count: number; branch_policies: BranchPolicy[] };
-  if (page.total_count > page.branch_policies.length) {
-    throw new Error(`${path} lists ${page.total_count} branch policies; one page of 100 was read`);
-  }
-  return page.branch_policies;
+  return JSON.parse(execFileSync('gh', args, { encoding: 'utf8', input }));
 }
 
 type ListedEnvironment = DevEnvironment & { name: string; protection_rules?: { type: string }[] };
 
-/** Gives `dev` a custom policy naming `develop` alone, then reads it back (shyden-labs/repo-template#117). Prints `dev: set` or `dev: keep`. */
+/** Lets every branch deploy to `dev`, then reads it back (shyden-labs/shydesk#136). Prints `dev: set` or `dev: keep`. */
 function setDevEnvironment(repo: string): void {
   const env = `repos/${repo}/environments/${DEV_ENVIRONMENT}`;
   const listed = (gh(['api', `repos/${repo}/environments`]) as { environments: ListedEnvironment[] }).environments;
   const before = listed.find((e) => e.name === DEV_ENVIRONMENT);
-  const policy = before?.deployment_branch_policy;
-  let wrote = false;
-  if (policy?.protected_branches !== false || policy.custom_branch_policies !== true) {
+  const wrote = before === undefined || (before.deployment_branch_policy ?? null) !== null;
+  if (wrote) {
     // Unmeasured whether a PUT naming only the branch policy keeps reviewers
     // and wait timers, so it is never sent over them.
     const kept = (before?.protection_rules ?? []).map((r) => r.type).filter((type) => type !== 'branch_policy');
     if (kept.length > 0) {
       throw new Error(
-        `${DEV_ENVIRONMENT} has protection rules (${kept.join(', ')}) that setting its branch policy could drop: set its deployment branches to develop alone by hand, then run this again`,
+        `${DEV_ENVIRONMENT} has protection rules (${kept.join(', ')}) that setting its branch policy could drop: set its deployment branches to all branches by hand, then run this again`,
       );
     }
-    gh(
-      ['api', '-X', 'PUT', env, '--input', '-'],
-      JSON.stringify({ deployment_branch_policy: { protected_branches: false, custom_branch_policies: true } }),
-    );
-    wrote = true;
+    gh(['api', '-X', 'PUT', env, '--input', '-'], JSON.stringify({ deployment_branch_policy: null }));
   }
-  const { remove, add } = planDevPolicies(devPolicies(repo));
-  for (const id of remove) gh(['api', '-X', 'DELETE', `${env}/deployment-branch-policies/${id}`]);
-  if (add) gh(['api', '-X', 'POST', `${env}/deployment-branch-policies`, '-f', `name=${DEV_BRANCH}`, '-f', 'type=branch']);
-  wrote ||= remove.length > 0 || add;
-  const after = gh(['api', env]) as DevEnvironment;
-  // GitHub answers 404 for the policies of an environment whose custom policy is off.
-  const problems = auditDevEnvironment(after, after.deployment_branch_policy?.custom_branch_policies === true ? devPolicies(repo) : []);
+  const problems = auditDevEnvironment(gh(['api', env]) as DevEnvironment);
   if (problems.length > 0) {
     throw new Error(`read back, the dev environment still falls short:\n  ${problems.join('\n  ')}`);
   }
@@ -339,7 +309,7 @@ export function main(args: string[]): number {
   }
   setDevEnvironment(repo);
   process.stdout.write(
-    `${repo}: develop requires strict checks; main requires ${RELEASE_CUT} instead; both forbid deletion and require pull requests; develop takes squashes alone and main merge commits alone, with rebase merging off; merged head branches are deleted; ${DEV_ENVIRONMENT} deploys from ${DEV_BRANCH} alone.\n`,
+    `${repo}: develop requires strict checks; main requires ${RELEASE_CUT} instead; both forbid deletion and require pull requests; develop takes squashes alone and main merge commits alone, with rebase merging off; merged head branches are deleted; ${DEV_ENVIRONMENT} deploys from any branch.\n`,
   );
   return 0;
 }

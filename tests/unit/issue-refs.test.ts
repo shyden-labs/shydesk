@@ -16,7 +16,7 @@ const BARE_REF = /(?<![\w/&-])#\d+\b/g;
 const IGNORED = ['node_modules/**', 'coverage/**', '.vite/**', '.git/**', '.claude/**', '.superpowers/**'];
 
 const FILES = globSync(
-  ['**/*.{ts,js,json,md}', '.github/**/*.{yml,md}', '.github/node/Dockerfile', '.githooks/*', '.gitignore', '.npmrc', '.prettierignore'],
+  ['**/*.{ts,js,json,md}', '.github/**/*.{yml,md}', 'docker/node/Dockerfile', '.githooks/*', '.gitignore', '.npmrc', '.prettierignore'],
   { exclude: IGNORED },
 )
   .filter((file) => file !== 'package-lock.json')
@@ -32,16 +32,17 @@ function withoutComments(file: string, text: string): string {
 
 const count = (text: string): number => text.match(BARE_REF)?.length ?? 0;
 
+// Every file is read with the test file, not inside the test, so the reads do not count
+// against the test's 1 s on a busy laptop (shyden-labs/shydesk#200).
+const TEXTS = FILES.map((file) => ({ file, text: readFileSync(file, 'utf8') }));
+
 describe('issue references in comments and docs', () => {
   it('reads the dot-directories a copy carries', () => {
     expect(FILES).toEqual(expect.arrayContaining(['.githooks/pre-push', '.github/workflows/ci.yml', 'README.md']));
   });
 
   it('cite owner/repo#N in full, never a bare #N', () => {
-    const bare = FILES.filter((file) => {
-      const text = readFileSync(file, 'utf8');
-      return count(text) > count(withoutComments(file, text));
-    });
+    const bare = TEXTS.filter(({ file, text }) => count(text) > count(withoutComments(file, text))).map(({ file }) => file);
     expect(bare).toEqual([]);
   });
 });

@@ -121,7 +121,7 @@ const splitPins = (uses: Use[]) => {
 describe('the CI supply chain is pinned', () => {
   it('pins each action at one SHA in every workflow, judged over every pinned use', () => {
     const uses = externalUses();
-    expect({ pinned: uses.length, split: splitPins(uses) }).toEqual({ pinned: 10, split: [] });
+    expect({ pinned: uses.length, split: splitPins(uses) }).toEqual({ pinned: 17, split: [] });
   });
 
   it('names an action whose bump reached one workflow and missed another', () => {
@@ -207,7 +207,7 @@ describe('Dependabot keeps the pins from rotting', () => {
       leaks: ecosystems.flatMap(leaks),
     }).toEqual({
       judged: [
-        ['npm', ['vitest', 'patch-updates']],
+        ['npm', ['vitest', 'wdio', 'patch-updates']],
         ['github-actions', ['actions-subpaths', 'patch-updates']],
         ['docker', []],
       ],
@@ -244,11 +244,13 @@ describe('Dependabot keeps the pins from rotting', () => {
  * sets Node 26.3+, and every project runs the same versions as the rest).
  *
  * `ubuntu-latest` and a bare major Node are floating pins: the image or the Node under CI changes on
- * GitHub's schedule, not this repo's. Node is now `.github/node/Dockerfile` alone. Each
+ * GitHub's schedule, not this repo's. Node is now `docker/node/Dockerfile` alone. Each
  * reader is an allow-list of the one value written, so every other spelling
  * (a list, an expression, a block of labels, another case) fails, naming it.
  */
 const RUNNER = 'ubuntu-26.04';
+// The end-to-end suite's desktop job needs Chrome, Firefox and Safari on one runner (shyden-labs/shydesk#42).
+const RUNNERS = new Set([RUNNER, 'macos-26']);
 
 interface Runner {
   where: string;
@@ -273,21 +275,21 @@ const runnersIn = (file: string, source: string): Runner[] => {
 };
 
 const floating = (runners: Runner[]) =>
-  runners.filter(({ value }) => value !== RUNNER).map(({ where, value }) => `${where} runs-on: ${value}`);
+  runners.filter(({ value }) => !RUNNERS.has(value)).map(({ where, value }) => `${where} runs-on: ${value}`);
 
 const workflowFiles = () => readdirSync(WORKFLOWS).filter((f) => /\.ya?ml$/.test(f));
 const workflow = (file: string) => readFileSync(join(WORKFLOWS, file), 'utf8');
 
 /**
  * The read step every Node setup follows (shyden-labs/repo-template#143): it takes the exact version
- * from the one file Dependabot bumps, `.github/node/Dockerfile`, and fails the
+ * from the one file Dependabot bumps, `docker/node/Dockerfile`, and fails the
  * job when that file holds no exact `FROM node:x.y.z` line, so setup-node
  * never gets an empty version and falls back to the runner's own Node.
  */
 const READ_STEP = [
   '- id: node',
   '  run: |',
-  "    version=$(sed -nE 's/^FROM node:([0-9]+\\.[0-9]+\\.[0-9]+)$/\\1/p' .github/node/Dockerfile)",
+  "    version=$(sed -nE 's/^FROM node:([0-9]+\\.[0-9]+\\.[0-9]+)$/\\1/p' docker/node/Dockerfile)",
   '    test -n "$version"',
   '    echo "version=$version" >> "$GITHUB_OUTPUT"',
 ];
@@ -340,9 +342,9 @@ const nodePin = (text: string): { version: string } | { wrong: string } => {
 };
 
 describe('the template runs one Node and one runner, pinned exactly', () => {
-  it(`every job runs on ${RUNNER}, judged over every runs-on read`, () => {
+  it(`every job runs on ${[...RUNNERS].join(' or ')}, judged over every runs-on read`, () => {
     const runners = workflowFiles().flatMap((f) => runnersIn(f, workflow(f)));
-    expect({ read: runners.length, floating: floating(runners) }).toEqual({ read: 5, floating: [] });
+    expect({ read: runners.length, floating: floating(runners) }).toEqual({ read: 8, floating: [] });
   });
 
   const job = (runsOn: string) => ['jobs:', '  build:', `    runs-on:${runsOn}`, '    steps:', '      - run: true', ''].join('\n');
@@ -355,12 +357,13 @@ describe('the template runs one Node and one runner, pinned exactly', () => {
     [' ${{ matrix.os }}', '${{ matrix.os }}'],
     [' Ubuntu-26.04', 'Ubuntu-26.04'],
     [' ubuntu-latest # was 26.04', 'ubuntu-latest'],
+    [' macos-latest', 'macos-latest'],
     ['\n      labels: ubuntu-26.04', ''],
   ])('names the runner written as runs-on:%j', (runsOn, value) => {
     expect(floating(runnersIn('ci.yml', job(runsOn)))).toEqual([`ci.yml build runs-on: ${value}`]);
   });
 
-  it.each([[' ubuntu-26.04'], [" 'ubuntu-26.04'"], [' ubuntu-26.04 # pinned']])('accepts runs-on:%j', (runsOn) => {
+  it.each([[' ubuntu-26.04'], [" 'ubuntu-26.04'"], [' ubuntu-26.04 # pinned'], [' macos-26']])('accepts runs-on:%j', (runsOn) => {
     const runners = runnersIn('ci.yml', job(runsOn));
     expect({ read: runners.length, floating: floating(runners) }).toEqual({ read: 1, floating: [] });
   });
@@ -373,7 +376,7 @@ describe('the template runs one Node and one runner, pinned exactly', () => {
 
   it("every setup-node step takes the read step's version and follows it, judged over every step read", () => {
     const steps = workflowFiles().flatMap((f) => setupNodeSteps(f, workflow(f)));
-    expect({ read: steps.length, wrong: steps.filter(({ wrong }) => wrong.length > 0) }).toEqual({ read: 4, wrong: [] });
+    expect({ read: steps.length, wrong: steps.filter(({ wrong }) => wrong.length > 0) }).toEqual({ read: 8, wrong: [] });
   });
 
   const steps = (...lines: string[]) => ['    steps:', ...lines, ''].join('\n');
@@ -458,7 +461,7 @@ describe('the template runs one Node and one runner, pinned exactly', () => {
 
   // No version is written here: a second copy would turn every Dependabot pull request red until edited by hand (reference-supply-chain.md, 2026-10-30).
   it('reads an exact Node 26 from the one file Dependabot bumps, whatever patch Dependabot moved it to', () => {
-    const pin = nodePin(readFileSync('.github/node/Dockerfile', 'utf8'));
+    const pin = nodePin(readFileSync('docker/node/Dockerfile', 'utf8'));
     // A refused file prints `wrong: <its reason>` here, with no branch left unrun on a valid file.
     expect(
       Object.entries(pin)
@@ -491,7 +494,7 @@ describe('the template runs one Node and one runner, pinned exactly', () => {
     expect(configBody()).toContain(
       [
         "  - package-ecosystem: 'docker'",
-        "    directory: '/.github/node'",
+        "    directory: '/docker/node'",
         "    target-branch: 'develop'",
         '    schedule:',
         "      interval: 'weekly'",
@@ -524,8 +527,21 @@ describe('the template runs one Node and one runner, pinned exactly', () => {
   // npm 11 skips every dependency install script that allowScripts does not name, and warns about it. The only
   // install script fsevents has is the `node-gyp rebuild` npm adds for a package published with a binding.gyp,
   // but its tarball ships no binding.gyp, only a prebuilt universal fsevents.node that loads without it (shyden-labs/repo-template#70).
-  it('allowScripts denies fsevents and approves nothing', () => {
-    expect(manifest().allowScripts).toEqual({ fsevents: false });
+  // esbuild's and workerd's postinstall only check for, or fetch, the platform binary npm already installs from
+  // their optional platform packages; `wrangler deploy --dry-run` builds the Worker without them (shyden-labs/shydesk#14).
+  // edgedriver's and geckodriver's postinstall downloads a browser driver; WebdriverIO fetches the driver it
+  // needs when a session starts, so the install-time copy is never used (shyden-labs/shydesk#42).
+  // @scarf/scarf's postinstall, pulled in by swagger-ui-dist, only reports the install to Scarf's analytics
+  // service; the docs files are copied without it (shyden-labs/shydesk#26).
+  it('allowScripts denies @scarf/scarf, edgedriver, esbuild, fsevents, geckodriver and workerd, and approves nothing', () => {
+    expect(manifest().allowScripts).toEqual({
+      '@scarf/scarf': false,
+      edgedriver: false,
+      esbuild: false,
+      fsevents: false,
+      geckodriver: false,
+      workerd: false,
+    });
   });
 
   // An allow-scripts line in .npmrc approves packages past allowScripts, so the file is pinned whole.
@@ -541,7 +557,10 @@ describe('the template runs one Node and one runner, pinned exactly', () => {
     const withScripts = Object.entries(packages)
       .filter(([, entry]) => entry.hasInstallScript === true)
       .map(([path]) => path.slice(path.lastIndexOf('node_modules/') + 'node_modules/'.length));
-    expect([withScripts.sort(), Object.keys({ ...manifest().allowScripts }).sort()]).toEqual([['fsevents'], ['fsevents']]);
+    expect([withScripts.sort(), Object.keys({ ...manifest().allowScripts }).sort()]).toEqual([
+      ['@scarf/scarf', 'edgedriver', 'esbuild', 'fsevents', 'geckodriver', 'workerd'],
+      ['@scarf/scarf', 'edgedriver', 'esbuild', 'fsevents', 'geckodriver', 'workerd'],
+    ]);
   });
 });
 

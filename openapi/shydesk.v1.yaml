@@ -1,0 +1,1068 @@
+# ShyDesk's public API (shyden-labs/shydesk#26), written by hand and checked
+# against the Worker by tests/unit/openapi-contract.test.ts: every route under
+# /api/v1 and /support-api is here, and every response validates.
+openapi: 3.1.0
+info:
+  title: ShyDesk API
+  version: 1.0.0
+  description: >-
+    Product servers read their tickets through /api/v1 with the API key made
+    for them on the ShyDesk admin screen. The key is sent as a Bearer token and
+    only ever belongs to one product. The shared support piece calls the
+    /support-api routes from a product's own support page (docs/embedding.md):
+    they need no key, and answer only the product's allowed origins, naming
+    that exact origin in Access-Control-Allow-Origin; any other origin gets
+    404 with no CORS header.
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+servers:
+  - url: https://shydesk.dpdns.org
+    description: Live
+security:
+  - productKey: []
+paths:
+  /api/v1/products/{product}/feed:
+    get:
+      operationId: getProductFeed
+      summary: New and changed tickets of one product, oldest change first.
+      description: >-
+        Every change to a ticket gives it the next sequence number (`seq`), so
+        a caller that keeps `next_cursor` and sends it back as `since_cursor`
+        sees each change once. A ticket changed again comes back again with its
+        new `seq`. An empty page keeps the cursor it was sent.
+      parameters:
+        - name: product
+          in: path
+          required: true
+          description: The product id the key was made for.
+          schema:
+            type: string
+        - name: since_cursor
+          in: query
+          required: false
+          description: The `next_cursor` of the last page read; 0 or left out starts from the beginning.
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 9007199254740991
+            default: 0
+        - name: limit
+          in: query
+          required: false
+          description: Most tickets in one page.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+      responses:
+        '200':
+          description: One page of changes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FeedPage'
+        '400':
+          description: '`since_cursor` or `limit` is not a whole number in range.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: No key, or the key is unknown or revoked.
+          headers:
+            WWW-Authenticate:
+              schema:
+                type: string
+                const: Bearer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: The key belongs to another product.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/products/{product}/upload-grants:
+    post:
+      operationId: createUploadGrant
+      summary: A short-lived grant for the product's app to upload report evidence.
+      description: >-
+        The product's server asks for a grant and hands it to its app, which
+        uploads the files straight to ShyDesk through the /support-api/uploads
+        routes, sending `Authorization: Grant <grant>` in place of an allowed
+        origin. Each upload started uses one of the grant's files; it expires
+        15 minutes after it was made. Only its hash is stored.
+      parameters:
+        - name: product
+          in: path
+          required: true
+          description: The product id the key was made for.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UploadGrantRequest'
+      responses:
+        '201':
+          description: The grant, shown once.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadGrant'
+        '400':
+          description: '`count` is not a whole number from 1 to 10.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: No key, or the key is unknown or revoked.
+          headers:
+            WWW-Authenticate:
+              schema:
+                type: string
+                const: Bearer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: The key belongs to another product.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/products/{product}/reports:
+    post:
+      operationId: createReport
+      summary: Sends a user's report from the product's server.
+      description: >-
+        Sent by the product's server, never its app, after it has checked the
+        reporter's session. ShyDesk takes `reporter_id` as the server asserts it
+        and sends no email. The reporter is told "received" by the product and
+        nothing more. At most 120 reports a minute per product.
+      parameters:
+        - name: product
+          in: path
+          required: true
+          description: The product id the key was made for.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewReport'
+      responses:
+        '202':
+          description: Received.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportAccepted'
+        '400':
+          description: The body is not a report this schema allows.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: No key, or the key is unknown or revoked.
+          headers:
+            WWW-Authenticate:
+              schema:
+                type: string
+                const: Bearer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: The key belongs to another product.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: >-
+            `unknown_reason`: the reason is not one of the product's report
+            reasons. `unknown_upload`: an upload is not a finished, unused upload
+            of this product.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: '`rate_limited`: over 120 reports in a minute.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/products/{product}/reports/{id}:
+    get:
+      operationId: getReport
+      summary: One report, with the reported user's earlier reports and punishments in this product.
+      parameters:
+        - name: product
+          in: path
+          required: true
+          description: The product id the key was made for.
+          schema:
+            type: string
+        - name: id
+          in: path
+          required: true
+          description: The `report_id` the report was received under.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The report and its history.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportView'
+        '401':
+          description: No key, or the key is unknown or revoked.
+          headers:
+            WWW-Authenticate:
+              schema:
+                type: string
+                const: Bearer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: The key belongs to another product, or there is no such report of this product.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/products/{product}/appeals:
+    post:
+      operationId: createAppeal
+      summary: Sends a punished user's appeal from inside the product.
+      description: >-
+        Sent by the product's server, never its app, naming the punishment it
+        shows the user. One appeal per punishment: a second, or one after a
+        rejected appeal, is refused, and so is an appeal on a lifted
+        punishment. The appellant follows the appeal on the private ticket
+        link answered here. At most 120 appeals a minute per product.
+      parameters:
+        - name: product
+          in: path
+          required: true
+          description: The product id the key was made for.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewProductAppeal'
+      responses:
+        '201':
+          description: The appeal was made.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppealMade'
+        '400':
+          description: '`bad_request`: the body is not an appeal this schema allows.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: No key, or the key is unknown or revoked.
+          headers:
+            WWW-Authenticate:
+              schema:
+                type: string
+                const: Bearer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: '`not_found`: no such punishment in this product, or the key belongs to another product.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: >-
+            `already_appealed`: this punishment was appealed already, whatever
+            the outcome. `lifted`: the punishment is no longer active.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: '`rate_limited`: over 120 appeals in a minute.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: '`unavailable`: this ShyDesk cannot save appeals right now.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /support-api/config:
+    get:
+      operationId: getSupportConfig
+      summary: The contact form's settings for one product.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/ProductQuery'
+      responses:
+        '200':
+          description: The form's settings.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupportConfig'
+        '404':
+          description: An unknown product, or an origin not on its list. No CORS header.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /support-api/tickets:
+    post:
+      operationId: createSupportTicket
+      summary: A new support request from the contact form.
+      description: >-
+        Checked field by field, then by Turnstile (solved on one of the
+        product's own hosts), then by 20 requests per network address and 5
+        per email address per hour. The ticket stands even when the notice
+        email could not be sent; `emailSent` says which.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/ProductQuery'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewTicket'
+      responses:
+        '201':
+          description: The ticket was created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketCreated'
+        '400':
+          description: >-
+            A field is missing or wrong (`errors`, one message per field), the
+            Turnstile check failed (`errors.turnstileToken`), or the body could
+            not be read (`error`).
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/FieldErrors'
+                  - $ref: '#/components/schemas/Error'
+        '404':
+          description: An unknown product, an origin not on its list (no CORS header), or a product with no support type yet.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: Too many requests from this email or network address in the last hour.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: This ShyDesk has no Turnstile secret set, so no request can be checked.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /support-api/ticket:
+    get:
+      operationId: readSupportTicket
+      summary: The conversation on a private link.
+      description: >-
+        Opened by the token in the link's fragment, sent only in the
+        `Authorization` header as `Ticket <token>`. Names no staff member.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/ProductQuery'
+      responses:
+        '200':
+          description: The ticket and its messages, with attachments marked when removed.
+        '404':
+          description: The link is no longer valid, or belongs to another product.
+  /support-api/ticket/reply:
+    post:
+      operationId: replyToSupportTicket
+      summary: A reply from the private link, which leaves the ticket open.
+      description: At most 20 replies per network address per hour.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/ProductQuery'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [message]
+              properties:
+                message:
+                  type: string
+                  maxLength: 10000
+                attachmentIds:
+                  type: array
+                  maxItems: 10
+                  items:
+                    type: string
+      responses:
+        '201':
+          description: The reply was saved.
+        '400':
+          description: The reply could not be used; the answer says why.
+        '404':
+          description: The link is no longer valid, or belongs to another product.
+        '429':
+          description: Too many replies for now.
+  /support-api/files/{id}:
+    get:
+      operationId: readSupportFile
+      summary: A stored attachment of the link's own ticket.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/ProductQuery'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The file, private and never cached.
+        '404':
+          description: No such stored attachment on this ticket.
+  /support-api/files/{id}/thumb:
+    get:
+      operationId: readSupportFileThumbnail
+      summary: The preview of a stored attachment of the link's own ticket.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/ProductQuery'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The preview, private and never cached.
+        '404':
+          description: No such preview on this ticket.
+  /support-api/uploads:
+    post:
+      operationId: startUpload
+      summary: Starts an attachment upload in parts.
+      description: >-
+        No per-file size limit: only the free storage can refuse it here. Limited
+        to 30 starts per network address and 300 per product per hour. A
+        product's app may send `Authorization: Grant <grant>` (from
+        /api/v1/products/{product}/upload-grants) in place of an allowed origin;
+        each start uses one of its files, and a used up or expired grant gets 404.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/ProductQuery'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewUpload'
+      responses:
+        '201':
+          description: Started. Send `parts` parts, each `partSize` bytes but the last.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadStarted'
+        '400': { $ref: '#/components/responses/UploadError' }
+        '404': { $ref: '#/components/responses/UploadError' }
+        '422': { $ref: '#/components/responses/UploadError' }
+        '429': { $ref: '#/components/responses/UploadError' }
+  /support-api/uploads/{id}/parts/{n}:
+    put:
+      operationId: sendUploadPart
+      summary: One part's raw bytes, numbered from 1.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/ProductQuery'
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: n, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary }
+      responses:
+        '200':
+          description: Stored. Keep the etag for `complete`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadPart'
+        '400': { $ref: '#/components/responses/UploadError' }
+        '404': { $ref: '#/components/responses/UploadError' }
+        '411': { $ref: '#/components/responses/UploadError' }
+        '413': { $ref: '#/components/responses/UploadError' }
+  /support-api/uploads/{id}/complete:
+    post:
+      operationId: completeUpload
+      summary: Finishes an upload, keeping the file only if its content passes.
+      description: >-
+        The file must really be a JPEG, WebP or MP4 of the declared type, and a
+        video at most 30 seconds long. A refused file is deleted.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/ProductQuery'
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompleteUpload'
+      responses:
+        '200': { $ref: '#/components/responses/UploadOk' }
+        '400': { $ref: '#/components/responses/UploadError' }
+        '404': { $ref: '#/components/responses/UploadError' }
+        '422': { $ref: '#/components/responses/UploadError' }
+  /support-api/uploads/{thumbId}:
+    put:
+      operationId: sendUploadThumbnail
+      summary: The preview image of a finished upload, at most 1 MB, JPEG or WebP.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/ProductQuery'
+        - { name: thumbId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary }
+      responses:
+        '200': { $ref: '#/components/responses/UploadOk' }
+        '404': { $ref: '#/components/responses/UploadError' }
+        '409': { $ref: '#/components/responses/UploadError' }
+        '411': { $ref: '#/components/responses/UploadError' }
+        '413': { $ref: '#/components/responses/UploadError' }
+        '422': { $ref: '#/components/responses/UploadError' }
+  /support-api/appeals:
+    get:
+      operationId: readAppeal
+      summary: The punishment an appeal link is for, and whether it can be appealed.
+      description: >-
+        Opened by the token in the ban notice link's fragment
+        (`#appeal=<token>`), sent only in the `ShyDesk-Appeal` header.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/ProductQuery'
+        - $ref: '#/components/parameters/AppealToken'
+      responses:
+        '200':
+          description: The punishment and whether it can still be appealed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppealView'
+        '404':
+          description: The link is not valid for this product.
+    post:
+      operationId: makeAppeal
+      summary: An appeal from the ban notice link.
+      description: >-
+        One appeal per punishment, as for the in-product appeal. At most 20
+        per network address per hour. The private ticket link is answered and
+        emailed to the appellant.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/ProductQuery'
+        - $ref: '#/components/parameters/AppealToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewAppeal'
+      responses:
+        '201':
+          description: The appeal was made.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [ticket_url, email_sent]
+                properties:
+                  ticket_url: { type: string }
+                  email_sent: { type: boolean }
+        '400':
+          description: The appeal could not be used; the answer says why, field by field.
+        '404':
+          description: The link is not valid for this product.
+        '409':
+          description: '`already_appealed` or `lifted`, as for the in-product appeal.'
+        '429':
+          description: Too many appeals for now.
+        '503':
+          description: Appeals cannot be taken right now.
+webhooks:
+  punishment:
+    post:
+      operationId: punishmentCallback
+      summary: ShyDesk tells the product's server to apply or lift a punishment.
+      description: >-
+        Sent to the product's callback URL, set on the ShyDesk admin screen, when
+        a rep applies one of the product's punishments to a report, when the
+        admin lifts one, and when a person presses "Send again" after a failed
+        send. To verify it: read `ShyDesk-Timestamp` (Unix seconds) and
+        `ShyDesk-Signature`; refuse a timestamp more than 300 seconds from your
+        clock; compute `v1=` and the lowercase hex HMAC-SHA256 of
+        `timestamp + "." + raw body`, keyed by the product's signing secret as
+        UTF-8 text, and compare it in constant time (ShyDesk's own `verify` in
+        src/punishments/sign.ts does exactly this). Replays: the same
+        `punishment_id` and `type` may arrive again; apply it once and answer the
+        first result again. ShyDesk waits 10 seconds, never retries by itself,
+        and shows the outcome on the ticket. `appeal_url`, when the product has
+        an appeal page, is that page with the appeal token in the fragment
+        (`#appeal=<token>`), to show in the ban notice.
+      parameters:
+        - name: ShyDesk-Timestamp
+          in: header
+          required: true
+          schema: { type: string, pattern: '^[0-9]+$' }
+        - name: ShyDesk-Signature
+          in: header
+          required: true
+          schema: { type: string, pattern: '^v1=[0-9a-f]{64}$' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PunishmentCallback'
+      responses:
+        '200':
+          description: Applied. Anything but `applied` true is shown as failed.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [applied]
+                properties:
+                  applied: { type: boolean }
+        default:
+          description: Not applied; `error` is shown on the ticket next to the status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+components:
+  parameters:
+    ProductQuery:
+      name: product
+      in: query
+      required: true
+      schema:
+        type: string
+      description: The product id, as set on the ShyDesk admin screen.
+  securitySchemes:
+    productKey:
+      type: http
+      scheme: bearer
+      description: The product's API key, made on the ShyDesk admin screen. Only its hash is stored.
+    AppealToken:
+      name: ShyDesk-Appeal
+      in: header
+      required: true
+      description: The token from the ban notice link's fragment.
+      schema:
+        type: string
+  responses:
+    UploadOk:
+      description: Done.
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [ok]
+            properties:
+              ok: { type: boolean, const: true }
+    UploadError:
+      description: Refused, saying why.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+  schemas:
+    FeedPage:
+      type: object
+      additionalProperties: false
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/TicketSummary'
+        next_cursor:
+          type: integer
+          minimum: 0
+          description: Send back as `since_cursor` to read the changes after this page.
+    TicketSummary:
+      type: object
+      additionalProperties: false
+      required: [id, status, subject, category, created_at, updated_at, closed_at, seq]
+      description: A ticket without the customer's details or any message text.
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+          enum: [open, waiting, closed]
+        subject:
+          type: string
+          maxLength: 150
+        category:
+          type: string
+          enum: [question, bug, account, payment, other]
+        created_at:
+          type: integer
+          description: Milliseconds since 1970-01-01 UTC.
+        updated_at:
+          type: integer
+          description: Milliseconds since 1970-01-01 UTC.
+        closed_at:
+          type: [integer, 'null']
+          description: Milliseconds since 1970-01-01 UTC, or null while the ticket is open or waiting.
+        seq:
+          type: integer
+          minimum: 1
+    SupportConfig:
+      type: object
+      additionalProperties: false
+      required: [product, types, categories, turnstileSiteKey, maxAttachments, maxVideoSeconds]
+      properties:
+        product:
+          type: object
+          additionalProperties: false
+          required: [id, name]
+          properties:
+            id:
+              type: string
+            name:
+              type: string
+        types:
+          type: array
+          description: The product's support type, or none while it has not been set up.
+          maxItems: 1
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, name, fields]
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+              fields:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SupportField'
+        categories:
+          type: array
+          items:
+            type: string
+            enum: [question, bug, account, payment, other]
+        turnstileSiteKey:
+          type: string
+        maxAttachments:
+          type: integer
+          const: 10
+        maxVideoSeconds:
+          type: integer
+          const: 30
+    SupportField:
+      type: object
+      additionalProperties: false
+      required: [label, kind, required]
+      properties:
+        label:
+          type: string
+        kind:
+          type: string
+          enum: [text, select]
+        required:
+          type: boolean
+        options:
+          type: array
+          items:
+            type: string
+    NewTicket:
+      type: object
+      required: [email, subject, category, message, turnstileToken]
+      properties:
+        email:
+          type: string
+          maxLength: 254
+        subject:
+          type: string
+          maxLength: 150
+        category:
+          type: string
+          enum: [question, bug, account, payment, other]
+        message:
+          type: string
+          maxLength: 10000
+        fields:
+          type: object
+          description: The support type's extra fields, by label. Others are dropped.
+          additionalProperties:
+            type: string
+            maxLength: 1000
+        attachmentIds:
+          type: array
+          maxItems: 10
+          items:
+            type: string
+        turnstileToken:
+          type: string
+    TicketCreated:
+      type: object
+      additionalProperties: false
+      required: [ticketLink, emailSent]
+      properties:
+        ticketLink:
+          type: string
+          description: The product's ticket page with `#t=` and the 43-character private token. Shown once.
+        emailSent:
+          type: boolean
+          description: False when the notice email could not be sent; the customer should keep the link.
+    NewUpload:
+      type: object
+      required: [kind, mime, bytes]
+      properties:
+        kind: { type: string, enum: [image, video] }
+        mime: { type: string, enum: [image/jpeg, image/webp, video/mp4] }
+        bytes: { type: integer, minimum: 1 }
+    UploadStarted:
+      type: object
+      additionalProperties: false
+      required: [id, partSize, parts, thumbId]
+      properties:
+        id: { type: string }
+        partSize: { type: integer, const: 8388608 }
+        parts: { type: integer, minimum: 1 }
+        thumbId: { type: string }
+    UploadPart:
+      type: object
+      additionalProperties: false
+      required: [etag]
+      properties:
+        etag: { type: string }
+    CompleteUpload:
+      type: object
+      required: [parts]
+      properties:
+        parts:
+          type: array
+          items:
+            type: object
+            required: [n, etag]
+            properties:
+              n: { type: integer, minimum: 1 }
+              etag: { type: string }
+    UploadGrantRequest:
+      type: object
+      additionalProperties: false
+      required: [count]
+      properties:
+        count:
+          type: integer
+          minimum: 1
+          maximum: 10
+          description: How many files the app may upload with it.
+    UploadGrant:
+      type: object
+      additionalProperties: false
+      required: [grant, expires_at]
+      properties:
+        grant:
+          type: string
+          pattern: '^[A-Za-z0-9_-]{43}$'
+        expires_at:
+          type: integer
+          description: Unix time in milliseconds when it stops being accepted.
+    ReportItem:
+      type: object
+      additionalProperties: false
+      required: [kind, id]
+      properties:
+        kind: { type: string, minLength: 1, maxLength: 200, description: 'What was reported: player, room, message...' }
+        id: { type: string, minLength: 1, maxLength: 200 }
+    NewReport:
+      type: object
+      additionalProperties: false
+      required: [reporter_id, item, subject_user_id, reason]
+      properties:
+        reporter_id: { type: string, minLength: 1, maxLength: 200, description: 'The reporting user, as the product server asserts it.' }
+        item: { $ref: '#/components/schemas/ReportItem' }
+        subject_user_id: { type: string, minLength: 1, maxLength: 200, description: 'The user the report is about.' }
+        reason: { type: string, minLength: 1, maxLength: 200, description: "One of the product's report reasons, set on the admin screen." }
+        note: { type: string, maxLength: 5000 }
+        context:
+          type: object
+          description: What the app fills in itself; at most 16000 characters as JSON.
+        upload_ids:
+          type: array
+          maxItems: 10
+          items: { type: string, minLength: 1, maxLength: 200 }
+          description: Finished uploads made under this product's upload grants.
+    ReportAccepted:
+      type: object
+      additionalProperties: false
+      required: [report_id]
+      properties:
+        report_id: { type: string }
+    ReportView:
+      type: object
+      additionalProperties: false
+      required: [report, history]
+      properties:
+        report:
+          type: object
+          additionalProperties: false
+          required: [id, status, created_at, reporter_id, item, subject_user_id, reason, note, context]
+          properties:
+            id: { type: string }
+            status: { type: string, enum: [open, waiting, closed] }
+            created_at: { type: integer }
+            reporter_id: { type: string }
+            item: { $ref: '#/components/schemas/ReportItem' }
+            subject_user_id: { type: string }
+            reason: { type: string }
+            note: { type: [string, 'null'] }
+            context: { type: object }
+        history:
+          type: object
+          additionalProperties: false
+          required: [reports, punishments]
+          description: The same user's other reports and punishments in this product only, newest first, 50 of each.
+          properties:
+            reports:
+              type: array
+              maxItems: 50
+              items:
+                type: object
+                additionalProperties: false
+                required: [ticket_id, reason, created_at, status]
+                properties:
+                  ticket_id: { type: string }
+                  reason: { type: string }
+                  created_at: { type: integer }
+                  status: { type: string, enum: [open, waiting, closed] }
+            punishments:
+              type: array
+              maxItems: 50
+              items:
+                type: object
+                additionalProperties: false
+                required: [id, label, created_at, send_state, lifted_at]
+                properties:
+                  id: { type: string }
+                  label: { type: string }
+                  created_at: { type: integer }
+                  send_state: { type: string, enum: [sending, applied, failed] }
+                  lifted_at: { type: [integer, 'null'] }
+    PunishmentCallback:
+      type: object
+      additionalProperties: false
+      required: [type, punishment_id, product, subject_user_id, punishment, report_ticket_id, issued_at]
+      properties:
+        type: { type: string, enum: [punishment.apply, punishment.lift] }
+        punishment_id: { type: string, description: "ShyDesk's id for this punishment: the idempotency key." }
+        product: { type: string }
+        subject_user_id: { type: string }
+        punishment:
+          type: object
+          additionalProperties: false
+          required: [key, label, duration_seconds]
+          properties:
+            key: { type: string }
+            label: { type: string }
+            duration_seconds: { type: [integer, 'null'], description: 'Null for a punishment with no end.' }
+        report_ticket_id: { type: string }
+        appeal_url: { type: string, description: 'Only on punishment.apply, when the product has an appeal page.' }
+        issued_at: { type: integer, description: 'When the punishment was applied, Unix milliseconds.' }
+    NewAppeal:
+      type: object
+      required: [email, message]
+      properties:
+        email: { type: string, maxLength: 254 }
+        message: { type: string, minLength: 1, maxLength: 10000 }
+    NewProductAppeal:
+      type: object
+      required: [punishment_id, email, message]
+      properties:
+        punishment_id: { type: string, description: "ShyDesk's id for the punishment, as sent in its callback." }
+        email: { type: string, maxLength: 254 }
+        message: { type: string, minLength: 1, maxLength: 10000 }
+    AppealMade:
+      type: object
+      additionalProperties: false
+      required: [ticket_url]
+      properties:
+        ticket_url: { type: string, description: "The appellant's private ticket link." }
+    AppealView:
+      type: object
+      additionalProperties: false
+      required: [label, created_at, can_appeal]
+      properties:
+        label: { type: string }
+        created_at: { type: integer, description: 'When the punishment was applied, Unix milliseconds.' }
+        can_appeal: { type: boolean }
+        reason: { type: string, enum: [already_appealed, lifted], description: 'Why no appeal is taken, when it is not.' }
+    FieldErrors:
+      type: object
+      additionalProperties: false
+      required: [errors]
+      properties:
+        errors:
+          type: object
+          description: One message per field, keyed by field name (`fields.<label>` for extra fields).
+          additionalProperties:
+            type: string
+    Error:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: string
