@@ -44,7 +44,7 @@ A dev build sends, from each sender server (shyden.co.uk, shytalk.app, yaweloidl
 
 ### Domains and records
 
-- **Live:** Email Routing on `shydesk.dpdns.org`, catch-all to the `shydesk` Worker. SPF on that domain: `v=spf1 include:spf-c.mailbaby.net ip4:45.43.163.116 ip4:45.43.163.10 ~all` (both sender servers plus MailBaby). This changes the production zone, so it waits for Shyden's approval.
+- **Live:** Email Routing on `shydesk.dpdns.org`, catch-all to the `shydesk` Worker. SPF on that domain, one record: `v=spf1 include:_spf.mx.cloudflare.net include:spf-c.mailbaby.net ip4:45.43.163.116 ip4:45.43.163.10 ~all` (Email Routing's own include, which it needs to count the records as set up, plus both sender servers and MailBaby). This changes the production zone, so it waits for Shyden's approval.
 - **Dev:** `shydeskdev.dpdns.org` in the ShyDesk Non-Prod account, with the same records, routed to the Non-Prod Worker.
 - New setting `BOUNCE_DOMAIN` per environment. Without it, sends keep today's envelope sender and nothing changes.
 

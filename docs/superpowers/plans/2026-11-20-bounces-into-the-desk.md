@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - Dev bounce domain: `shydeskdev.dpdns.org` (ShyDesk Non-Prod account 5bf57d1deff03bfbb596674c1bdb30d4, zone active 2026-11-20 13:11 UTC). Live: `shydesk.dpdns.org`, changed only with Shyden's approval at the release.
-- SPF on each bounce domain: `v=spf1 include:spf-c.mailbaby.net ip4:45.43.163.116 ip4:45.43.163.10 ~all`.
+- SPF on each bounce domain, one record: `v=spf1 include:_spf.mx.cloudflare.net include:spf-c.mailbaby.net ip4:45.43.163.116 ip4:45.43.163.10 ~all`. Email Routing's own include must stay in it: with MailBaby's alone, Email Routing marks the domain's records misconfigured (measured on dev 2026-11-21, shyden-labs/shydesk#232).
 - Without `BOUNCE_DOMAIN`, sending is exactly today's: `MAIL FROM` is the product's address and no `notices` row is written.
 - The notice id is `crypto.randomUUID()`. The recipient pattern is `^bounce-([0-9a-f-]{36})@<BOUNCE_DOMAIN>$`, case-insensitive.
 - Only `multipart/report; report-type=delivery-status` with `Action: failed` counts. `Status` and `Diagnostic-Code` are cut to 500 characters.
@@ -88,7 +88,7 @@
 
 Proves every sender server accepts the new envelope sender before Task 3 is built. Evidence goes on shyden-labs/shydesk#232 as a comment, one block per server.
 
-- [ ] **Step 1: Records on `shydeskdev.dpdns.org`** (Non-Prod, via the dashboard in Chrome): enable Email Routing (it adds its MX and its own SPF TXT; replace that TXT with the Global Constraints SPF), and a catch-all rule forwarding to the shydesk-no-reply mailbox as a verified destination (verify through Sparked Host webmail). Read back with `dig +short MX shydeskdev.dpdns.org @1.1.1.1` and `dig +short TXT shydeskdev.dpdns.org @1.1.1.1`.
+- [ ] **Step 1: Records on `shydeskdev.dpdns.org`** (Non-Prod, via the dashboard in Chrome): enable Email Routing (it adds its MX and its own SPF TXT; replace that TXT with the Global Constraints SPF, which keeps Email Routing's include), and a catch-all rule forwarding to the shydesk-no-reply mailbox as a verified destination (verify through Sparked Host webmail). Read back with `dig +short MX shydeskdev.dpdns.org @1.1.1.1` and `dig +short TXT shydeskdev.dpdns.org @1.1.1.1`.
 - [ ] **Step 2: Per sender server** (shyden.co.uk and shytalk.app on web-par-01, yaweloidle.com on web-par-03): through the dev contact form for that product, open (a) a ticket whose address is a mailbox we can read (routes in memory `reference-mail-proof-routes`) and (b) one to `no-such-user-<random>@gmail.com`.
 - [ ] **Step 3: Pass** means (a)'s raw headers show `Return-Path: <bounce-<uuid>@shydeskdev.dpdns.org>`, `X-MAILBABY-ORIGIN: PASS` and `dmarc=pass`; and (b)'s failure report arrives in shydesk-no-reply addressed to that `bounce-<uuid>`. Save both raw reports (MailBaby's and the far server's) with addresses replaced as `tests/fixtures/bounces/<server>-<source>.eml`.
 - [ ] **Step 4:** Any server that fails: stop, ask Shyden (`AskUserQuestion`) with the forwarder fallback for that server. Do not start Task 3 for it.
