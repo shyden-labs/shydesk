@@ -89,6 +89,12 @@ describe('the ticket timer in wrangler.jsonc', () => {
   });
 
   // shyden-labs/shydesk#13 AC3: both send through Sparked Host's mail server (Paris); the logins are the SMTP_LOGINS secret.
+  // Bounces come back to dev's own domain; live gets one only at the release (shyden-labs/shydesk#232).
+  it('dev sets BOUNCE_DOMAIN to shydeskdev.dpdns.org and live sets none', () => {
+    expect(config.env.dev.vars).toMatchObject({ BOUNCE_DOMAIN: 'shydeskdev.dpdns.org' });
+    expect(config.vars).not.toHaveProperty('BOUNCE_DOMAIN');
+  });
+
   it('sends mail through Sparked Host on live and on dev', () => {
     expect(config.vars).toMatchObject({ SMTP_HOST: 'web-par-01.sparkedhost.us' });
     expect(config.env.dev.vars).toMatchObject({ SMTP_HOST: 'web-par-01.sparkedhost.us' });

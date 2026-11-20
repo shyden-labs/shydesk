@@ -36,6 +36,8 @@ interface World {
   attachments?: string[];
   turnstile?: { success: boolean; hostname?: string; metadata?: { result_with_testing_key: boolean } };
   mailFails?: boolean;
+  /** Sets BOUNCE_DOMAIN, so each notice is written down (shyden-labs/shydesk#232). */
+  bounceDomain?: string;
   noSecret?: boolean;
   noTokenKey?: boolean;
   ticketWriteFails?: boolean;
@@ -73,6 +75,7 @@ function appWith(world: World = {}) {
     ...(world.noTokenKey ? {} : { TICKET_TOKEN_KEY: btoa(String.fromCharCode(...new Uint8Array(32).fill(7))) }),
     TURNSTILE_SITE_KEY: 'site-key',
     SMTP_LOGINS: JSON.stringify({ 'no-reply@shytalk.app': { user: 'u', pass: 'p' } }),
+    ...(world.bounceDomain === undefined ? {} : { BOUNCE_DOMAIN: world.bounceDomain }),
   };
   const headers = { Origin: ORIGIN, 'Content-Type': 'application/json', 'CF-Connecting-IP': '203.0.113.9' };
   const post = (body: unknown, product = 'shytalk') =>
@@ -128,6 +131,15 @@ describe('GET /support-api/config', () => {
 });
 
 describe('POST /support-api/tickets', () => {
+  it('writes the new-ticket notice down against the new ticket, with no message (shyden-labs/shydesk#232)', async () => {
+    const { post, statements, sent } = appWith({ bounceDomain: 'bounce.example' });
+    expect((await post(good())).status).toBe(201);
+    const ticketId = ticketInserts(statements)[0]?.values[0];
+    const notice = statements.find((s) => s.sql.startsWith('INSERT INTO notices'));
+    expect(notice?.values.slice(1, 4)).toEqual([ticketId, null, 'ana@example.com']);
+    expect(sent[0]?.envelopeFrom).toBe(`bounce-${String(notice?.values[0])}@bounce.example`);
+  });
+
   it('creates the ticket, mails the notice and answers with the private link', async () => {
     const { post, statements, sent } = appWith();
     const response = await post(good());

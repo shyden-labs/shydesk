@@ -164,15 +164,16 @@ export function contactRoutes(deps: ContactDeps): Hono<ContactEnv> {
     const withinEmail = await hit(c.env.DB, `contact:email:${request.email}`, 5, HOUR, now);
     if (!withinIp || !withinEmail) return c.json({ error: MESSAGES.tooMany }, 429);
 
+    let ticketId: string;
     let token: string;
     try {
-      ({ token } = await createTicket(c.env.DB, { productId: product.id, typeId: type.id, ...request, now, tokenKey }));
+      ({ id: ticketId, token } = await createTicket(c.env.DB, { productId: product.id, typeId: type.id, ...request, now, tokenKey }));
     } catch (error) {
       if (error instanceof AttachmentError) return c.json({ errors: { attachmentIds: MESSAGES.attachmentMissing } }, 400);
       throw error;
     }
     const link = ticketLink(product.ticketPageUrl, token);
-    const mailed = await sendNoReply(c.env, product, request.email, link, deps.deliver, new Date(now));
+    const mailed = await sendNoReply(c.env, product, request.email, link, deps.deliver, new Date(now), { ticketId, messageId: null });
     return c.json({ ticketLink: link, emailSent: mailed === 'sent' }, 201);
   });
 

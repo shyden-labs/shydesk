@@ -158,6 +158,19 @@ describe('tables', () => {
   it('legal_hold_events', async () => {
     expect(await columnsOf('legal_hold_events')).toEqual(['hold_id', 'at', 'by', 'action', 'detail']);
   });
+  // Each notice sent, and its bounce once one comes back (shyden-labs/shydesk#232).
+  it('notices', async () => {
+    expect(await columnsOf('notices')).toEqual([
+      'id',
+      'ticket_id',
+      'message_id',
+      'to_address',
+      'sent_at',
+      'bounced_at',
+      'bounce_status',
+      'bounce_reason',
+    ]);
+  });
   it('authority_reports', async () => {
     expect(await columnsOf('authority_reports')).toEqual([
       'ticket_id',
@@ -241,5 +254,9 @@ describe('one appeal per punishment (shyden-labs/shydesk#57)', () => {
     expect.soft(await rows(`SELECT ticket_id FROM appeals WHERE punishment_id = 'pun1'`)).toEqual([{ ticket_id: 'a1' }]);
     await expect.soft(appeal('a2')).rejects.toThrow(/UNIQUE constraint failed: appeals\.punishment_id/);
     expect.soft(await rows(`SELECT ticket_id FROM appeals WHERE punishment_id = 'pun1'`)).toEqual([{ ticket_id: 'a1' }]);
+  });
+
+  it("lists a ticket's notices by when they were sent (shyden-labs/shydesk#232)", async () => {
+    expect(await indexColumns('notices')).toContainEqual(['ticket_id', 'sent_at']);
   });
 });
