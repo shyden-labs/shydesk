@@ -556,10 +556,15 @@ const noticeLine = (d: TicketData): string | undefined => {
   );
 };
 
-/** A notice that bounced, under the message it announced (shyden-labs/shydesk#232). */
+/**
+ * A notice that bounced, under the message it announced (shyden-labs/shydesk#232).
+ * Anyone who sees the bounce address can send a report to it, so the reason is
+ * labelled as the report's own words (shyden-labs/shydesk#246).
+ */
+const BOUNCE_REASON_LABEL = 'Reason given in the failure report (not checked by ShyDesk):';
 const bounceLine = (n: DeskNotice) => {
   const reason = n.bounce_reason === '' ? n.bounce_status : n.bounce_reason;
-  return html`<p role="alert">Email to ${n.to_address} bounced at ${when(n.bounced_at)}: ${reason}</p>`;
+  return html`<p role="alert">Email to ${n.to_address} bounced at ${when(n.bounced_at)}. ${BOUNCE_REASON_LABEL} ${reason}</p>`;
 };
 
 export const ticketPage = (d: TicketData): Page => {

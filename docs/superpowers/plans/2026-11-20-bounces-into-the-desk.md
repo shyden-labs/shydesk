@@ -17,7 +17,7 @@
 - Without `BOUNCE_DOMAIN`, sending is exactly today's: `MAIL FROM` is the product's address and no `notices` row is written.
 - The notice id is `crypto.randomUUID()`. The recipient pattern is `^bounce-([0-9a-f-]{36})@<BOUNCE_DOMAIN>$`, case-insensitive.
 - Only `multipart/report; report-type=delivery-status` with `Action: failed` counts. `Status` and `Diagnostic-Code` are cut to 500 characters.
-- Ticket page copy, fixed: `Email to <address> bounced at <time>: <reason>`. List marker, fixed: `Email bounced`.
+- Ticket page copy, fixed: `Email to <address> bounced at <time>. Reason given in the failure report (not checked by ShyDesk): <reason>` (wording ruled 2026-11-21, shyden-labs/shydesk#246). List marker, fixed: `Email bounced`.
 - Strict TDD on every task: the test runs red before its code. Unit tests mock D1; real-database checks go in `tests/integration/`. Write ticket refs as `shyden-labs/shydesk#N`.
 - Never `Closes`/`Fixes` next to an issue number: `Refs shyden-labs/shydesk#232`.
 
