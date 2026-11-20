@@ -119,6 +119,8 @@ async function dialogue(
 /**
  * Sends one plain-text mail. Throws SmtpError naming the step and the
  * server's reply on anything unexpected, and always closes the connection.
+ * Once the message is accepted (the dot answered 250), nothing after it,
+ * QUIT or close, can make it throw (shyden-labs/shydesk#226).
  */
 export async function sendSmtp(connection: SmtpConnection, login: SmtpLogin, mail: SmtpMail, now: Date): Promise<void> {
   let open = connection;
@@ -127,10 +129,21 @@ export async function sendSmtp(connection: SmtpConnection, login: SmtpLogin, mai
     await dialogue(connection, login, mail, now, (secure) => {
       open = secure;
     });
-    // The message is accepted once the dot is answered 250; QUIT's reply changes nothing.
-    await open.write('QUIT\r\n');
-    await open.readReply();
+    await quietly(async () => {
+      await open.write('QUIT\r\n');
+      await open.readReply();
+    });
   } finally {
-    await open.close();
+    // A failed close never hides the step that failed, nor unsends an accepted message.
+    await quietly(() => open.close());
+  }
+}
+
+/** Runs a step whose failure changes nothing for the sender. */
+async function quietly(step: () => Promise<unknown>): Promise<void> {
+  try {
+    await step();
+  } catch {
+    // The mail's fate is settled by the reply to the dot; this step cannot change it.
   }
 }

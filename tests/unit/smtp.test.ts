@@ -75,6 +75,36 @@ class StandIn implements SmtpConnection {
   }
 }
 
+/** A stand-in whose socket breaks at one point after the dialogue: QUIT's write, QUIT's reply, or close. */
+class Failing extends StandIn {
+  private readonly breaks: 'quit-write' | 'quit-read' | 'close';
+  private quitSent = false;
+
+  constructor(script: Script, breaks: 'quit-write' | 'quit-read' | 'close') {
+    super(script);
+    this.breaks = breaks;
+  }
+
+  override write(text: string): Promise<void> {
+    if (text === 'QUIT\r\n') {
+      this.quitSent = true;
+      if (this.breaks === 'quit-write') return Promise.reject(new Error('socket reset'));
+    }
+    return super.write(text);
+  }
+
+  override readReply(): Promise<string[]> {
+    if (this.quitSent && this.breaks === 'quit-read') return Promise.reject(new Error('socket reset'));
+    return super.readReply();
+  }
+
+  override close(): Promise<void> {
+    void super.close();
+    if (this.breaks === 'close') return Promise.reject(new Error('socket reset'));
+    return Promise.resolve();
+  }
+}
+
 const login = { user: 'no-reply@shyden.co.uk', pass: 'secret-pass' };
 const mail: SmtpMail = {
   from: 'no-reply@shyden.co.uk',
@@ -219,6 +249,29 @@ describe('sendSmtp', () => {
     const server = new StandIn({ ...HAPPY, QUIT: '500 odd' });
     await expect(sendSmtp(server, login, mail, now)).resolves.toBeUndefined();
     expect(server.closed).toBe(true);
+  });
+
+  // shyden-labs/shydesk#226: nothing after the 250 to the dot can unsend the mail.
+  it('treats a QUIT that cannot be written as sent, and still closes', async () => {
+    const server = new Failing(HAPPY, 'quit-write');
+    await expect(sendSmtp(server, login, mail, now)).resolves.toBeUndefined();
+    expect(server.closed).toBe(true);
+  });
+
+  it('treats a QUIT whose reply cannot be read as sent, and still closes', async () => {
+    const server = new Failing(HAPPY, 'quit-read');
+    await expect(sendSmtp(server, login, mail, now)).resolves.toBeUndefined();
+    expect(server.closed).toBe(true);
+  });
+
+  it('treats a close that fails after the message was accepted as sent', async () => {
+    const server = new Failing(HAPPY, 'close');
+    await expect(sendSmtp(server, login, mail, now)).resolves.toBeUndefined();
+  });
+
+  it('still throws the step that failed when close also fails', async () => {
+    const server = new Failing({ ...HAPPY, AUTH: '535 no' }, 'close');
+    await expect(sendSmtp(server, login, mail, now)).rejects.toThrow(new SmtpError('auth', '535 no'));
   });
 
   it('accepts 251 for a forwarded recipient', async () => {
