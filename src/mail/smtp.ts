@@ -59,8 +59,11 @@ const base64 = (text: string): string => btoa(String.fromCodePoint(...new TextEn
 
 const encodedSubject = (subject: string): string => (ASCII.test(subject) ? subject : `=?UTF-8?B?${base64(subject)}?=`);
 
+/** The sender address's domain: the full name EHLO gives (RFC 5321 4.1.1.1) and the Message-ID's right side. */
+const senderDomain = (mail: SmtpMail): string => mail.from.slice(mail.from.indexOf('@') + 1);
+
 function message(mail: SmtpMail, now: Date): string {
-  const domain = mail.from.slice(mail.from.indexOf('@') + 1);
+  const domain = senderDomain(mail);
   const headers = [
     `From: ${mail.from}`,
     `To: ${mail.to}`,
@@ -100,13 +103,14 @@ async function dialogue(
   now: Date,
   upgraded: (secure: SmtpConnection) => void,
 ): Promise<void> {
+  const ehlo = `EHLO ${senderDomain(mail)}`;
   await expectReply(plain, 'greeting', ['220']);
-  const greeting = await command(plain, 'EHLO shydesk', 'ehlo', ['250']);
+  const greeting = await command(plain, ehlo, 'ehlo', ['250']);
   if (!offers(greeting, /^STARTTLS$/i)) throw new SmtpError('ehlo', 'server does not offer STARTTLS');
   await command(plain, 'STARTTLS', 'starttls', ['220']);
   const secure = await plain.startTls();
   upgraded(secure);
-  const extensions = await command(secure, 'EHLO shydesk', 'ehlo', ['250']);
+  const extensions = await command(secure, ehlo, 'ehlo', ['250']);
   if (!offers(extensions, /^AUTH\b.*\bPLAIN\b/i)) throw new SmtpError('ehlo', 'server does not offer AUTH PLAIN');
   const credentials = `\0${login.user}\0${login.pass}`;
   await command(secure, `AUTH PLAIN ${base64(credentials)}`, 'auth', ['235']);

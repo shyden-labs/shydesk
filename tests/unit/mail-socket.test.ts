@@ -143,8 +143,8 @@ describe('socketConnection', () => {
 
   it('writes text as UTF-8 bytes', async () => {
     const log = freshLog();
-    await socketConnection(socketOf([], log)).write('EHLO shydesk\r\n');
-    expect(log.written).toEqual(['EHLO shydesk\r\n']);
+    await socketConnection(socketOf([], log)).write('EHLO shytalk.example\r\n');
+    expect(log.written).toEqual(['EHLO shytalk.example\r\n']);
   });
 
   it('upgrades with its streams released, then reads and writes on the upgraded socket', async () => {
@@ -179,7 +179,8 @@ describe('socketDeliver', () => {
     await deliver(LOGIN, MAIL, 'mail.example');
     expect(log.connectedTo).toEqual({ hostname: 'mail.example', port: 587 });
     expect(log.options).toEqual({ secureTransport: 'starttls', allowHalfOpen: false });
-    expect(log.written.filter((line) => line.startsWith('plain:'))).toEqual(['plain: EHLO shydesk', 'plain: STARTTLS']);
+    expect(log.written.filter((line) => line.startsWith('plain:'))).toEqual(['plain: EHLO shytalk.example', 'plain: STARTTLS']);
+    expect(log.written).toContain('tls: EHLO shytalk.example');
     expect(log.written).toContain('tls: AUTH PLAIN AG5vLXJlcGx5QHNoeXRhbGsuZXhhbXBsZQBzZWNyZXQ=');
     expect(log.written.at(-1)).toBe('tls: QUIT');
     expect(log.upgradedWhileLocked).toBe(false);
