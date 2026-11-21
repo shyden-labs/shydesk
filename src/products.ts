@@ -262,6 +262,16 @@ export async function saveTicketType(db: D1Database, t: TicketTypeInput): Promis
     .run();
 }
 
+/** Products with no support ticket type: their support form cannot draw (shyden-labs/shydesk#237). */
+export async function productsWithoutType(db: D1Database): Promise<{ id: string; name: string }[]> {
+  const { results } = await db
+    .prepare(
+      "SELECT p.id, p.name FROM products p WHERE NOT EXISTS (SELECT 1 FROM ticket_types t WHERE t.product_id = p.id AND t.kind = 'support') ORDER BY p.id",
+    )
+    .all<{ id: string; name: string }>();
+  return results;
+}
+
 export async function getTicketType(db: D1Database, productId: string): Promise<TicketType | null> {
   const row = await db
     .prepare("SELECT id, name, fields_json FROM ticket_types WHERE product_id = ? AND kind = 'support'")

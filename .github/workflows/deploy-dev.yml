@@ -93,6 +93,8 @@ jobs:
       # the missing secret rather than skipping when it is not there.
       # The demo support page (shyden-labs/shydesk#19) goes with it: its product
       # is upserted into the dev D1, then its static Worker deploys.
+      # TURNSTILE_SECRET is Cloudflare's public always-pass test secret, paired with
+      # dev's test site key (Shyden 2026-11-21, shyden-labs/shydesk#251).
       - name: Deploy the Worker to dev
         if: ${{ steps.areas.outputs.worker == 'true' }}
         env:
@@ -122,5 +124,6 @@ jobs:
           ./node_modules/.bin/wrangler deploy --env dev
           printf '%s' "$FIRST_ADMIN_EMAIL" | ./node_modules/.bin/wrangler secret put FIRST_ADMIN_EMAIL --env dev
           printf '%s' "$TICKET_TOKEN_KEY" | ./node_modules/.bin/wrangler secret put TICKET_TOKEN_KEY --env dev
+          printf '%s' '1x0000000000000000000000000000000AA' | ./node_modules/.bin/wrangler secret put TURNSTILE_SECRET --env dev
           ./node_modules/.bin/wrangler d1 execute shydesk --env dev --remote --file demo-host/seed.sql
           ./node_modules/.bin/wrangler deploy --config demo-host/wrangler.jsonc

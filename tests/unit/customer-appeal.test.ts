@@ -28,6 +28,8 @@ interface World {
   lifted?: boolean;
   appealed?: boolean;
   noTokenKey?: boolean;
+  /** Sets BOUNCE_DOMAIN, so each notice is written down (shyden-labs/shydesk#232). */
+  bounceDomain?: string;
   /** Hits already counted against the client IP this hour. */
   hits?: number;
 }
@@ -73,6 +75,7 @@ async function setup(w: World = {}) {
     DB: db,
     SMTP_LOGINS: JSON.stringify({ 'no-reply@shytalk.app': { user: 'u', pass: 'p' } }),
     ...(w.noTokenKey === true ? {} : { TICKET_TOKEN_KEY: KEY }),
+    ...(w.bounceDomain === undefined ? {} : { BOUNCE_DOMAIN: w.bounceDomain }),
   };
   const headers = (token: string | null, extra: Record<string, string> = {}, origin = ORIGIN) => ({
     Origin: origin,
@@ -132,6 +135,16 @@ describe('GET /support-api/appeals', () => {
 });
 
 describe('POST /support-api/appeals', () => {
+  it('writes the appeal notice down against the new appeal ticket, with no message (shyden-labs/shydesk#232)', async () => {
+    const { post, statements, mails } = await setup({ bounceDomain: 'bounce.example' });
+    expect((await post(TOKEN)).status).toBe(201);
+    const ticketId = statements.find((s) => s.sql.includes('INSERT INTO tickets'))?.values[0];
+    const notice = statements.find((s) => s.sql.startsWith('INSERT INTO notices'));
+    expect(ticketId).toEqual(expect.any(String));
+    expect(notice?.values.slice(1, 4)).toEqual([ticketId, null, 'a@example.com']);
+    expect(mails[0]?.envelopeFrom).toBe(`bounce-${String(notice?.values[0])}@bounce.example`);
+  });
+
   it('makes one appeal, answering 201 with the private ticket link, and mails that link to the appellant', async () => {
     const { post, statements, mails } = await setup();
     const response = await post(TOKEN);

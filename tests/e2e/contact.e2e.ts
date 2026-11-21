@@ -109,10 +109,23 @@ describe('the contact form', () => {
     // Each browser's ticket is its own: they share one local database, and the desk opens a ticket by its subject.
     const subject = `The app will not open ${String(Date.now())}`;
     await openPage('/contact.html?product=demo');
-    await type('Email', 'e2e@example.com');
+    await type('Email', 'e2e');
     await type('Subject', subject);
     await type('Message', 'It closes as soon as it starts.');
     await type('Device', 'Test phone');
+    // A refused send keeps saying why after the check hands over a new token, until the form changes
+    // (shyden-labs/shydesk#242).
+    await textHolding('Support status', 'Ready to send');
+    await tap('Send');
+    await textHolding('Support status', 'Check the fields marked below.');
+    const send = await named('Send');
+    await driver().waitUntil(async () => (await send.getProperty('disabled')) === false, {
+      timeout: WAIT,
+      timeoutMsg: 'the check never handed over a new token',
+    });
+    await textHolding('Support status', 'Check the fields marked below.', 5_000);
+    await type('Email', '@example.com');
+    await textHolding('Support status', 'Ready to send');
     // Too long is refused before any upload; then a video and a photo go straight to ShyDesk.
     await pickFile('Photos and videos', 'long-45s.mp4');
     await textHolding('Attachments', 'Videos can be up to 30 seconds long.');

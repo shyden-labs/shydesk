@@ -11,9 +11,9 @@ type Script = Record<string, string>;
 
 const HAPPY: Script = {
   greeting: '220 mail.example ESMTP',
-  'EHLO shydesk': '250-mail.example\r\n250-STARTTLS\r\n250 SIZE 52428800',
+  'EHLO shyden.co.uk': '250-mail.example\r\n250-STARTTLS\r\n250 SIZE 52428800',
   STARTTLS: '220 Ready to start TLS',
-  'EHLO shydesk (tls)': '250-mail.example\r\n250-AUTH PLAIN LOGIN\r\n250 SIZE 52428800',
+  'EHLO shyden.co.uk (tls)': '250-mail.example\r\n250-AUTH PLAIN LOGIN\r\n250 SIZE 52428800',
   AUTH: '235 Authentication succeeded',
   'MAIL FROM': '250 OK',
   'RCPT TO': '250 Accepted',
@@ -120,9 +120,9 @@ describe('sendSmtp', () => {
     await sendSmtp(server, login, mail, now);
     const commands = server.sent.map((line) => (line.includes('\r\n') ? '<message>' : line));
     expect(commands).toEqual([
-      'EHLO shydesk',
+      'EHLO shyden.co.uk',
       'STARTTLS',
-      'EHLO shydesk',
+      'EHLO shyden.co.uk',
       `AUTH PLAIN ${btoa('\0no-reply@shyden.co.uk\0secret-pass')}`,
       'MAIL FROM:<no-reply@shyden.co.uk>',
       'RCPT TO:<customer@example.com>',
@@ -131,6 +131,18 @@ describe('sendSmtp', () => {
       'QUIT',
     ]);
     expect(server.closed).toBe(true);
+  });
+
+  it("greets with the sender address's domain both times, never the bare name shydesk (shyden-labs/shydesk#233)", async () => {
+    const script: Script = {
+      ...HAPPY,
+      'EHLO yaweloidle.com': '250-mail.example\r\n250-STARTTLS\r\n250 SIZE 52428800',
+      'EHLO yaweloidle.com (tls)': '250-mail.example\r\n250-AUTH PLAIN LOGIN\r\n250 SIZE 52428800',
+    };
+    const server = new StandIn(script);
+    await sendSmtp(server, login, { ...mail, from: 'no-reply@yaweloidle.com' }, now);
+    expect(server.sent.filter((line) => line.startsWith('EHLO'))).toEqual(['EHLO yaweloidle.com', 'EHLO yaweloidle.com']);
+    expect(server.sent.some((line) => line.includes('shydesk'))).toBe(false);
   });
 
   it('sends the headers and the body with CRLF line ends, ending in a lone dot', async () => {
@@ -183,6 +195,33 @@ describe('sendSmtp', () => {
     expect(lines[2]).toBe(`Subject: =?UTF-8?B?${encoded}?=`);
   });
 
+  // Bounces come back to the envelope sender, not the From: address (shyden-labs/shydesk#232).
+  it('uses envelopeFrom for MAIL FROM and keeps From: as the sender', async () => {
+    const server = new StandIn(HAPPY);
+    await sendSmtp(server, login, { ...mail, envelopeFrom: 'bounce-1@bounce.example' }, now);
+    expect(server.sent).toContain('MAIL FROM:<bounce-1@bounce.example>');
+    const lines = (server.sent.find((line) => line.includes('\r\n')) ?? '').split('\r\n');
+    expect(lines).toContain('From: no-reply@shyden.co.uk');
+    expect(server.sent.some((line) => line.startsWith('MAIL FROM:<no-reply@'))).toBe(false);
+  });
+
+  it('uses from for MAIL FROM when envelopeFrom is absent', async () => {
+    const server = new StandIn(HAPPY);
+    await sendSmtp(server, login, mail, now);
+    expect(server.sent).toContain('MAIL FROM:<no-reply@shyden.co.uk>');
+  });
+
+  it.each([
+    ['bounce-1@bounce.example\r\nRCPT TO:<b@example.com>', 'envelopeFrom holds a line break'],
+    ['bounce-1@bounce.example\n', 'envelopeFrom holds a line break'],
+    ['not-an-address', 'envelopeFrom is not a plain address'],
+    ['<bounce-1@bounce.example>', 'envelopeFrom is not a plain address'],
+  ])('refuses the envelopeFrom %j before opening the dialogue', async (envelopeFrom, reason) => {
+    const server = new StandIn(HAPPY);
+    await expect(sendSmtp(server, login, { ...mail, envelopeFrom }, now)).rejects.toThrow(new SmtpError('input', reason));
+    expect(server.sent).toEqual([]);
+  });
+
   // Header injection: a CR or LF would start a new header or command.
   it.each([
     ['subject', { subject: 'Hi\r\nBcc: x@example.com' }],
@@ -216,23 +255,23 @@ describe('sendSmtp', () => {
 
   // Credentials never cross an unencrypted connection.
   it('refuses a server that does not offer STARTTLS, before sending AUTH', async () => {
-    const server = new StandIn({ ...HAPPY, 'EHLO shydesk': '250-mail.example\r\n250 AUTH PLAIN' });
+    const server = new StandIn({ ...HAPPY, 'EHLO shyden.co.uk': '250-mail.example\r\n250 AUTH PLAIN' });
     await expect(sendSmtp(server, login, mail, now)).rejects.toThrow(new SmtpError('ehlo', 'server does not offer STARTTLS'));
-    expect(server.sent).toEqual(['EHLO shydesk']);
+    expect(server.sent).toEqual(['EHLO shyden.co.uk']);
     expect(server.closed).toBe(true);
   });
 
   it('refuses a server that does not offer AUTH PLAIN after TLS', async () => {
-    const server = new StandIn({ ...HAPPY, 'EHLO shydesk (tls)': '250-mail.example\r\n250 AUTH LOGIN' });
+    const server = new StandIn({ ...HAPPY, 'EHLO shyden.co.uk (tls)': '250-mail.example\r\n250 AUTH LOGIN' });
     await expect(sendSmtp(server, login, mail, now)).rejects.toThrow(new SmtpError('ehlo', 'server does not offer AUTH PLAIN'));
     expect(server.sent.some((line) => line.startsWith('AUTH'))).toBe(false);
   });
 
   it.each([
     ['greeting', 'greeting', '554 go away'],
-    ['ehlo', 'EHLO shydesk', '500 what'],
+    ['ehlo', 'EHLO shyden.co.uk', '500 what'],
     ['starttls', 'STARTTLS', '454 TLS not available'],
-    ['ehlo', 'EHLO shydesk (tls)', '421 closing'],
+    ['ehlo', 'EHLO shyden.co.uk (tls)', '421 closing'],
     ['auth', 'AUTH', '535 Incorrect authentication data'],
     ['mail-from', 'MAIL FROM', '550 sender rejected'],
     ['rcpt-to', 'RCPT TO', '550 no such user'],
@@ -312,8 +351,8 @@ describe('sendSmtp after the TLS upgrade', () => {
   it('sends the rest of the dialogue on the upgraded connection and closes it', async () => {
     const server = new Upgrading(HAPPY);
     await sendSmtp(server, login, mail, now);
-    expect(server.sent).toEqual(['EHLO shydesk', 'STARTTLS']);
-    expect(server.secure?.sent[0]).toBe('EHLO shydesk');
+    expect(server.sent).toEqual(['EHLO shyden.co.uk', 'STARTTLS']);
+    expect(server.secure?.sent[0]).toBe('EHLO shyden.co.uk');
     expect(server.secure?.closed).toBe(true);
   });
 

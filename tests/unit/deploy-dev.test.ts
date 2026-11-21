@@ -91,6 +91,7 @@ describe('deploy-dev', () => {
   // The schema goes first, so the new Worker never reads a table not there yet (shyden-labs/shydesk#15).
   // FIRST_ADMIN_EMAIL is a person's email in a public repo, so it lives as a dev environment secret and is put on
   // the Worker as a Worker secret on each deploy (shyden-labs/shydesk#81).
+  // TURNSTILE_SECRET is Cloudflare's public always-pass test secret on dev (shyden-labs/shydesk#251).
   it('builds the Worker on a pull request and migrates and deploys it from develop, refusing a missing secret', () => {
     const jobs = topLevel(workflow(), 'jobs').split('\n');
     const step = jobs.indexOf('      - name: Deploy the Worker to dev');
@@ -121,6 +122,7 @@ describe('deploy-dev', () => {
       '          ./node_modules/.bin/wrangler deploy --env dev',
       '          printf %s $FIRST_ADMIN_EMAIL | ./node_modules/.bin/wrangler secret put FIRST_ADMIN_EMAIL --env dev',
       '          printf %s $TICKET_TOKEN_KEY | ./node_modules/.bin/wrangler secret put TICKET_TOKEN_KEY --env dev',
+      '          printf %s 1x0000000000000000000000000000000AA | ./node_modules/.bin/wrangler secret put TURNSTILE_SECRET --env dev',
       '          ./node_modules/.bin/wrangler d1 execute shydesk --env dev --remote --file demo-host/seed.sql',
       '          ./node_modules/.bin/wrangler deploy --config demo-host/wrangler.jsonc',
     ]);

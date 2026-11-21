@@ -1,0 +1,68 @@
+Return-Path: <>
+Delivered-To: bounce-0b9f1c2e-1111-4222-8333-944455556666@bounce.example
+Received: by web-par-03.athenapanel.com (Postfix)
+	id ECE061346576; Fri, 20 Nov 2026 08:16:11 +0000 (UTC)
+Date: Fri, 20 Nov 2026 08:16:11 +0000 (UTC)
+From: Mail Delivery System <MAILER-DAEMON@web-par-03.athenapanel.com>
+Subject: Undelivered Mail Returned to Sender
+To: bounce-0b9f1c2e-1111-4222-8333-944455556666@bounce.example
+Auto-Submitted: auto-replied
+MIME-Version: 1.0
+Content-Type: multipart/report; report-type=delivery-status;
+	boundary="75EE81346573.1795162571/web-par-03.athenapanel.com"
+Content-Transfer-Encoding: 8bit
+Message-Id: <20261120081611.ECE061346576@web-par-03.athenapanel.com>
+
+This is a MIME-encapsulated message.
+
+--75EE81346573.1795162571/web-par-03.athenapanel.com
+Content-Description: Notification
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+This is the mail system at host web-par-03.athenapanel.com.
+
+I'm sorry to have to inform you that your message could not
+be delivered to one or more recipients. It's attached below.
+
+                   The mail system
+
+<customer@recipient.example>: host relay.mailbaby.net[209.159.154.242] said:
+    550 This message was classified as rSPAM and may not be delivered
+    https://mail.outboundspamprotection.com/mailinfo?id=EXAMPLE&user=EXAMPLE
+    (in reply to end of DATA command)
+
+--75EE81346573.1795162571/web-par-03.athenapanel.com
+Content-Description: Delivery report
+Content-Type: message/delivery-status
+
+Reporting-MTA: dns; web-par-03.athenapanel.com
+X-Postfix-Queue-ID: 75EE81346573
+X-Postfix-Sender: rfc822; bounce-0b9f1c2e-1111-4222-8333-944455556666@bounce.example
+Arrival-Date: Fri, 20 Nov 2026 08:16:08 +0000 (UTC)
+
+Final-Recipient: rfc822; customer@recipient.example
+Original-Recipient: rfc822;customer@recipient.example
+Action: failed
+Status: 5.0.0
+Remote-MTA: dns; relay.mailbaby.net
+Diagnostic-Code: smtp; 550 This message was classified as rSPAM and may not be
+    delivered
+    https://mail.outboundspamprotection.com/mailinfo?id=EXAMPLE&user=EXAMPLE
+
+--75EE81346573.1795162571/web-par-03.athenapanel.com
+Content-Description: Undelivered Message
+Content-Type: message/rfc822
+Content-Transfer-Encoding: 8bit
+
+Return-Path: <bounce-0b9f1c2e-1111-4222-8333-944455556666@bounce.example>
+From: no-reply@sender.example
+To: customer@recipient.example
+Subject: Your support request: something new
+Date: Fri, 20 Nov 2026 08:16:06 GMT
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+Demo support
+
+--75EE81346573.1795162571/web-par-03.athenapanel.com--

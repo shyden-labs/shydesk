@@ -83,6 +83,8 @@ interface World {
   /** The stored bytes by key, with the type each was stored with. */
   objects?: Record<string, { body: string; type?: string }>;
   attachments?: Record<string, unknown>[];
+  /** Sets BOUNCE_DOMAIN, so each notice is written down (shyden-labs/shydesk#232). */
+  bounceDomain?: string;
 }
 
 function setup(w: World = {}) {
@@ -151,6 +153,7 @@ function setup(w: World = {}) {
     TICKET_TIMER,
     SMTP_LOGINS: JSON.stringify({ 'no-reply@shytalk.example': { user: 'u', pass: 'p' } }),
     ...(w.noTokenKey === true ? {} : { TICKET_TOKEN_KEY: KEY }),
+    ...(w.bounceDomain === undefined ? {} : { BOUNCE_DOMAIN: w.bounceDomain }),
     FILES: {
       get: (key: string) => {
         const object = (w.objects ?? { 'key-a2': { body: 'video bytes' }, 'thumb-a2': { body: 'small', type: 'image/webp' } })[key];
@@ -434,6 +437,16 @@ describe('opening a file', () => {
 
 describe('replying', () => {
   const sealed = async (token: string) => ticketRow({ token_sealed: await sealToken(KEY, token) });
+
+  it('writes the reply notice down naming the reply it announces (shyden-labs/shydesk#232)', async () => {
+    const { post, statements, mails } = setup({ tickets: [await sealed('the-token')], bounceDomain: 'bounce.example' });
+    expect((await post('/desk/tickets/t1/reply', { body: 'We fixed it' })).status).toBe(303);
+    const messageId = named(statements, 'INSERT INTO messages')[0]?.values[0];
+    const notice = named(statements, 'INSERT INTO notices')[0];
+    expect(messageId).toEqual(expect.any(String));
+    expect(notice?.values.slice(1, 3)).toEqual(['t1', messageId]);
+    expect(mails[0]?.envelopeFrom).toBe(`bounce-${String(notice?.values[0])}@bounce.example`);
+  });
 
   it('saves the reply under the rep, sets waiting, starts the 7-day timer and emails the unchanged link', async () => {
     const { post, statements, plans, mails } = setup({ tickets: [await sealed('the-token')] });

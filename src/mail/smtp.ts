@@ -25,6 +25,8 @@ export interface SmtpLogin {
 
 export interface SmtpMail {
   from: string;
+  /** The envelope sender (MAIL FROM), where bounces go; `from` when absent. The From: header is always `from`. */
+  envelopeFrom?: string;
   to: string;
   subject: string;
   text: string;
@@ -47,11 +49,13 @@ const PLAIN_ADDRESS = /^[^\s<>@\p{Cc}]+@[^\s<>@\p{Cc}]+$/u;
 const ASCII = /^[\x20-\x7e]*$/;
 
 function checkInput(mail: SmtpMail): void {
-  for (const field of ['from', 'to', 'subject'] as const) {
-    if (/[\r\n]/.test(mail[field])) throw new SmtpError('input', `${field} holds a line break`);
+  for (const field of ['from', 'envelopeFrom', 'to', 'subject'] as const) {
+    const value = mail[field];
+    if (value !== undefined && /[\r\n]/.test(value)) throw new SmtpError('input', `${field} holds a line break`);
   }
-  for (const field of ['from', 'to'] as const) {
-    if (!PLAIN_ADDRESS.test(mail[field])) throw new SmtpError('input', `${field} is not a plain address`);
+  for (const field of ['from', 'envelopeFrom', 'to'] as const) {
+    const value = mail[field];
+    if (value !== undefined && !PLAIN_ADDRESS.test(value)) throw new SmtpError('input', `${field} is not a plain address`);
   }
 }
 
@@ -59,8 +63,11 @@ const base64 = (text: string): string => btoa(String.fromCodePoint(...new TextEn
 
 const encodedSubject = (subject: string): string => (ASCII.test(subject) ? subject : `=?UTF-8?B?${base64(subject)}?=`);
 
+/** The sender address's domain: the full name EHLO gives (RFC 5321 4.1.1.1) and the Message-ID's right side. */
+const senderDomain = (mail: SmtpMail): string => mail.from.slice(mail.from.indexOf('@') + 1);
+
 function message(mail: SmtpMail, now: Date): string {
-  const domain = mail.from.slice(mail.from.indexOf('@') + 1);
+  const domain = senderDomain(mail);
   const headers = [
     `From: ${mail.from}`,
     `To: ${mail.to}`,
@@ -100,17 +107,18 @@ async function dialogue(
   now: Date,
   upgraded: (secure: SmtpConnection) => void,
 ): Promise<void> {
+  const ehlo = `EHLO ${senderDomain(mail)}`;
   await expectReply(plain, 'greeting', ['220']);
-  const greeting = await command(plain, 'EHLO shydesk', 'ehlo', ['250']);
+  const greeting = await command(plain, ehlo, 'ehlo', ['250']);
   if (!offers(greeting, /^STARTTLS$/i)) throw new SmtpError('ehlo', 'server does not offer STARTTLS');
   await command(plain, 'STARTTLS', 'starttls', ['220']);
   const secure = await plain.startTls();
   upgraded(secure);
-  const extensions = await command(secure, 'EHLO shydesk', 'ehlo', ['250']);
+  const extensions = await command(secure, ehlo, 'ehlo', ['250']);
   if (!offers(extensions, /^AUTH\b.*\bPLAIN\b/i)) throw new SmtpError('ehlo', 'server does not offer AUTH PLAIN');
   const credentials = `\0${login.user}\0${login.pass}`;
   await command(secure, `AUTH PLAIN ${base64(credentials)}`, 'auth', ['235']);
-  await command(secure, `MAIL FROM:<${mail.from}>`, 'mail-from', ['250']);
+  await command(secure, `MAIL FROM:<${mail.envelopeFrom ?? mail.from}>`, 'mail-from', ['250']);
   await command(secure, `RCPT TO:<${mail.to}>`, 'rcpt-to', ['250', '251']);
   await command(secure, 'DATA', 'data', ['354']);
   await command(secure, message(mail, now), 'message', ['250']);

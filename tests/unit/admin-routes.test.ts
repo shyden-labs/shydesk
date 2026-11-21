@@ -58,6 +58,8 @@ interface World {
   /** The stored_bytes counter, and the rows the overdue query returns. */
   stored?: number;
   overdue?: { kind: string; id: string; product_id: string; due_at: number }[];
+  /** Products that have a saved support ticket type (shyden-labs/shydesk#237). */
+  typed?: string[];
 }
 
 const world = (): World => ({
@@ -72,6 +74,7 @@ const answerFrom =
   (sql, values) => {
     if (/UNION ALL/.test(sql)) return w.overdue ?? [];
     if (/FROM counters/.test(sql)) return w.stored === undefined ? [] : [{ value: w.stored }];
+    if (/NOT EXISTS/.test(sql)) return w.products.filter((p) => !(w.typed ?? []).includes(p.id)).map((p) => ({ id: p.id, name: p.name }));
     if (/FROM products WHERE id = \?/.test(sql)) return w.products.filter((p) => p.id === values[0]);
     if (/FROM products WHERE id IN/.test(sql)) return w.products.filter((p) => values.includes(p.id));
     if (/FROM products/.test(sql)) return w.products;
@@ -237,6 +240,12 @@ describe('products', () => {
 });
 
 describe('support fields', () => {
+  it('leaves the type name blank and says none is saved when the product has no type (shyden-labs/shydesk#237 AC4)', async () => {
+    const page = await (await get('/admin/products/shytalk', ADMIN, setup().env)).text();
+    expect(page).toContain('<input id="supportName" name="name" value="" required />');
+    expect(page).toContain('<p role="alert">No ticket type is saved yet, so the support form cannot draw. Save one below.</p>');
+  });
+
   it('saves the support type with one field per line', async () => {
     const { env, statements } = setup();
     const response = await post('/admin/products/shytalk/support', ADMIN, env, {
@@ -429,9 +438,15 @@ describe('pages with saved settings', () => {
     ['shows the support fields one per line', 'Device; text; required\nArea; select; optional; Chat, Profile'],
     ['offers canned replies on the support type', '<option value="shytalk:support">Help</option>'],
     ['lists the canned replies', '<strong>Thanks</strong>: Thanks for writing.'],
+    ['shows the saved type name', '<input id="supportName" name="name" value="Help" required />'],
   ])('%s', async (_what, shown) => {
     const page = await (await get('/admin/products/shytalk', ADMIN, filled())).text();
     expect(page).toContain(shown);
+  });
+
+  it('says nothing about a missing type when one is saved', async () => {
+    const page = await (await get('/admin/products/shytalk', ADMIN, filled())).text();
+    expect(page).not.toContain('No ticket type is saved yet');
   });
 
   it('marks a revoked key and offers no revoke button for it', async () => {
@@ -485,6 +500,23 @@ describe('storage and missed timers on /admin (shyden-labs/shydesk#22 AC3)', () 
   it('hides the storage warning at 79.9 %', async () => {
     const page = await (await get('/admin', ADMIN, setup({ ...world(), stored: 7_990_000_000 }).env)).text();
     expect(page).not.toContain('Attachment storage at');
+  });
+
+  it('names each product with no ticket type, whose support form cannot draw (shyden-labs/shydesk#237 AC4)', async () => {
+    const page = await (await get('/admin', ADMIN, setup().env)).text();
+    expect(page).toContain('<p role="alert">Product shytalk has no ticket type, so its support form cannot draw.</p>');
+    expect(page).toContain('<p role="alert">Product yawelo-idle has no ticket type, so its support form cannot draw.</p>');
+  });
+
+  it('names only the products still missing a ticket type', async () => {
+    const page = await (await get('/admin', ADMIN, setup({ ...world(), typed: ['shytalk'] }).env)).text();
+    expect(page).not.toContain('Product shytalk has no ticket type');
+    expect(page).toContain('Product yawelo-idle has no ticket type, so its support form cannot draw.');
+  });
+
+  it('names no product once every product has a ticket type', async () => {
+    const page = await (await get('/admin', ADMIN, setup({ ...world(), typed: ['shytalk', 'yawelo-idle'] }).env)).text();
+    expect(page).not.toContain('has no ticket type');
   });
 
   it('shows the same panel when an added product is refused', async () => {
