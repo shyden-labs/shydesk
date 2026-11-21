@@ -79,11 +79,12 @@ describe('the ticket timer in wrangler.jsonc', () => {
     expect(entry.TicketTimer).toBe(TicketTimer);
   });
 
-  // shyden-labs/shydesk#13: each account's real Turnstile widget. Site keys are public, so they
-  // are vars; each TURNSTILE_SECRET is a Worker secret Shyden sets, so no config names one.
-  it('gives live and dev their own Turnstile site keys and no secret', () => {
+  // shyden-labs/shydesk#13: live runs its account's real Turnstile widget. Dev runs Cloudflare's
+  // always-pass test key (Shyden 2026-11-21, shyden-labs/shydesk#251), so CI journeys can send.
+  // Site keys are public, so they are vars; TURNSTILE_SECRET is a Worker secret, so no config names one.
+  it('gives live its real Turnstile site key, dev the always-pass test key, and neither a secret', () => {
     expect(config.vars).toMatchObject({ TURNSTILE_SITE_KEY: '0x4AAAAAAFzxpu4P-1-Vh2oT' });
-    expect(config.env.dev.vars).toMatchObject({ TURNSTILE_SITE_KEY: '0x4AAAAAAFzxlFNTRFPriE2H' });
+    expect(config.env.dev.vars).toMatchObject({ TURNSTILE_SITE_KEY: '1x00000000000000000000AA' });
     expect(config.vars).not.toHaveProperty('TURNSTILE_SECRET');
     expect(config.env.dev.vars).not.toHaveProperty('TURNSTILE_SECRET');
   });
