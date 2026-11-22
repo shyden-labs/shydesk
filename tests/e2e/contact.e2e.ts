@@ -269,7 +269,8 @@ describe('the contact form', () => {
   it("sends a request from a product's TEST site, which its customer and the desk see as TEST", async () => {
     const subject = `A test-version request ${String(Date.now())}`;
     await openPage('/contact.html?product=demo-test');
-    await type('Email', 'e2e@example.com');
+    // Its own address, so the first journey's sends from every browser leave it under the 5-an-hour limit.
+    await type('Email', 'e2e-test-site@example.com');
     await type('Subject', subject);
     await type('Message', 'Found on the test version.');
     await textHolding('Support status', 'Ready to send');

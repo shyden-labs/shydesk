@@ -46,15 +46,16 @@ export const seededAppealToken = (target: Target): string => `e2e-appeal-${targe
 export function seedSql(suiteOrigin: string, otherOrigins: readonly string[] = []): string {
   const allowed = [...new Set([suiteOrigin, ...otherOrigins])];
   for (const origin of allowed) if (!PLAIN_ORIGIN.test(origin)) throw new Error(`${origin} is not a plain origin`);
-  const product = (id: string, name: string, origins: readonly string[], testOrigins: readonly string[] = []) =>
+  const product = (id: string, name: string, origins: readonly string[], testOrigins: readonly string[] = [], page = '/support/ticket') =>
     `INSERT INTO products (id, name, sender_address, ticket_page_url, allowed_origins_json, test_origins_json, monthly_email_share, created_at) VALUES ` +
-    `('${id}', '${name}', 'no-reply@example.com', '${origins[0] ?? ''}/support/ticket', '${JSON.stringify(origins)}', '${JSON.stringify(testOrigins)}', 100, 0);`;
+    `('${id}', '${name}', 'no-reply@example.com', '${origins[0] ?? ''}${page}', '${JSON.stringify(origins)}', '${JSON.stringify(testOrigins)}', 100, 0);`;
   const fields = JSON.stringify([{ label: 'Device', kind: 'text', required: true }]);
   return [
     product('demo', 'Demo', allowed),
     product('demo-elsewhere', 'Elsewhere', ['https://elsewhere.example']),
     // Its TEST site is the suite, its live site elsewhere (shyden-labs/shydesk#263).
-    product('demo-test', 'Demo Test', ['https://live.demo-test.example'], allowed),
+    // Its ticket page names it, as the suite's ticket page shows the product its query asks for.
+    product('demo-test', 'Demo Test', ['https://live.demo-test.example'], allowed, '/support/ticket?product=demo-test'),
     `INSERT INTO ticket_types (id, product_id, kind, name, fields_json, reasons_json, enabled) VALUES ('demo:support', 'demo', 'support', 'Support', '${fields}', '[]', 1);`,
     `INSERT INTO ticket_types (id, product_id, kind, name, fields_json, reasons_json, enabled) VALUES ('demo-elsewhere:support', 'demo-elsewhere', 'support', 'Support', '[]', '[]', 1);`,
     `INSERT INTO ticket_types (id, product_id, kind, name, fields_json, reasons_json, enabled) VALUES ('demo-test:support', 'demo-test', 'support', 'Support', '[]', '[]', 1);`,

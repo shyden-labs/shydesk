@@ -77,7 +77,7 @@ describe('seedSql', () => {
   // shyden-labs/shydesk#263: a product whose TEST site is the suite, its live site elsewhere.
   it('seeds a TEST product whose TEST origins are the suite origins and whose live page is elsewhere', () => {
     expect(seedSql('http://192.168.1.7:8765', ['http://localhost:8765'])).toContain(
-      `('demo-test', 'Demo Test', 'no-reply@example.com', 'https://live.demo-test.example/support/ticket', '["https://live.demo-test.example"]', '["http://192.168.1.7:8765","http://localhost:8765"]'`,
+      `('demo-test', 'Demo Test', 'no-reply@example.com', 'https://live.demo-test.example/support/ticket?product=demo-test', '["https://live.demo-test.example"]', '["http://192.168.1.7:8765","http://localhost:8765"]'`,
     );
     expect(sql).toContain(`('demo-test:support', 'demo-test', 'support', 'Support', '[]', '[]', 1)`);
   });
