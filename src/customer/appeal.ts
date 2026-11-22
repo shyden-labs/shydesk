@@ -69,15 +69,16 @@ export function appealRoutes(deps: { deliver: Deliver }): Hono<AppealEnv> {
     }
     const found = await findAppealable(c.env.DB, product.id, { token: tokenOf(c) });
     if (found === null) return c.json({ error: MESSAGES.notFound }, 404);
+    let ticketId: string;
     let token: string;
     try {
-      ({ token } = await createAppeal(c.env.DB, found, parsed.value, tokenKey, now));
+      ({ id: ticketId, token } = await createAppeal(c.env.DB, found, parsed.value, tokenKey, now));
     } catch (error) {
       if (error instanceof AppealRefused) return c.json({ error: error.code }, 409);
       throw error;
     }
     const link = ticketLink(product.ticketPageUrl, token);
-    const mailed = await sendNoReply(c.env, product, parsed.value.email, link, deps.deliver, new Date(now));
+    const mailed = await sendNoReply(c.env, product, parsed.value.email, link, deps.deliver, new Date(now), { ticketId, messageId: null });
     return c.json({ ticket_url: link, email_sent: mailed === 'sent' }, 201);
   });
 

@@ -9,6 +9,8 @@ import { restD1 } from './d1.ts';
 const db = restD1(inject('databaseId'));
 const NOW = new Date('2026-11-19T01:00:00Z');
 const LINK = 'https://example.com/support#ticket=abc';
+// No BOUNCE_DOMAIN here, so no notice row is written and no ticket is needed.
+const ABOUT = { ticketId: 'none', messageId: null };
 const SENDER = 'no-reply@example.com';
 const env: MailEnv = { DB: db, SMTP_LOGINS: JSON.stringify({ [SENDER]: { user: 'u', pass: 'p' } }), SMTP_HOST: 'mail.example' };
 
@@ -40,13 +42,13 @@ describe('the monthly email share', () => {
   it('counts sent mail only: a failure gives its place back, and sends stop once the share is used', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const p = product('it-share-journey', 2);
-    await expect(sendNoReply(env, p, 'pat@example.com', LINK, fails, NOW)).resolves.toBe('failed');
+    await expect(sendNoReply(env, p, 'pat@example.com', LINK, fails, NOW, ABOUT)).resolves.toBe('failed');
     await expect(used(p.id)).resolves.toBe(0);
-    await expect(sendNoReply(env, p, 'pat@example.com', LINK, sends, NOW)).resolves.toBe('sent');
-    await expect(sendNoReply(env, p, 'pat@example.com', LINK, sends, NOW)).resolves.toBe('sent');
+    await expect(sendNoReply(env, p, 'pat@example.com', LINK, sends, NOW, ABOUT)).resolves.toBe('sent');
+    await expect(sendNoReply(env, p, 'pat@example.com', LINK, sends, NOW, ABOUT)).resolves.toBe('sent');
     await expect(used(p.id)).resolves.toBe(2);
     sends.mockClear();
-    await expect(sendNoReply(env, p, 'pat@example.com', LINK, sends, NOW)).resolves.toBe('share-used-up');
+    await expect(sendNoReply(env, p, 'pat@example.com', LINK, sends, NOW, ABOUT)).resolves.toBe('share-used-up');
     expect(sends).not.toHaveBeenCalled();
     await expect(used(p.id)).resolves.toBe(2);
   });
@@ -54,8 +56,8 @@ describe('the monthly email share', () => {
   it('lets only one of two sends at once take the last place', async () => {
     const p = product('it-share-last-place', 1);
     const both = await Promise.all([
-      sendNoReply(env, p, 'pat@example.com', LINK, sends, NOW),
-      sendNoReply(env, p, 'sam@example.com', LINK, sends, NOW),
+      sendNoReply(env, p, 'pat@example.com', LINK, sends, NOW, ABOUT),
+      sendNoReply(env, p, 'sam@example.com', LINK, sends, NOW, ABOUT),
     ]);
     expect([...both].sort()).toEqual(['sent', 'share-used-up']);
     await expect(used(p.id)).resolves.toBe(1);
@@ -65,8 +67,8 @@ describe('the monthly email share', () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const p = product('it-share-one-fails', 2);
     const both = await Promise.all([
-      sendNoReply(env, p, 'pat@example.com', LINK, sends, NOW),
-      sendNoReply(env, p, 'sam@example.com', LINK, fails, NOW),
+      sendNoReply(env, p, 'pat@example.com', LINK, sends, NOW, ABOUT),
+      sendNoReply(env, p, 'sam@example.com', LINK, fails, NOW, ABOUT),
     ]);
     expect([...both].sort()).toEqual(['failed', 'sent']);
     await expect(used(p.id)).resolves.toBe(1);

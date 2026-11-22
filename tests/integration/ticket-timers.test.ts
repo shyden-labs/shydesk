@@ -149,7 +149,7 @@ describe('retention on D1', () => {
   });
 
   // A ticket staff have opened carries their read marks, which reference it (shyden-labs/shydesk#119).
-  it('deletes a closed ticket’s text: its attachments, messages, staff read marks and the ticket', async () => {
+  it('deletes a closed ticket’s text: its attachments, messages, staff read marks, notices and the ticket', async () => {
     await product('it-tm-text');
     await ticket('it-tm-text', 'it-tm-t1', 'closed', 1000, 1000);
     await db
@@ -157,7 +157,14 @@ describe('retention on D1', () => {
       .run();
     await attachment('it-tm-text', 'it-tm-z1', 'it-tm-t1', 'deleted', 5);
     await staffRead('it-tm-rep-t@example.com', 'it-tm-t1');
+    // A notice row holds the customer's address, so it goes with the text (shyden-labs/shydesk#232).
+    await db
+      .prepare(
+        `INSERT INTO notices (id, ticket_id, message_id, to_address, sent_at) VALUES ('it-tm-n1', 'it-tm-t1', 'it-tm-m1', 'someone@example.com', 1000)`,
+      )
+      .run();
     await deleteText(db, recorder().files, 'it-tm-t1', NOW);
+    expect(await one('SELECT id FROM notices WHERE ticket_id = ?', 'it-tm-t1')).toBeNull();
     expect(await one('SELECT id FROM tickets WHERE id = ?', 'it-tm-t1')).toBeNull();
     expect(await one('SELECT id FROM messages WHERE ticket_id = ?', 'it-tm-t1')).toBeNull();
     expect(await one('SELECT id FROM attachments WHERE ticket_id = ?', 'it-tm-t1')).toBeNull();

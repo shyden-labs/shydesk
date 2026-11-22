@@ -63,7 +63,7 @@ const STATUSES = new Set(['open', 'waiting', 'closed']);
 const reference = (c: DeskContext, name: string): string | undefined => c.req.query(name) || undefined;
 
 /** Emails the customer the ticket's unchanged private link. Never throws: the reply is already saved. */
-async function notifyCustomer(c: DeskContext, deliver: Deliver, ticket: DeskTicket, now: number): Promise<MailResult> {
+async function notifyCustomer(c: DeskContext, deliver: Deliver, ticket: DeskTicket, now: number, messageId: string): Promise<MailResult> {
   if (ticket.token_sealed === null) return 'no-link';
   const key = c.env.TICKET_TOKEN_KEY;
   if (!key) {
@@ -79,7 +79,10 @@ async function notifyCustomer(c: DeskContext, deliver: Deliver, ticket: DeskTick
   }
   const product = await getProduct(c.env.DB, ticket.product_id);
   if (product === null) return 'failed';
-  return sendNoReply(c.env, product, ticket.customer_email, ticketLink(product.ticketPageUrl, token), deliver, new Date(now));
+  return sendNoReply(c.env, product, ticket.customer_email, ticketLink(product.ticketPageUrl, token), deliver, new Date(now), {
+    ticketId: ticket.id,
+    messageId,
+  });
 }
 
 export function deskRoutes(deps: DeskDeps, jwks?: JWTVerifyGetKey): Hono<DeskEnv> {
@@ -301,11 +304,12 @@ export function deskRoutes(deps: DeskDeps, jwks?: JWTVerifyGetKey): Hono<DeskEnv
     const body = typeof form.body === 'string' ? form.body : '';
     if (body.trim() === '' || body.length > MAX_REPLY) return c.redirect(`/desk/tickets/${ticket.id}?error=empty`, 303);
     const now = Date.now();
+    const messageId = crypto.randomUUID();
     await c.env.DB.prepare("INSERT INTO messages (id, ticket_id, author, staff_email, body, created_at) VALUES (?, ?, 'staff', ?, ?, ?)")
-      .bind(crypto.randomUUID(), ticket.id, staff.email, body, now)
+      .bind(messageId, ticket.id, staff.email, body, now)
       .run();
     await changeStatus(c.env, ticket.id, 'waiting', now);
-    const mail = await notifyCustomer(c, deps.deliver, ticket, now);
+    const mail = await notifyCustomer(c, deps.deliver, ticket, now, messageId);
     return c.redirect(`/desk/tickets/${ticket.id}?mail=${mail}`, 303);
   });
 
