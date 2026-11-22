@@ -27,6 +27,7 @@ import {
   E2E_ACCESS_TEAM,
   E2E_REP,
   demoPage,
+  pageStylePolicy,
   seedSql,
   shydeskOrigin,
   wranglerDevArgs,
@@ -138,7 +139,8 @@ export const config: Options.Testrunner & Capabilities.WithRequestedTestrunnerCa
           // The piece loads from the host the page was asked on: localhost for Android, the LAN for the iPhone.
           const local = shydeskOrigin(`http://${request.headers.host ?? ''}`);
           const page = demoPage(readFileSync(demo, 'utf8'), local, product);
-          response.writeHead(200, { 'content-type': TYPES['.html'] }).end(page);
+          // No inline style but the page's own (shyden-labs/shydesk#266).
+          response.writeHead(200, { 'content-type': TYPES['.html'], 'content-security-policy': pageStylePolicy(page) }).end(page);
         } catch (error) {
           response.writeHead(400, { 'content-type': 'text/plain' }).end((error as Error).message);
         }

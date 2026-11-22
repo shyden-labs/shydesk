@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { hashKey } from '../../src/products.ts';
+import { createHash } from 'node:crypto';
 import {
   demoPage,
+  pageStylePolicy,
   seedSql,
   shydeskOrigin,
   wranglerDevArgs,
@@ -137,5 +139,20 @@ describe('wranglerDevArgs', () => {
       '--var',
       'E2E_ACCESS_JWKS:{"keys":[]}',
     ]);
+  });
+});
+
+// shyden-labs/shydesk#266: the suite serves its pages under a CSP that admits the page's own <style>
+// blocks by hash and nothing else inline, so the piece must style itself without 'unsafe-inline'.
+describe('pageStylePolicy', () => {
+  const hash = (css: string) => `'sha256-${createHash('sha256').update(css).digest('base64')}'`;
+
+  it("admits each of the page's own style blocks by hash, and no other inline style", () => {
+    const html = '<style>body { margin: 0 }</style><p>x</p><style>\n  p { color: red }\n</style>';
+    expect(pageStylePolicy(html)).toBe(`style-src 'self' ${hash('body { margin: 0 }')} ${hash('\n  p { color: red }\n')}`);
+  });
+
+  it("admits only 'self' on a page with no style block", () => {
+    expect(pageStylePolicy('<p>x</p>')).toBe("style-src 'self'");
   });
 });
