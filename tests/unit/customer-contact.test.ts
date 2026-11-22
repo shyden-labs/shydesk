@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { contactRoutes, type ContactDeps } from '../../src/customer/contact.ts';
 import { MESSAGES } from '../../src/customer/messages.ts';
 import type { SmtpLogin, SmtpMail } from '../../src/mail/smtp.ts';
@@ -41,6 +41,8 @@ interface World {
   noSecret?: boolean;
   noTokenKey?: boolean;
   ticketWriteFails?: boolean;
+  /** Sets dev's test-ticket setting (shyden-labs/shydesk#254) for product shytalk. */
+  testTickets?: boolean;
 }
 
 function appWith(world: World = {}) {
@@ -55,6 +57,13 @@ function appWith(world: World = {}) {
     if (sql.includes('FROM attachments')) return (world.attachments ?? []).map((id) => ({ id }));
     return [];
   });
+  const timers: { name: string; ticketId: string; plan: unknown }[] = [];
+  const TICKET_TIMER = {
+    idFromName: (name: string) => name,
+    get: (name: string) => ({
+      apply: (ticketId: string, plan: unknown) => Promise.resolve(void timers.push({ name, ticketId, plan })),
+    }),
+  };
   const sent: SmtpMail[] = [];
   const siteverify: URLSearchParams[] = [];
   const deps: ContactDeps = {
@@ -76,6 +85,8 @@ function appWith(world: World = {}) {
     TURNSTILE_SITE_KEY: 'site-key',
     SMTP_LOGINS: JSON.stringify({ 'no-reply@shytalk.app': { user: 'u', pass: 'p' } }),
     ...(world.bounceDomain === undefined ? {} : { BOUNCE_DOMAIN: world.bounceDomain }),
+    ...(world.testTickets ? { TEST_TICKET_PRODUCT: 'shytalk', TEST_TICKET_EMAIL: 'support-test+*@shyden.co.uk' } : {}),
+    TICKET_TIMER,
   };
   const headers = { Origin: ORIGIN, 'Content-Type': 'application/json', 'CF-Connecting-IP': '203.0.113.9' };
   const post = (body: unknown, product = 'shytalk') =>
@@ -85,7 +96,7 @@ function appWith(world: World = {}) {
       env,
     );
   const config = (product = 'shytalk') => app.request(`/support-api/config?product=${product}`, { headers }, env);
-  return { post, config, statements, sent, siteverify };
+  return { post, config, statements, sent, siteverify, timers };
 }
 
 const good = (over: Record<string, unknown> = {}) => ({
@@ -368,5 +379,41 @@ describe('POST /support-api/tickets', () => {
     const response = await post(good(), 'nope');
     expect(response.status).toBe(404);
     expect(response.headers.get('Access-Control-Allow-Origin')).toBeNull();
+  });
+});
+
+// shyden-labs/shydesk#254: on dev, a test request from shyden.co.uk's journey arms its ticket's timer to clear it an
+// hour after creation; any other sender's ticket gets no timer at creation.
+describe('POST /support-api/tickets with the dev test-ticket setting', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("arms the new ticket's timer to clear it an hour later when the sender matches", async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const now = Date.UTC(2026, 10, 22, 1);
+    vi.setSystemTime(now);
+    const { post, statements, timers } = appWith({ testTickets: true });
+    const res = await post(good({ email: 'support-test+webkit-1763769600@shyden.co.uk' }));
+    expect(res.status).toBe(201);
+    const ticketId = ticketInserts(statements)[0]?.values[0];
+    expect(timers).toHaveLength(1);
+    expect(timers[0]?.name).toBe(ticketId);
+    expect(timers[0]?.ticketId).toBe(ticketId);
+    const plan = timers[0]?.plan as { schedule: { clear: number }; cancel: unknown[] };
+    expect(plan.cancel).toEqual([]);
+    expect(plan.schedule).toEqual({ clear: now + 3_600_000 });
+  });
+
+  it('arms nothing for any other sender', async () => {
+    const { post, timers } = appWith({ testTickets: true });
+    expect((await post(good())).status).toBe(201);
+    expect(timers).toEqual([]);
+  });
+
+  it('arms nothing without the setting, as on live', async () => {
+    const { post, timers } = appWith();
+    expect((await post(good({ email: 'support-test+webkit-1@shyden.co.uk' }))).status).toBe(201);
+    expect(timers).toEqual([]);
   });
 });

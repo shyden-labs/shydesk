@@ -4,6 +4,8 @@ import { hit } from '../limits.ts';
 import { sendNoReply, type Deliver } from '../mail/notify.ts';
 import { getTicketType, type Product, type SupportField, type TicketType } from '../products.ts';
 import { AttachmentError, createTicket, ticketLink } from '../tickets/create.ts';
+import { isTestTicket, TEST_TICKET_CLEAR_MS, type TestTicketSetting } from '../tickets/test-tickets.ts';
+import type { TimerEnv } from '../tickets/status.ts';
 import { verifyTurnstile, type Fetch } from '../turnstile.ts';
 import { MESSAGES } from './messages.ts';
 import { requireProductOrigin } from './origin.ts';
@@ -31,7 +33,7 @@ const MAX_FIELD = 1_000;
 const MAX_EMAIL = 254;
 const HOUR = 3600;
 
-export interface ContactBindings extends Env {
+export interface ContactBindings extends Env, TestTicketSetting, Pick<TimerEnv, 'TICKET_TIMER'> {
   TURNSTILE_SECRET?: string;
   TICKET_TOKEN_KEY?: string;
   TURNSTILE_SITE_KEY?: string;
@@ -171,6 +173,10 @@ export function contactRoutes(deps: ContactDeps): Hono<ContactEnv> {
     } catch (error) {
       if (error instanceof AttachmentError) return c.json({ errors: { attachmentIds: MESSAGES.attachmentMissing } }, 400);
       throw error;
+    }
+    if (isTestTicket(c.env, product.id, request.email)) {
+      const plan = { schedule: { clear: now + TEST_TICKET_CLEAR_MS }, cancel: [] };
+      await c.env.TICKET_TIMER.get(c.env.TICKET_TIMER.idFromName(ticketId)).apply(ticketId, plan);
     }
     const link = ticketLink(product.ticketPageUrl, token);
     const mailed = await sendNoReply(c.env, product, request.email, link, deps.deliver, new Date(now), { ticketId, messageId: null });
