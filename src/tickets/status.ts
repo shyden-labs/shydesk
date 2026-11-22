@@ -8,7 +8,8 @@ import type { TicketTimer } from '../timers/ticket-timer.ts';
  */
 
 export type Status = 'open' | 'waiting' | 'closed';
-export type Kind = 'autoclose' | 'attachments' | 'text';
+/** `clear` closes a dev test ticket and deletes its text at once (shyden-labs/shydesk#254). */
+export type Kind = 'autoclose' | 'attachments' | 'text' | 'clear';
 
 export const DAY_MS = 86_400_000;
 /** Waiting on the customer this long closes the ticket by itself (design: Statuses). */
