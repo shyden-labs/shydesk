@@ -11,6 +11,7 @@ import { strict as assert } from 'node:assert';
 import { driver } from './harness/driver.ts';
 import { JOURNEY_WAIT as WAIT, named, textHolding } from './harness/find.ts';
 import { openPage } from './harness/open-page.ts';
+import { touchSized } from './harness/touch.ts';
 import { clickMiddleOf, pickFile, press, pressVideoControl, swipeLeft, tap, tapToNewPage, type, zoomIn } from './harness/input.ts';
 import { ownControlsPoints, type Box } from './harness/targets.ts';
 import { SEEDED_TICKET_TOKEN, SHYDESK_PORT } from './harness/local-shydesk.ts';
@@ -109,6 +110,8 @@ describe('the contact form', () => {
     // Each browser's ticket is its own: they share one local database, and the desk opens a ticket by its subject.
     const subject = `The app will not open ${String(Date.now())}`;
     await openPage('/contact.html?product=demo');
+    // Every control on the form takes a fingertip (shyden-labs/shydesk#256).
+    await touchSized(['Email', 'Subject', 'Category', 'Message', 'Device', 'Photos and videos', 'Send']);
     await type('Email', 'e2e');
     await type('Subject', subject);
     await type('Message', 'It closes as soon as it starts.');
@@ -148,6 +151,7 @@ describe('the contact form', () => {
     // The private link opens the conversation, and a reply typed there joins it (shyden-labs/shydesk#23).
     await openPage(link);
     await textHolding('Conversation', 'It closes as soon as it starts.');
+    await touchSized(['Reply', 'Photos and videos', 'Send reply']);
     await type('Reply', 'It still closes.');
     await pickFile('Photos and videos', 'photo.jpg');
     await textHolding('Attachments', 'attached,');

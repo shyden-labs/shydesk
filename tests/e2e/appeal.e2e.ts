@@ -13,6 +13,7 @@ import { tap, type } from './harness/input.ts';
 import { seededAppealToken, SHYDESK_PORT } from './harness/local-shydesk.ts';
 import { openPage } from './harness/open-page.ts';
 import { targetOf } from './harness/targets.ts';
+import { touchSized } from './harness/touch.ts';
 
 describe('the appeal view', () => {
   it('takes one appeal typed and tapped in, shows its private link, and refuses a second', async () => {
@@ -20,6 +21,7 @@ describe('the appeal view', () => {
     const words = `Please look again ${String(Date.now())}.`;
     await openPage(`/support/appeal?first#appeal=${token}`);
     await textHolding('Decision', 'Ban 7 days');
+    await touchSized(['Email', 'Message', 'Send appeal']);
     await type('Email', 'appellant@example.com');
     await type('Message', words);
     await tap('Send appeal');
