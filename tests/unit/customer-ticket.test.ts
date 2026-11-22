@@ -17,6 +17,7 @@ const product = (id: string) => ({
   sender_address: 'no-reply@shytalk.app',
   ticket_page_url: `${ORIGIN}/support/ticket`,
   allowed_origins_json: JSON.stringify([ORIGIN]),
+  test_origins_json: '[]',
   monthly_email_share: 100,
   attachments_keep_days: 30,
   text_keep_days: 365,
@@ -32,10 +33,18 @@ async function world(
     thumbType?: string;
     thumbKey?: string | null;
     usableFails?: boolean;
+    /** The TEST site the ticket came from (shyden-labs/shydesk#263). */
+    testOrigin?: string;
   } = {},
 ) {
   const hash = await hashKey(TOKEN);
-  const ticket = { id: 't1', subject: 'It broke', status: options.status ?? 'waiting', created_at: 5 };
+  const ticket = {
+    id: 't1',
+    subject: 'It broke',
+    status: options.status ?? 'waiting',
+    created_at: 5,
+    test_origin: options.testOrigin ?? null,
+  };
   const inserted: unknown[][] = [];
   const attached: unknown[][] = [];
   const plans: TimerPlan[] = [];
@@ -127,6 +136,30 @@ describe('reading a ticket', () => {
         { author: 'staff', body: 'On it', createdAt: 6, attachments: [] },
       ],
     });
+  });
+
+  // shyden-labs/shydesk#263 AC3: the test-version reply is the desk's first message in a TEST ticket's thread.
+  // The product here is named by its id, so the reply names "shytalk".
+  it("puts the test-version reply first among the desk's messages on a TEST ticket", async () => {
+    const w = await world({ testOrigin: 'https://test.shytalk.app' });
+    const { messages } = (await (await w.call('/support-api/ticket')).json()) as { messages: { author: string; body: string }[] };
+    expect(messages.map((m) => m.author)).toEqual(['customer', 'staff', 'staff']);
+    expect(messages[1]).toEqual({
+      author: 'staff',
+      body:
+        'Thanks for trying the test version of shytalk. Your message has arrived safely. Requests from the live version of shytalk ' +
+        'are always answered first, so messages from the test version have no set reply time and may not always get a reply. ' +
+        'Every report still helps make shytalk better.',
+      createdAt: 5,
+      attachments: [],
+    });
+    expect(messages[2]?.body).toBe('On it');
+  });
+
+  it('reads the TEST site with the ticket', async () => {
+    const w = await world();
+    await w.call('/support-api/ticket');
+    expect(w.statements.find((s) => s.sql.includes('FROM tickets'))?.sql).toContain('test_origin');
   });
 
   it('looks the token up by its hash, never the token itself', async () => {

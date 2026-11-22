@@ -18,6 +18,7 @@ const PRODUCT = {
   sender_address: 'no-reply@shytalk.app',
   ticket_page_url: 'https://shytalk.app/support/ticket',
   allowed_origins_json: '["https://shytalk.app"]',
+  test_origins_json: '[]',
   monthly_email_share: 100,
   attachments_keep_days: 30,
   text_keep_days: 365,

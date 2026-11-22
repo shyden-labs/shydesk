@@ -3,7 +3,7 @@
 // `attachments.received_bytes` (migrations/0002_upload_received_bytes.sql, integer, not null).
 // `npm run typecheck` refuses these literals while a type lacks the column.
 import { describe, expect, it } from 'vitest';
-import type { AttachmentRow, TicketRow } from '../../src/db/types.ts';
+import type { AttachmentRow, ProductRow, TicketRow } from '../../src/db/types.ts';
 
 describe('row types', () => {
   it('TicketRow has token_sealed, which a ticket from before 0003 leaves null', () => {
@@ -23,6 +23,7 @@ describe('row types', () => {
       seq: 1,
       token_sealed: null,
       text_deleted_at: null,
+      test_origin: null,
     };
     expect(row.token_sealed).toBeNull();
   });
@@ -30,6 +31,16 @@ describe('row types', () => {
   it('TicketRow has text_deleted_at, null until the text timer leaves a bare row (shyden-labs/shydesk#191)', () => {
     const row: Pick<TicketRow, 'text_deleted_at'> = { text_deleted_at: null };
     expect(row.text_deleted_at).toBeNull();
+  });
+
+  it('TicketRow has test_origin, null for a ticket from a live site (shyden-labs/shydesk#263)', () => {
+    const row: Pick<TicketRow, 'test_origin'> = { test_origin: null };
+    expect(row.test_origin).toBeNull();
+  });
+
+  it('ProductRow has test_origins_json, the TEST sites as JSON text (shyden-labs/shydesk#263)', () => {
+    const row: Pick<ProductRow, 'test_origins_json'> = { test_origins_json: '[]' };
+    expect(row.test_origins_json).toBe('[]');
   });
 
   it('AttachmentRow has received_bytes, a count that is never null', () => {

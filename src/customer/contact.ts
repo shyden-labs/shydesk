@@ -4,6 +4,7 @@ import { hit } from '../limits.ts';
 import { sendNoReply, type Deliver } from '../mail/notify.ts';
 import { getTicketType, type Product, type SupportField, type TicketType } from '../products.ts';
 import { AttachmentError, createTicket, ticketLink } from '../tickets/create.ts';
+import { testSiteReply, ticketPageFor } from '../tickets/test-site.ts';
 import { isTestTicket, TEST_TICKET_CLEAR_MS, type TestTicketSetting } from '../tickets/test-tickets.ts';
 import type { TimerEnv } from '../tickets/status.ts';
 import { verifyTurnstile, type Fetch } from '../turnstile.ts';
@@ -48,7 +49,7 @@ export interface ContactDeps {
 
 interface ContactEnv {
   Bindings: ContactBindings;
-  Variables: { product: Product; clientIp: string };
+  Variables: { product: Product; clientIp: string; testOrigin: string | null };
 }
 
 interface Request {
@@ -112,7 +113,8 @@ function parse(body: unknown, type: TicketType): Parsed {
 }
 
 /** The hosts the product's pages are served on, which a Turnstile result must have been solved on. */
-const productHosts = (product: Product): string[] => product.allowedOrigins.map((origin) => new URL(origin).hostname);
+const productHosts = (product: Product): string[] =>
+  [...product.allowedOrigins, ...product.testOrigins].map((origin) => new URL(origin).hostname);
 
 export function contactRoutes(deps: ContactDeps): Hono<ContactEnv> {
   const app = new Hono<ContactEnv>();
@@ -169,7 +171,14 @@ export function contactRoutes(deps: ContactDeps): Hono<ContactEnv> {
     let ticketId: string;
     let token: string;
     try {
-      ({ id: ticketId, token } = await createTicket(c.env.DB, { productId: product.id, typeId: type.id, ...request, now, tokenKey }));
+      ({ id: ticketId, token } = await createTicket(c.env.DB, {
+        productId: product.id,
+        typeId: type.id,
+        ...request,
+        now,
+        tokenKey,
+        testOrigin: c.var.testOrigin,
+      }));
     } catch (error) {
       if (error instanceof AttachmentError) return c.json({ errors: { attachmentIds: MESSAGES.attachmentMissing } }, 400);
       throw error;
@@ -178,8 +187,14 @@ export function contactRoutes(deps: ContactDeps): Hono<ContactEnv> {
       const plan = { schedule: { clear: now + TEST_TICKET_CLEAR_MS }, cancel: [] };
       await c.env.TICKET_TIMER.get(c.env.TICKET_TIMER.idFromName(ticketId)).apply(ticketId, plan);
     }
-    const link = ticketLink(product.ticketPageUrl, token);
-    const mailed = await sendNoReply(c.env, product, request.email, link, deps.deliver, new Date(now), { ticketId, messageId: null });
+    const testOrigin = c.var.testOrigin;
+    const link = ticketLink(ticketPageFor(product.ticketPageUrl, testOrigin), token);
+    const lead = testOrigin === null ? undefined : testSiteReply(product.name);
+    const mailed = await sendNoReply(c.env, product, request.email, link, deps.deliver, new Date(now), {
+      ticketId,
+      messageId: null,
+      ...(lead === undefined ? {} : { lead }),
+    });
     return c.json({ ticketLink: link, emailSent: mailed === 'sent' }, 201);
   });
 

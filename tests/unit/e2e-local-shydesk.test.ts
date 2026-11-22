@@ -26,7 +26,9 @@ describe('seedSql', () => {
 
   it('seeds a rep on both products and a canned reply with placeholders', () => {
     expect(sql).toContain("INSERT INTO staff (email, role, created_at) VALUES ('e2e-rep@example.com', 'rep', 0)");
-    expect(sql).toContain("('e2e-rep@example.com', 'demo'), ('e2e-rep@example.com', 'demo-elsewhere')");
+    expect(sql).toContain(
+      "('e2e-rep@example.com', 'demo'), ('e2e-rep@example.com', 'demo-elsewhere'), ('e2e-rep@example.com', 'demo-test')",
+    );
     expect(sql).toContain('Hello {{customer_email}}, about {{ticket_subject}}.');
   });
 
@@ -70,6 +72,14 @@ describe('seedSql', () => {
     expect(sql).toContain(
       `('demo-elsewhere', 'Elsewhere', 'no-reply@example.com', 'https://elsewhere.example/support/ticket', '["https://elsewhere.example"]'`,
     );
+  });
+
+  // shyden-labs/shydesk#263: a product whose TEST site is the suite, its live site elsewhere.
+  it('seeds a TEST product whose TEST origins are the suite origins and whose live page is elsewhere', () => {
+    expect(seedSql('http://192.168.1.7:8765', ['http://localhost:8765'])).toContain(
+      `('demo-test', 'Demo Test', 'no-reply@example.com', 'https://live.demo-test.example/support/ticket', '["https://live.demo-test.example"]', '["http://192.168.1.7:8765","http://localhost:8765"]'`,
+    );
+    expect(sql).toContain(`('demo-test:support', 'demo-test', 'support', 'Support', '[]', '[]', 1)`);
   });
 
   it('gives the demo product a support type with a required Device field', () => {

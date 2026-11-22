@@ -7,6 +7,7 @@ import { AttachmentError, refuseUnusable, USABLE } from '../tickets/create.ts';
 import { changeStatus, type TimerEnv } from '../tickets/status.ts';
 import { streamFile, type StoredFile } from '../uploads/serve.ts';
 import type { Product } from '../products.ts';
+import { testSiteReply } from '../tickets/test-site.ts';
 import { MESSAGES } from './messages.ts';
 import { requireProductOrigin } from './origin.ts';
 import { NOT_WITHHELD } from '../holds/rules.ts';
@@ -35,6 +36,8 @@ interface TicketRow {
   subject: string;
   status: string;
   created_at: number;
+  /** The TEST site it came from (shyden-labs/shydesk#263); null for a live ticket. */
+  test_origin: string | null;
 }
 
 interface MessageRow {
@@ -73,7 +76,7 @@ type TicketContext = Context<TicketEnv>;
 async function openTicket(c: TicketContext): Promise<TicketRow | null> {
   const token = TOKEN.exec(c.req.header('Authorization') ?? '')?.[1];
   if (token === undefined) return null;
-  return c.env.DB.prepare('SELECT id, subject, status, created_at FROM tickets WHERE token_hash = ? AND product_id = ?')
+  return c.env.DB.prepare('SELECT id, subject, status, created_at, test_origin FROM tickets WHERE token_hash = ? AND product_id = ?')
     .bind(await hashKey(token), c.var.product.id)
     .first<TicketRow>();
 }
@@ -138,23 +141,25 @@ export function ticketRoutes(): Hono<TicketEnv> {
     )
       .bind(ticket.id)
       .all<AttachmentRow>();
-    return c.json({
-      ticket: { subject: ticket.subject, status: ticket.status, createdAt: ticket.created_at },
-      messages: messages.map((message) => ({
-        author: message.author,
-        body: message.body,
-        createdAt: message.created_at,
-        attachments: attachments
-          .filter((attachment) => attachment.message_id === message.id)
-          .map((attachment) => ({
-            id: attachment.id,
-            mime: attachment.mime,
-            bytes: attachment.bytes,
-            durationMs: attachment.duration_ms,
-            removed: attachment.state === 'deleted',
-          })),
-      })),
-    });
+    const thread = messages.map((message) => ({
+      author: message.author,
+      body: message.body,
+      createdAt: message.created_at,
+      attachments: attachments
+        .filter((attachment) => attachment.message_id === message.id)
+        .map((attachment) => ({
+          id: attachment.id,
+          mime: attachment.mime,
+          bytes: attachment.bytes,
+          durationMs: attachment.duration_ms,
+          removed: attachment.state === 'deleted',
+        })),
+    }));
+    // A TEST site's customer sees the test-version reply as the desk's first message (shyden-labs/shydesk#263).
+    if (ticket.test_origin !== null) {
+      thread.splice(1, 0, { author: 'staff', body: testSiteReply(c.var.product.name), createdAt: ticket.created_at, attachments: [] });
+    }
+    return c.json({ ticket: { subject: ticket.subject, status: ticket.status, createdAt: ticket.created_at }, messages: thread });
   });
 
   routes.post('/support-api/ticket/reply', async (c) => {

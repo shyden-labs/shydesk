@@ -19,6 +19,11 @@ export interface ProductInput {
   ticketPageUrl: string;
   /** Exact `https://host[:port]` origins allowed to embed the shared piece. */
   allowedOrigins: string[];
+  /**
+   * Exact origins of the product's TEST sites (shyden-labs/shydesk#263): let in like the
+   * allowed origins, but their tickets are marked TEST. Empty when left out.
+   */
+  testOrigins?: string[];
   /** ShyDesk's own monthly email cap for this product. */
   monthlyEmailShare: number;
   attachmentsKeepDays: number;
@@ -62,6 +67,10 @@ export function validateProduct(p: ProductInput): string[] {
   for (const origin of p.allowedOrigins) {
     if (!isExactOrigin(origin)) errors.push(`Allowed origin "${origin}" must be exactly https://host or https://host:port.`);
   }
+  for (const origin of p.testOrigins ?? []) {
+    if (!isExactOrigin(origin)) errors.push(`Test origin "${origin}" must be exactly https://host or https://host:port.`);
+    else if (p.allowedOrigins.includes(origin)) errors.push(`Test origin "${origin}" is already an allowed origin.`);
+  }
   if (pageOk && p.allowedOrigins.length > 0 && !p.allowedOrigins.includes(page.origin)) {
     errors.push("The ticket page URL's origin must be one of the allowed origins.");
   }
@@ -87,6 +96,7 @@ const refuseIfAny = (errors: string[]): void => {
 
 /** A stored product. */
 export interface Product extends ProductInput {
+  testOrigins: string[];
   createdAt: number;
 }
 
@@ -96,6 +106,7 @@ interface ProductRow {
   sender_address: string;
   ticket_page_url: string;
   allowed_origins_json: string;
+  test_origins_json: string;
   monthly_email_share: number;
   attachments_keep_days: number;
   text_keep_days: number;
@@ -108,6 +119,7 @@ const fromRow = (r: ProductRow): Product => ({
   senderAddress: r.sender_address,
   ticketPageUrl: r.ticket_page_url,
   allowedOrigins: JSON.parse(r.allowed_origins_json) as string[],
+  testOrigins: JSON.parse(r.test_origins_json) as string[],
   monthlyEmailShare: r.monthly_email_share,
   attachmentsKeepDays: r.attachments_keep_days,
   textKeepDays: r.text_keep_days,
@@ -115,7 +127,7 @@ const fromRow = (r: ProductRow): Product => ({
 });
 
 const PRODUCT_COLUMNS =
-  'id, name, sender_address, ticket_page_url, allowed_origins_json, monthly_email_share, attachments_keep_days, text_keep_days, created_at';
+  'id, name, sender_address, ticket_page_url, allowed_origins_json, test_origins_json, monthly_email_share, attachments_keep_days, text_keep_days, created_at';
 
 /** Adds a product, or updates it in place keeping when it was created. Throws SettingsError. */
 export async function saveProduct(db: D1Database, p: ProductInput, now = Date.now()): Promise<void> {
@@ -129,9 +141,10 @@ export async function saveProduct(db: D1Database, p: ProductInput, now = Date.no
     .bind(appealTypeId(p.id), p.id, 'appeal', 'Appeal', '[]', '[]', 1);
   const product = db
     .prepare(
-      `INSERT INTO products (${PRODUCT_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO products (${PRODUCT_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (id) DO UPDATE SET name = excluded.name, sender_address = excluded.sender_address,
          ticket_page_url = excluded.ticket_page_url, allowed_origins_json = excluded.allowed_origins_json,
+         test_origins_json = excluded.test_origins_json,
          monthly_email_share = excluded.monthly_email_share, attachments_keep_days = excluded.attachments_keep_days,
          text_keep_days = excluded.text_keep_days`,
     )
@@ -141,6 +154,7 @@ export async function saveProduct(db: D1Database, p: ProductInput, now = Date.no
       p.senderAddress,
       p.ticketPageUrl,
       JSON.stringify(p.allowedOrigins),
+      JSON.stringify(p.testOrigins ?? []),
       p.monthlyEmailShare,
       p.attachmentsKeepDays,
       p.textKeepDays,
@@ -159,10 +173,10 @@ export async function listProducts(db: D1Database): Promise<Product[]> {
   return results.map(fromRow);
 }
 
-/** The product, only when `origin` is one of its allowed origins; null otherwise. */
+/** The product, only when `origin` is one of its allowed or TEST origins; null otherwise. */
 export async function productForOrigin(db: D1Database, productId: string, origin: string): Promise<Product | null> {
   const product = await getProduct(db, productId);
-  return product?.allowedOrigins.includes(origin) ? product : null;
+  return product?.allowedOrigins.includes(origin) || product?.testOrigins.includes(origin) ? product : null;
 }
 
 /** One error per id in `ids` with no product. */

@@ -1,6 +1,6 @@
 // One row type per table in migrations/0001_release_1.sql (shyden-labs/shydesk#15) and
 // migrations/0004_release_2.sql (shyden-labs/shydesk#57), with the columns that
-// 0002_upload_received_bytes.sql, 0003_ticket_token_sealed.sql and 0005_ticket_text_deleted.sql add.
+// 0002_upload_received_bytes.sql, 0003_ticket_token_sealed.sql, 0005_ticket_text_deleted.sql and 0007_test_sites.sql add.
 // Times are Unix epoch milliseconds; *_json columns hold JSON text.
 
 export type TicketKind = 'support' | 'report' | 'appeal';
@@ -24,6 +24,8 @@ export interface ProductRow {
   callback_url: string | null;
   callback_secret: string | null;
   appeal_page_url: string | null;
+  // migrations/0007_test_sites.sql (shyden-labs/shydesk#263).
+  test_origins_json: string;
 }
 
 export interface TicketTypeRow {
@@ -65,6 +67,8 @@ export interface TicketRow {
   token_sealed: string | null;
   // migrations/0005_ticket_text_deleted.sql: when the text timer left a bare row; null while the text is kept.
   text_deleted_at: number | null;
+  /** The TEST site the ticket came from (migrations/0007_test_sites.sql, shyden-labs/shydesk#263); null for a live one. */
+  test_origin: string | null;
 }
 
 export interface MessageRow {

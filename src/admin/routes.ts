@@ -67,20 +67,26 @@ const productForm = (form: Form): ProductForm => ({
   senderAddress: text(form, 'senderAddress'),
   ticketPageUrl: text(form, 'ticketPageUrl'),
   allowedOrigins: text(form, 'allowedOrigins'),
+  testOrigins: text(form, 'testOrigins'),
   monthlyEmailShare: text(form, 'monthlyEmailShare'),
   attachmentsKeepDays: text(form, 'attachmentsKeepDays'),
   textKeepDays: text(form, 'textKeepDays'),
 });
+
+/** One origin per line, trimmed, blank lines dropped. */
+const lines = (text: string): string[] =>
+  text
+    .split('\n')
+    .map((o) => o.trim())
+    .filter((o) => o !== '');
 
 const productInput = (f: ProductForm): ProductInput => ({
   id: f.id.trim(),
   name: f.name,
   senderAddress: f.senderAddress.trim(),
   ticketPageUrl: f.ticketPageUrl.trim(),
-  allowedOrigins: f.allowedOrigins
-    .split('\n')
-    .map((o) => o.trim())
-    .filter((o) => o !== ''),
+  allowedOrigins: lines(f.allowedOrigins),
+  testOrigins: lines(f.testOrigins),
   monthlyEmailShare: num(f.monthlyEmailShare),
   attachmentsKeepDays: num(f.attachmentsKeepDays),
   textKeepDays: num(f.textKeepDays),

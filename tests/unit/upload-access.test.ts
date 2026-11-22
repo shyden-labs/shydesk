@@ -13,12 +13,15 @@ import { standInDb, type Answer, type Statement } from './d1-stand-in.ts';
 // grant's files; its parts and its finish only need the grant to be unexpired.
 
 const ORIGIN = 'https://shytalk.app';
+/** ShyTalk's TEST site (shyden-labs/shydesk#263). */
+const TEST_ORIGIN = 'https://test.shytalk.app';
 const PRODUCT = {
   id: 'shytalk',
   name: 'ShyTalk',
   sender_address: 'no-reply@shytalk.app',
   ticket_page_url: 'https://shytalk.app/support/ticket',
   allowed_origins_json: JSON.stringify([ORIGIN]),
+  test_origins_json: JSON.stringify([TEST_ORIGIN]),
   monthly_email_share: 100,
   attachments_keep_days: 30,
   text_keep_days: 365,
@@ -100,6 +103,13 @@ describe('an upload grant', () => {
     expect(response.headers.get('Access-Control-Allow-Origin')).toBe(ORIGIN);
   });
 
+  it("names the product's TEST origin in CORS when the grant comes from its TEST page (shyden-labs/shydesk#263)", async () => {
+    const w = await world({ left: 3, live: true });
+    const response = await w.call('/support-api/uploads', 'POST', { ...GRANT, Origin: TEST_ORIGIN });
+    expect(response.status).toBe(200);
+    expect(response.headers.get('Access-Control-Allow-Origin')).toBe(TEST_ORIGIN);
+  });
+
   it('gives no CORS header to another origin holding a grant', async () => {
     const w = await world({ left: 3, live: true });
     const response = await w.call('/support-api/uploads', 'POST', { ...GRANT, Origin: 'https://evil.example' });
@@ -113,6 +123,13 @@ describe('with no grant', () => {
     const response = await w.call('/support-api/uploads', 'POST', { Origin: ORIGIN });
     expect(response.status).toBe(200);
     expect(response.headers.get('Access-Control-Allow-Origin')).toBe(ORIGIN);
+  });
+
+  it("admits the product's TEST origin (shyden-labs/shydesk#263)", async () => {
+    const w = await world(null);
+    const response = await w.call('/support-api/uploads', 'POST', { Origin: TEST_ORIGIN });
+    expect(response.status).toBe(200);
+    expect(response.headers.get('Access-Control-Allow-Origin')).toBe(TEST_ORIGIN);
   });
 
   it('refuses a call with no origin and no grant', async () => {
