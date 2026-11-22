@@ -86,8 +86,9 @@
     .field { display: grid; gap: 4px; }
     .attachments { min-height: 1px; overflow-wrap: anywhere; white-space: pre-line; }
     .picker-name { font-weight: 600; }
-    ::slotted(input) { font: inherit; min-width: 0; }
+    ::slotted(input) { font: inherit; min-width: 0; box-sizing: border-box; min-height: 44px; }
     label { display: grid; gap: 4px; font-weight: 600; }
+    input, select, textarea, button { box-sizing: border-box; min-height: 44px; }
     input, select, textarea { font: inherit; font-weight: 400; padding: 10px; min-width: 0; border-radius: 8px; border: 1px solid var(--shydesk-border, #c8c8d0); background: #ffffff; color: inherit; }
     textarea { min-height: 140px; resize: vertical; }
     :focus-visible { outline: 3px solid var(--shydesk-accent, #4b3fd8); outline-offset: 2px; }
