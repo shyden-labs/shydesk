@@ -38,6 +38,7 @@ const productRow = (id: string) => ({
   sender_address: `no-reply@${id}.example`,
   ticket_page_url: `https://${id}.example/ticket`,
   allowed_origins_json: JSON.stringify([`https://${id}.example`]),
+  test_origins_json: JSON.stringify([`https://test.${id}.example`]),
   monthly_email_share: 100,
   attachments_keep_days: 30,
   text_keep_days: 365,
@@ -58,6 +59,7 @@ const ticketRow = (over: Record<string, unknown> = {}) => ({
   seq: 3,
   token_sealed: null,
   text_deleted_at: null,
+  test_origin: null,
   ...over,
 });
 
@@ -466,6 +468,21 @@ describe('replying', () => {
     expect(mails[0]?.to).toBe('ana@example.com');
     expect(mails[0]?.text).toContain('https://shytalk.example/ticket#t=the-token');
     expect(mails[0]?.text).not.toContain('We fixed it');
+  });
+
+  it("emails a TEST ticket's reply with the link to the TEST site's ticket page (shyden-labs/shydesk#263)", async () => {
+    const ticket = { ...(await sealed('the-token')), test_origin: 'https://test.shytalk.example' };
+    const { post, mails } = setup({ tickets: [ticket] });
+    expect((await post('/desk/tickets/t1/reply', { body: 'We fixed it' })).status).toBe(303);
+    expect(mails[0]?.text).toContain('https://test.shytalk.example/ticket#t=the-token');
+  });
+
+  it('emails the live link for a ticket from a TEST site the product no longer lists', async () => {
+    const ticket = { ...(await sealed('the-token')), test_origin: 'https://gone.shytalk.example' };
+    const { post, mails } = setup({ tickets: [ticket] });
+    expect((await post('/desk/tickets/t1/reply', { body: 'We fixed it' })).status).toBe(303);
+    expect(mails[0]?.text).toContain('https://shytalk.example/ticket#t=the-token');
+    expect(mails[0]?.text).not.toContain('gone.shytalk.example');
   });
 
   it('refuses a reply to a ticket whose text has gone, saving and sending nothing (shyden-labs/shydesk#191)', async () => {

@@ -32,6 +32,23 @@ describe('validateProduct', () => {
     expect(performance.now() - started).toBeLessThan(50);
   });
 
+  // shyden-labs/shydesk#263 AC1: a product's TEST sites are listed apart from its live origins.
+  it('accepts exact TEST origins kept apart from the allowed origins', () => {
+    expect(errorsFor({ testOrigins: ['https://test.shytalk.app', 'https://test.shytalk.app:8443'] })).toEqual([]);
+  });
+
+  it('refuses a TEST origin that is not written exactly as https://host[:port]', () => {
+    expect(errorsFor({ testOrigins: ['http://test.shytalk.app'] })).toEqual([
+      'Test origin "http://test.shytalk.app" must be exactly https://host or https://host:port.',
+    ]);
+  });
+
+  it('refuses a TEST origin that is also an allowed origin', () => {
+    expect(errorsFor({ testOrigins: ['https://shytalk.app'] })).toEqual([
+      'Test origin "https://shytalk.app" is already an allowed origin.',
+    ]);
+  });
+
   it('accepts a product id of exactly 2 and exactly 40 characters', () => {
     expect(errorsFor({ id: 'ab' })).toEqual([]);
     expect(errorsFor({ id: 'a'.repeat(40) })).toEqual([]);

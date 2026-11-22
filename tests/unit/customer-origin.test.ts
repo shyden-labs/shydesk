@@ -13,6 +13,7 @@ const SHYTALK = {
   sender_address: 'no-reply@shytalk.app',
   ticket_page_url: 'https://shytalk.app/support/ticket',
   allowed_origins_json: JSON.stringify(['https://shytalk.app', 'https://www.shytalk.app']),
+  test_origins_json: JSON.stringify(['https://test.shytalk.app']),
   monthly_email_share: 100,
   attachments_keep_days: 30,
   text_keep_days: 365,
@@ -25,6 +26,7 @@ function appWith() {
   app.use('/support-api/*', requireProductOrigin());
   app.get('/support-api/whoami', (c) => c.json({ product: c.var.product.id, ip: c.var.clientIp }));
   app.post('/support-api/whoami', (c) => c.json({ product: c.var.product.id }));
+  app.get('/support-api/test-origin', (c) => c.json({ testOrigin: c.var.testOrigin }));
   const call = (path: string, init: RequestInit = {}) => app.request(path, init, { DB: db });
   return { call };
 }
@@ -97,5 +99,30 @@ describe('requireProductOrigin', () => {
     const { call } = appWith();
     const response = await call('/support-api/whoami?product=shytalk', from('https://shytalk.app'));
     expect(await response.json()).toEqual({ product: 'shytalk', ip: '' });
+  });
+
+  // shyden-labs/shydesk#263 AC1: a TEST site is let through like a live one, and named as TEST.
+  it('lets a TEST origin through with that exact origin in CORS, naming it as the TEST origin', async () => {
+    const { call } = appWith();
+    const response = await call('/support-api/test-origin?product=shytalk', from('https://test.shytalk.app'));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ testOrigin: 'https://test.shytalk.app' });
+    expect(response.headers.get('Access-Control-Allow-Origin')).toBe('https://test.shytalk.app');
+  });
+
+  it('answers a preflight from a TEST origin with that origin', async () => {
+    const { call } = appWith();
+    const response = await call('/support-api/test-origin?product=shytalk', {
+      method: 'OPTIONS',
+      ...from('https://test.shytalk.app', { 'Access-Control-Request-Method': 'POST' }),
+    });
+    expect(response.status).toBe(204);
+    expect(response.headers.get('Access-Control-Allow-Origin')).toBe('https://test.shytalk.app');
+  });
+
+  it('names no TEST origin for a call from a live allowed origin', async () => {
+    const { call } = appWith();
+    const response = await call('/support-api/test-origin?product=shytalk', from('https://shytalk.app'));
+    expect(await response.json()).toEqual({ testOrigin: null });
   });
 });

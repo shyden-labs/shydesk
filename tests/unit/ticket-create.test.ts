@@ -86,7 +86,17 @@ describe('createTicket', () => {
       expect.any(String),
       NOW,
       NOW,
+      // No TEST site: it came from the live one (shyden-labs/shydesk#263).
+      null,
     ]);
+  });
+
+  it('writes the TEST site a ticket came from (shyden-labs/shydesk#263)', async () => {
+    const { db, statements } = standInDb();
+    await createTicket(db, { ...input(), testOrigin: 'https://test.shytalk.app' });
+    const insert = statements.find((s) => s.sql.includes('INSERT INTO tickets'));
+    expect(insert?.sql).toMatch(/updated_at, test_origin, seq\)/);
+    expect(insert?.values.at(-1)).toBe('https://test.shytalk.app');
   });
 
   it('writes the message as the customer first message on the ticket', async () => {

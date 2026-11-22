@@ -11,6 +11,7 @@ import { strict as assert } from 'node:assert';
 import { driver } from './harness/driver.ts';
 import { JOURNEY_WAIT as WAIT, named, textHolding } from './harness/find.ts';
 import { openPage } from './harness/open-page.ts';
+import { touchSized } from './harness/touch.ts';
 import { clickMiddleOf, pickFile, press, pressVideoControl, swipeLeft, tap, tapToNewPage, type, zoomIn } from './harness/input.ts';
 import { ownControlsPoints, type Box } from './harness/targets.ts';
 import { SEEDED_TICKET_TOKEN, SHYDESK_PORT } from './harness/local-shydesk.ts';
@@ -109,6 +110,8 @@ describe('the contact form', () => {
     // Each browser's ticket is its own: they share one local database, and the desk opens a ticket by its subject.
     const subject = `The app will not open ${String(Date.now())}`;
     await openPage('/contact.html?product=demo');
+    // Every control on the form takes a fingertip (shyden-labs/shydesk#256).
+    await touchSized(['Email', 'Subject', 'Category', 'Message', 'Device', 'Photos and videos', 'Send']);
     await type('Email', 'e2e');
     await type('Subject', subject);
     await type('Message', 'It closes as soon as it starts.');
@@ -148,6 +151,7 @@ describe('the contact form', () => {
     // The private link opens the conversation, and a reply typed there joins it (shyden-labs/shydesk#23).
     await openPage(link);
     await textHolding('Conversation', 'It closes as soon as it starts.');
+    await touchSized(['Reply', 'Photos and videos', 'Send reply']);
     await type('Reply', 'It still closes.');
     await pickFile('Photos and videos', 'photo.jpg');
     await textHolding('Attachments', 'attached,');
@@ -259,6 +263,41 @@ describe('the contact form', () => {
     // A link nobody holds shows one plain line.
     await openPage('/support/ticket?unknown#t=nobody-holds-this');
     await textHolding('Support status', 'This link is no longer valid.');
+  });
+
+  // shyden-labs/shydesk#263: here the suite is the TEST site of "Demo Test", whose live site is elsewhere.
+  it("sends a request from a product's TEST site, which its customer and the desk see as TEST", async () => {
+    const subject = `A test-version request ${String(Date.now())}`;
+    await openPage('/contact.html?product=demo-test');
+    // Its own address, so the first journey's sends from every browser leave it under the 5-an-hour limit.
+    await type('Email', 'e2e-test-site@example.com');
+    await type('Subject', subject);
+    await type('Message', 'Found on the test version.');
+    await textHolding('Support status', 'Ready to send');
+    await tap('Send');
+    const link = await textHolding('Private link', '#t=');
+    // The link opens on the TEST site, never the live one.
+    assert.ok(!link.includes('live.demo-test.example'), `the private link went to the live site: ${link}`);
+
+    // The customer's thread: their message, then the test-version reply first from the desk.
+    await openPage(link);
+    await textHolding('Conversation', 'Found on the test version.');
+    await textHolding(
+      'Conversation',
+      'Thanks for trying the test version of Demo Test. Your message has arrived safely. Requests from the live version of ' +
+        'Demo Test are always answered first, so messages from the test version have no set reply time and may not always ' +
+        'get a reply. Every report still helps make Demo Test better.',
+    );
+
+    // The desk marks it TEST in the list and on its page.
+    const desk = new URL(link);
+    desk.port = String(SHYDESK_PORT);
+    await openPage(`${desk.origin}/health`);
+    await driver().setCookies({ name: 'CF_Authorization', value: process.env.E2E_REP_TOKEN ?? '', path: '/' });
+    await openPage(`${desk.origin}/desk?product=demo-test`);
+    await textHolding('Ticket list', `TEST ${subject}`);
+    await tapToNewPage(subject);
+    await textHolding('TEST ticket', `From the TEST site ${new URL(link).origin}. Live tickets come first.`);
   });
 
   it('cannot load on a page whose origin the product does not allow', async () => {

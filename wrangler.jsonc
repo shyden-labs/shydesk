@@ -53,6 +53,10 @@
         // Failure reports for dev's notices come back here through Email Routing (shyden-labs/shydesk#232).
         // Live sets none until its release.
         "BOUNCE_DOMAIN": "shydeskdev.dpdns.org",
+        // shyden.co.uk's dev journey sends real support requests on every deploy; these clear themselves an
+        // hour after creation (Shyden 2026-11-22, shyden-labs/shydesk#254). Live sets neither.
+        "TEST_TICKET_PRODUCT": "shyden-co-uk",
+        "TEST_TICKET_EMAIL": "support-test+*@shyden.co.uk",
       },
     },
   },

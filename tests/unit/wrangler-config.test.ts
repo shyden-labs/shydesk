@@ -96,6 +96,13 @@ describe('the ticket timer in wrangler.jsonc', () => {
     expect(config.vars).not.toHaveProperty('BOUNCE_DOMAIN');
   });
 
+  // shyden-labs/shydesk#254 AC3: only dev clears shyden.co.uk's journey test tickets by itself.
+  it("dev names shyden.co.uk's test sender and live has no test-ticket setting", () => {
+    expect(config.env.dev.vars).toMatchObject({ TEST_TICKET_PRODUCT: 'shyden-co-uk', TEST_TICKET_EMAIL: 'support-test+*@shyden.co.uk' });
+    expect(config.vars).not.toHaveProperty('TEST_TICKET_PRODUCT');
+    expect(config.vars).not.toHaveProperty('TEST_TICKET_EMAIL');
+  });
+
   it('sends mail through Sparked Host on live and on dev', () => {
     expect(config.vars).toMatchObject({ SMTP_HOST: 'web-par-01.sparkedhost.us' });
     expect(config.env.dev.vars).toMatchObject({ SMTP_HOST: 'web-par-01.sparkedhost.us' });

@@ -45,11 +45,15 @@ const product = (id: string): ProductInput => ({
 describe('products', () => {
   it('round-trips a product and keeps created_at on update', async () => {
     await saveProduct(db, product('it-round'), 1000);
-    await saveProduct(db, { ...product('it-round'), name: 'Renamed', monthlyEmailShare: 0 }, 2000);
+    await expect(getProduct(db, 'it-round')).resolves.toMatchObject({ testOrigins: [] });
+    // Its TEST sites are written and read back on a real D1 too (shyden-labs/shydesk#263).
+    const testOrigins = ['https://test.it-round.example'];
+    await saveProduct(db, { ...product('it-round'), name: 'Renamed', monthlyEmailShare: 0, testOrigins }, 2000);
     await expect(getProduct(db, 'it-round')).resolves.toEqual({
       ...product('it-round'),
       name: 'Renamed',
       monthlyEmailShare: 0,
+      testOrigins,
       createdAt: 1000,
     });
   });

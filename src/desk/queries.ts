@@ -30,6 +30,8 @@ export interface DeskTicket {
   token_sealed: string | null;
   /** When the text timer left a bare row (shyden-labs/shydesk#191); null while the text is kept. */
   text_deleted_at: number | null;
+  /** The TEST site it came from (shyden-labs/shydesk#263); null for a live ticket. */
+  test_origin: string | null;
   /** 1 while the ticket's latest notice bounced (shyden-labs/shydesk#232), else 0. */
   last_notice_bounced: 0 | 1;
 }
@@ -69,7 +71,7 @@ export interface TicketFilter {
 }
 
 const COLUMNS =
-  'id, product_id, type_id, status, customer_email, subject, category, fields_json, created_at, updated_at, seq, token_sealed, text_deleted_at, ' +
+  'id, product_id, type_id, status, customer_email, subject, category, fields_json, created_at, updated_at, seq, token_sealed, text_deleted_at, test_origin, ' +
   'COALESCE((SELECT n.bounced_at IS NOT NULL FROM notices n WHERE n.ticket_id = tickets.id ORDER BY n.sent_at DESC, n.rowid DESC LIMIT 1), 0) AS last_notice_bounced';
 const marks = (values: unknown[]): string => values.map(() => '?').join(', ');
 

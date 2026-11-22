@@ -10,6 +10,7 @@ import { standInDb, type Answer, type Statement } from './d1-stand-in.ts';
 // for a ticket reopened in between does nothing.
 
 const NOW = Date.UTC(2026, 10, 6, 12);
+const HOUR_MS = 3_600_000;
 const KEEP = { attachmentsKeepDays: 30, textKeepDays: 365 };
 
 /** Durable Object storage stand-in: values in a Map, plus the one alarm. */
@@ -175,6 +176,38 @@ describe('TicketTimer.alarm', () => {
     await timer.alarm();
     expect(deleted).toEqual([]);
     expect(writes(statements)).toEqual([]);
+  });
+
+  // shyden-labs/shydesk#254: a dev test ticket is closed from whatever status it is in, and its text and files go at once.
+  it('clear: closes the ticket from any status, then deletes its files and text straight away, leaving no timer', async () => {
+    const store = storage();
+    const { db, statements } = standInDb((sql) => {
+      if (sql.startsWith('UPDATE tickets SET status')) return [{ product_id: 'shyden-co-uk' }];
+      if (sql.includes('FROM products')) return [{ attachments_keep_days: 30, text_keep_days: 365 }];
+      if (sql.includes('FROM attachments')) return [{ id: 'a1', r2_key: 'k1', thumb_key: 'k1t', bytes: 7 }];
+      return [];
+    });
+    const deleted: string[][] = [];
+    const files = { delete: (keys: string[]) => Promise.resolve(void deleted.push(keys)) };
+    const timer = new TicketTimer({ storage: store.api } as never, { DB: db, FILES: files } as never);
+    await timer.apply('t1', { schedule: { clear: NOW + HOUR_MS }, cancel: [] });
+    expect(store.alarm()).toBe(NOW + HOUR_MS);
+    const fired = NOW + HOUR_MS;
+    vi.setSystemTime(fired);
+    await timer.alarm();
+    const close = statements.find((s) => s.sql.startsWith('UPDATE tickets SET status'));
+    expect(close?.values).toEqual(['closed', fired, fired, 't1']);
+    expect(deleted).toEqual([['k1', 'k1t']]);
+    const deletes = statements.filter((s) => s.sql.startsWith('DELETE')).map((s) => s.sql.split(' WHERE')[0]);
+    expect(deletes).toEqual([
+      'DELETE FROM attachments',
+      'DELETE FROM messages',
+      'DELETE FROM reads',
+      'DELETE FROM notices',
+      'DELETE FROM tickets',
+    ]);
+    expect([...store.values.keys()]).toEqual(['ticket']);
+    expect(store.alarm()).toBeNull();
   });
 
   it('text: deletes the stored attachments first, then the attachment rows, messages, staff read marks, notices and ticket, all only if still closed', async () => {

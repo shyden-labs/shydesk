@@ -7,6 +7,7 @@ import { requireStaff, scope, type Staff, type StaffEnv } from '../auth/staff.ts
 import { sendNoReply, type Deliver, type MailEnv, type NoticeResult } from '../mail/notify.ts';
 import { getProduct, listCanned, listProducts, type Canned } from '../products.ts';
 import { ticketLink } from '../tickets/create.ts';
+import { ticketPageFor } from '../tickets/test-site.ts';
 import { openToken } from '../tickets/seal.ts';
 import { changeStatus, type TimerEnv } from '../tickets/status.ts';
 import { streamFile } from '../uploads/serve.ts';
@@ -79,10 +80,18 @@ async function notifyCustomer(c: DeskContext, deliver: Deliver, ticket: DeskTick
   }
   const product = await getProduct(c.env.DB, ticket.product_id);
   if (product === null) return 'failed';
-  return sendNoReply(c.env, product, ticket.customer_email, ticketLink(product.ticketPageUrl, token), deliver, new Date(now), {
-    ticketId: ticket.id,
-    messageId,
-  });
+  return sendNoReply(
+    c.env,
+    product,
+    ticket.customer_email,
+    ticketLink(ticketPageFor(product, ticket.test_origin), token),
+    deliver,
+    new Date(now),
+    {
+      ticketId: ticket.id,
+      messageId,
+    },
+  );
 }
 
 export function deskRoutes(deps: DeskDeps, jwks?: JWTVerifyGetKey): Hono<DeskEnv> {

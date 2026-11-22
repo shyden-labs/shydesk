@@ -52,6 +52,7 @@ const PRODUCT_ROW = {
   sender_address: 'no-reply@shytalk.app',
   ticket_page_url: 'https://shytalk.app/support/ticket',
   allowed_origins_json: '["https://shytalk.app"]',
+  test_origins_json: '[]',
   monthly_email_share: 500,
   attachments_keep_days: 30,
   text_keep_days: 365,
@@ -77,11 +78,20 @@ describe('saveProduct', () => {
       'no-reply@shytalk.app',
       'https://shytalk.app/support/ticket',
       '["https://shytalk.app"]',
+      '[]',
       500,
       30,
       365,
       NOW,
     ]);
+  });
+
+  // shyden-labs/shydesk#263 AC1.
+  it('writes its TEST origins as JSON, and updates them in place', async () => {
+    const { db, statements } = standInDb();
+    await saveProduct(db, { ...PRODUCT, testOrigins: ['https://test.shytalk.app'] }, NOW);
+    expect(statements[0]?.values[5]).toBe('["https://test.shytalk.app"]');
+    expect(statements[0]?.sql.split('DO UPDATE')[1]).toMatch(/test_origins_json = excluded\.test_origins_json/);
   });
 
   it('keeps created_at on update', async () => {
@@ -114,7 +124,7 @@ describe('saveProduct', () => {
 describe('getProduct and listProducts', () => {
   it('reads a product back with its origins parsed', async () => {
     const { db, statements } = standInDb(productsExist('shytalk'));
-    await expect(getProduct(db, 'shytalk')).resolves.toEqual({ ...PRODUCT, createdAt: NOW });
+    await expect(getProduct(db, 'shytalk')).resolves.toEqual({ ...PRODUCT, testOrigins: [], createdAt: NOW });
     expect(statements[0]?.values).toEqual(['shytalk']);
   });
 
@@ -135,6 +145,14 @@ describe('productForOrigin', () => {
   it('answers the product when the origin is allowed', async () => {
     const { db } = standInDb(productsExist('shytalk'));
     await expect(productForOrigin(db, 'shytalk', 'https://shytalk.app')).resolves.toMatchObject({ id: 'shytalk' });
+  });
+
+  it('answers the product when the origin is one of its TEST origins (shyden-labs/shydesk#263)', async () => {
+    const { db } = standInDb(() => [{ ...PRODUCT_ROW, test_origins_json: '["https://test.shytalk.app"]' }]);
+    await expect(productForOrigin(db, 'shytalk', 'https://test.shytalk.app')).resolves.toMatchObject({
+      id: 'shytalk',
+      testOrigins: ['https://test.shytalk.app'],
+    });
   });
 
   it('answers null for an origin not allowed', async () => {

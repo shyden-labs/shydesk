@@ -21,7 +21,7 @@ export interface TicketTimerEnv {
   FILES?: R2Bucket;
 }
 
-const KINDS: Kind[] = ['autoclose', 'attachments', 'text'];
+const KINDS: Kind[] = ['autoclose', 'attachments', 'text', 'clear'];
 const due = (kind: Kind): string => `due:${kind}`;
 
 export class TicketTimer extends DurableObject<TicketTimerEnv> {
@@ -63,6 +63,10 @@ export class TicketTimer extends DurableObject<TicketTimerEnv> {
       case 'attachments':
         return deleteAttachments(this.env.DB, this.env.FILES, ticketId, now);
       case 'text':
+        return deleteText(this.env.DB, this.env.FILES, ticketId, now);
+      case 'clear':
+        // A dev test ticket (shyden-labs/shydesk#254): closed from any status, then its text goes now. Holds still keep it.
+        await writeStatus(this.env.DB, ticketId, 'closed', now);
         return deleteText(this.env.DB, this.env.FILES, ticketId, now);
     }
   }

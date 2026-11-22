@@ -13,6 +13,13 @@ In **Admin > Products**, add the product with:
   for example `https://shytalk.app` and `https://www.shytalk.app`. Scheme,
   host and port must match exactly; nothing else may call ShyDesk for this
   product.
+- **TEST site origins** (optional): the exact origins of the product's TEST
+  sites, for example `https://test.shytalk.app`. They are let in like the
+  allowed origins, but their tickets reach the live desk marked **TEST**, their
+  private link opens the ticket page's path on that TEST site, and the
+  customer is told at once that the test version is answered after the live
+  one, with no set reply time (shyden-labs/shydesk#263). An origin cannot be
+  both allowed and TEST.
 - **Ticket page URL**: the page that shows a customer's ticket. The private
   link is this URL followed by `#t=<token>`. The token stays in the fragment,
   so it never reaches any server log.

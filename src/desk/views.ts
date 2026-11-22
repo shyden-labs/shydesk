@@ -122,6 +122,10 @@ const layout = (title: string, body: Page): Page =>
           .badge {
             font-weight: 700;
           }
+          .test-mark {
+            border: 2px solid currentColor;
+            padding: 0 0.25rem;
+          }
           label {
             display: block;
             margin: 0.5rem 0;
@@ -222,6 +226,9 @@ const nextPageLink = (d: ListData): Page | '' => {
   return html`<p><a href="${next}">Next page</a></p>`;
 };
 
+/** The list's TEST marker for a ticket from a TEST site (shyden-labs/shydesk#263). */
+const testMark = (t: DeskTicket) => (t.test_origin === null ? '' : html`<strong class="test-mark">TEST</strong> `);
+
 /** The list's marker for a ticket whose latest notice bounced (shyden-labs/shydesk#232). */
 const bouncedMark = (t: DeskTicket) => (t.last_notice_bounced === 1 ? html` · <strong>Email bounced</strong>` : '');
 
@@ -273,7 +280,7 @@ export const listPage = (d: ListData): Page =>
                   ${d.tickets.map(
                     (t) =>
                       html`<tr>
-                        <td><a href="/desk/tickets/${t.id}">${subjectOf(t)}</a></td>
+                        <td>${testMark(t)}<a href="/desk/tickets/${t.id}">${subjectOf(t)}</a></td>
                         <td>${d.productNames.get(t.product_id) ?? t.product_id}</td>
                         <td>${STATUS_NAMES[t.status] ?? t.status}${bouncedMark(t)}</td>
                         <td>${when(t.updated_at)}</td>
@@ -574,6 +581,13 @@ export const ticketPage = (d: TicketData): Page => {
   return layout(
     subjectOf(d.ticket),
     html`<h1>${subjectOf(d.ticket)}</h1>
+      ${
+        d.ticket.test_origin === null
+          ? ''
+          : html`<p role="note" aria-label="TEST ticket">
+              <strong class="test-mark">TEST</strong> From the TEST site ${d.ticket.test_origin}. Live tickets come first.
+            </p>`
+      }
       ${line === undefined ? '' : html`<p role="status" aria-label="Reply status">${line}</p>`}
       <p>${STATUS_NAMES[d.ticket.status] ?? d.ticket.status} · ${d.ticket.customer_email} · ${d.ticket.category}</p>
       <dl>

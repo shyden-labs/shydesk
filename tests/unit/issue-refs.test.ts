@@ -35,6 +35,9 @@ const count = (text: string): number => text.match(BARE_REF)?.length ?? 0;
 // Every file is read with the test file, not inside the test, so the reads do not count
 // against the test's 1 s on a busy laptop (shyden-labs/shydesk#200).
 const TEXTS = FILES.map((file) => ({ file, text: readFileSync(file, 'utf8') }));
+// Each file's comments are stripped and counted here too, for the same reason: that work grows with the
+// repository and slowed the test past 1 s under load (shyden-labs/shydesk#259). The test only compares.
+const BARE = TEXTS.filter(({ file, text }) => count(text) > count(withoutComments(file, text))).map(({ file }) => file);
 
 describe('issue references in comments and docs', () => {
   it('reads the dot-directories a copy carries', () => {
@@ -42,7 +45,6 @@ describe('issue references in comments and docs', () => {
   });
 
   it('cite owner/repo#N in full, never a bare #N', () => {
-    const bare = TEXTS.filter(({ file, text }) => count(text) > count(withoutComments(file, text))).map(({ file }) => file);
-    expect(bare).toEqual([]);
+    expect(BARE).toEqual([]);
   });
 });

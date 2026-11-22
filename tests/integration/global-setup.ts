@@ -19,6 +19,7 @@ export const MIGRATIONS = [
   'migrations/0004_release_2.sql',
   'migrations/0005_ticket_text_deleted.sql',
   'migrations/0006_notices.sql',
+  'migrations/0007_test_sites.sql',
 ];
 
 export default async function setup(project: TestProject): Promise<() => Promise<void>> {

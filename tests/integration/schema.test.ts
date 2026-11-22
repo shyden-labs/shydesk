@@ -38,6 +38,7 @@ describe('tables', () => {
       'callback_url',
       'callback_secret',
       'appeal_page_url',
+      'test_origins_json',
     ]);
   });
   it('ticket_types', async () => {
@@ -66,6 +67,7 @@ describe('tables', () => {
       'seq',
       'token_sealed',
       'text_deleted_at',
+      'test_origin',
     ]);
   });
   it('messages', async () => {

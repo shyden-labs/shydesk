@@ -52,6 +52,7 @@ describe('/support-api and /embed.js on the Worker', () => {
             sender_address: 'n@shytalk.app',
             ticket_page_url: 'https://shytalk.app/t',
             allowed_origins_json: '["https://shytalk.app"]',
+            test_origins_json: '[]',
             monthly_email_share: 1,
             attachments_keep_days: 30,
             text_keep_days: 365,

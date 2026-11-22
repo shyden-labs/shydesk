@@ -18,6 +18,8 @@ export interface ProductForm {
   senderAddress: string;
   ticketPageUrl: string;
   allowedOrigins: string;
+  /** The TEST sites' origins, one per line (shyden-labs/shydesk#263). */
+  testOrigins: string;
   monthlyEmailShare: string;
   attachmentsKeepDays: string;
   textKeepDays: string;
@@ -29,6 +31,7 @@ export const toForm = (p: Product): ProductForm => ({
   senderAddress: p.senderAddress,
   ticketPageUrl: p.ticketPageUrl,
   allowedOrigins: p.allowedOrigins.join('\n'),
+  testOrigins: p.testOrigins.join('\n'),
   monthlyEmailShare: String(p.monthlyEmailShare),
   attachmentsKeepDays: String(p.attachmentsKeepDays),
   textKeepDays: String(p.textKeepDays),
@@ -40,6 +43,7 @@ const EMPTY_FORM: ProductForm = {
   senderAddress: '',
   ticketPageUrl: '',
   allowedOrigins: '',
+  testOrigins: '',
   monthlyEmailShare: '0',
   attachmentsKeepDays: '30',
   textKeepDays: '365',
@@ -122,6 +126,8 @@ const productFields = (f: ProductForm, idLocked: boolean): Page => html`
   <input id="ticketPageUrl" name="ticketPageUrl" type="url" value="${f.ticketPageUrl}" required />
   <label for="allowedOrigins">Allowed origins, one per line</label>
   <textarea id="allowedOrigins" name="allowedOrigins" rows="3" required>${f.allowedOrigins}</textarea>
+  <label for="testOrigins">TEST site origins, one per line (their tickets are marked TEST)</label>
+  <textarea id="testOrigins" name="testOrigins" rows="2">${f.testOrigins}</textarea>
   <label for="monthlyEmailShare">Monthly email share</label>
   <input id="monthlyEmailShare" name="monthlyEmailShare" type="number" min="0" step="1" value="${f.monthlyEmailShare}" required />
   <label for="attachmentsKeepDays">Keep attachments for (days)</label>
