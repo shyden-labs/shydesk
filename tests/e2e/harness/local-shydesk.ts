@@ -46,15 +46,18 @@ export const seededAppealToken = (target: Target): string => `e2e-appeal-${targe
 export function seedSql(suiteOrigin: string, otherOrigins: readonly string[] = []): string {
   const allowed = [...new Set([suiteOrigin, ...otherOrigins])];
   for (const origin of allowed) if (!PLAIN_ORIGIN.test(origin)) throw new Error(`${origin} is not a plain origin`);
-  const product = (id: string, name: string, origins: readonly string[]) =>
-    `INSERT INTO products (id, name, sender_address, ticket_page_url, allowed_origins_json, monthly_email_share, created_at) VALUES ` +
-    `('${id}', '${name}', 'no-reply@example.com', '${origins[0] ?? ''}/support/ticket', '${JSON.stringify(origins)}', 100, 0);`;
+  const product = (id: string, name: string, origins: readonly string[], testOrigins: readonly string[] = []) =>
+    `INSERT INTO products (id, name, sender_address, ticket_page_url, allowed_origins_json, test_origins_json, monthly_email_share, created_at) VALUES ` +
+    `('${id}', '${name}', 'no-reply@example.com', '${origins[0] ?? ''}/support/ticket', '${JSON.stringify(origins)}', '${JSON.stringify(testOrigins)}', 100, 0);`;
   const fields = JSON.stringify([{ label: 'Device', kind: 'text', required: true }]);
   return [
     product('demo', 'Demo', allowed),
     product('demo-elsewhere', 'Elsewhere', ['https://elsewhere.example']),
+    // Its TEST site is the suite, its live site elsewhere (shyden-labs/shydesk#263).
+    product('demo-test', 'Demo Test', ['https://live.demo-test.example'], allowed),
     `INSERT INTO ticket_types (id, product_id, kind, name, fields_json, reasons_json, enabled) VALUES ('demo:support', 'demo', 'support', 'Support', '${fields}', '[]', 1);`,
     `INSERT INTO ticket_types (id, product_id, kind, name, fields_json, reasons_json, enabled) VALUES ('demo-elsewhere:support', 'demo-elsewhere', 'support', 'Support', '[]', '[]', 1);`,
+    `INSERT INTO ticket_types (id, product_id, kind, name, fields_json, reasons_json, enabled) VALUES ('demo-test:support', 'demo-test', 'support', 'Support', '[]', '[]', 1);`,
     `INSERT INTO tickets (id, product_id, type_id, status, customer_email, subject, category, fields_json, token_hash, created_at, updated_at, seq) VALUES ('seeded', 'demo', 'demo:support', 'closed', 'e2e@example.com', 'Seeded', 'bug', '{}', '${sha256(SEEDED_TICKET_TOKEN)}', 0, 0, 0);`,
     `INSERT INTO messages (id, ticket_id, author, staff_email, body, created_at) VALUES ('seeded-message', 'seeded', 'customer', NULL, 'See the attached photo.', 0);`,
     `INSERT INTO attachments (id, product_id, ticket_id, message_id, r2_key, thumb_key, mime, bytes, state, created_at) VALUES ('seeded-photo', 'demo', 'seeded', 'seeded-message', 'gone', 'gone-thumb', 'image/jpeg', 1, 'deleted', 0);`,
@@ -65,7 +68,7 @@ export function seedSql(suiteOrigin: string, otherOrigins: readonly string[] = [
         `INSERT INTO punishments (id, product_id, report_ticket_id, subject_user_id, punishment_key, label, duration_seconds, applied_by, created_at, send_state, appeal_token_hash) VALUES ('seeded-ban-${target}', 'demo', 'seeded-report', 'p-2', 'ban-7d', 'Ban 7 days', 604800, '${E2E_REP}', 0, 'applied', '${sha256(seededAppealToken(target))}');`,
     ),
     `INSERT INTO staff (email, role, created_at) VALUES ('${E2E_REP}', 'rep', 0);`,
-    `INSERT INTO staff_products (email, product_id) VALUES ('${E2E_REP}', 'demo'), ('${E2E_REP}', 'demo-elsewhere');`,
+    `INSERT INTO staff_products (email, product_id) VALUES ('${E2E_REP}', 'demo'), ('${E2E_REP}', 'demo-elsewhere'), ('${E2E_REP}', 'demo-test');`,
     `INSERT INTO canned_replies (id, product_id, type_id, name, body) VALUES ('thanks', 'demo', NULL, 'Thanks', 'Hello {{customer_email}}, about {{ticket_subject}}.');`,
   ].join('\n');
 }
