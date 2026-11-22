@@ -188,7 +188,7 @@ export function contactRoutes(deps: ContactDeps): Hono<ContactEnv> {
       await c.env.TICKET_TIMER.get(c.env.TICKET_TIMER.idFromName(ticketId)).apply(ticketId, plan);
     }
     const testOrigin = c.var.testOrigin;
-    const link = ticketLink(ticketPageFor(product.ticketPageUrl, testOrigin), token);
+    const link = ticketLink(ticketPageFor(product, testOrigin), token);
     const lead = testOrigin === null ? undefined : testSiteReply(product.name);
     const mailed = await sendNoReply(c.env, product, request.email, link, deps.deliver, new Date(now), {
       ticketId,

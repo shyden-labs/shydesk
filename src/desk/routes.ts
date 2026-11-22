@@ -84,7 +84,7 @@ async function notifyCustomer(c: DeskContext, deliver: Deliver, ticket: DeskTick
     c.env,
     product,
     ticket.customer_email,
-    ticketLink(ticketPageFor(product.ticketPageUrl, ticket.test_origin), token),
+    ticketLink(ticketPageFor(product, ticket.test_origin), token),
     deliver,
     new Date(now),
     {

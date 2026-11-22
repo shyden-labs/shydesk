@@ -10,9 +10,13 @@ export const testSiteReply = (productName: string): string =>
   `Requests from the live version of ${productName} are always answered first, so messages from the test version ` +
   `have no set reply time and may not always get a reply. Every report still helps make ${productName} better.`;
 
-/** The product's ticket page, moved onto the TEST site the ticket came from; the live page for a live ticket. */
-export function ticketPageFor(ticketPageUrl: string, testOrigin: string | null): string {
-  if (testOrigin === null) return ticketPageUrl;
-  const page = new URL(ticketPageUrl);
+/**
+ * The product's ticket page, moved onto the TEST site the ticket came from. The live page for a
+ * live ticket, and for a TEST site the product no longer lists: that host may be someone else's
+ * now, and the link carries the ticket's private token.
+ */
+export function ticketPageFor(product: { ticketPageUrl: string; testOrigins: string[] }, testOrigin: string | null): string {
+  if (testOrigin === null || !product.testOrigins.includes(testOrigin)) return product.ticketPageUrl;
+  const page = new URL(product.ticketPageUrl);
   return `${testOrigin}${page.pathname}${page.search}`;
 }
