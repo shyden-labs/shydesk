@@ -30,6 +30,8 @@ export interface MailEnv {
 export interface NoticeAbout {
   ticketId: string;
   messageId: string | null;
+  /** Said before the link (shyden-labs/shydesk#263: the test-version reply); nothing when left out. */
+  lead?: string;
 }
 
 export type NoticeResult = 'sent' | 'share-used-up' | 'failed';
@@ -97,7 +99,7 @@ export async function sendNoReply(
       from: product.senderAddress,
       to,
       subject: NOTICE_SUBJECT,
-      text: `${product.name} support\r\n\r\nThere is a new update on your support request. Open it here: ${link}`,
+      text: `${product.name} support\r\n\r\n${about.lead === undefined ? '' : `${about.lead}\r\n\r\n`}There is a new update on your support request. Open it here: ${link}`,
     };
     // Written down before it leaves, so a bounce that comes back fast finds its row (shyden-labs/shydesk#232).
     if (env.BOUNCE_DOMAIN !== undefined) {

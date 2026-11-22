@@ -25,6 +25,7 @@ const shytalk = (share = 500): Product => ({
   monthlyEmailShare: share,
   attachmentsKeepDays: 30,
   textKeepDays: 365,
+  testOrigins: [],
   createdAt: 0,
 });
 

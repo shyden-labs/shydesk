@@ -23,6 +23,7 @@ const product = (id: string, share: number): Product => ({
   monthlyEmailShare: share,
   attachmentsKeepDays: 30,
   textKeepDays: 365,
+  testOrigins: [],
   createdAt: 0,
 });
 

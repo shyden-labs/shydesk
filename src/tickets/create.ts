@@ -22,6 +22,8 @@ export interface NewTicket {
   now: number;
   /** TICKET_TOKEN_KEY, which seals the copy of the token that reply emails link with. */
   tokenKey: string;
+  /** The TEST site it came from (shyden-labs/shydesk#263); null or left out for a live one. */
+  testOrigin?: string | null;
 }
 
 /** An attachment that is not this product's, not finished uploading, or already on a ticket. */
@@ -62,8 +64,8 @@ export async function ticketStatements(
     db.prepare(`INSERT INTO counters (key, value) VALUES ('feed_seq', 1) ON CONFLICT (key) DO UPDATE SET value = value + 1`),
     db
       .prepare(
-        `INSERT INTO tickets (id, product_id, type_id, status, customer_email, subject, category, fields_json, token_hash, token_sealed, created_at, updated_at, seq)
-         VALUES (?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?, (SELECT value FROM counters WHERE key = 'feed_seq'))`,
+        `INSERT INTO tickets (id, product_id, type_id, status, customer_email, subject, category, fields_json, token_hash, token_sealed, created_at, updated_at, test_origin, seq)
+         VALUES (?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?, ?, (SELECT value FROM counters WHERE key = 'feed_seq'))`,
       )
       .bind(
         id,
@@ -77,6 +79,7 @@ export async function ticketStatements(
         await sealToken(t.tokenKey, token),
         t.now,
         t.now,
+        t.testOrigin ?? null,
       ),
     db
       .prepare("INSERT INTO messages (id, ticket_id, author, staff_email, body, created_at) VALUES (?, ?, 'customer', NULL, ?, ?)")

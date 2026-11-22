@@ -39,6 +39,7 @@ const productRow = (id: string, name = `Product ${id}`) => ({
   sender_address: `no-reply@${id}.example`,
   ticket_page_url: `https://${id}.example/ticket`,
   allowed_origins_json: JSON.stringify([`https://${id}.example`]),
+  test_origins_json: '[]',
   monthly_email_share: 100,
   attachments_keep_days: 30,
   text_keep_days: 365,
@@ -119,6 +120,7 @@ const PRODUCT_FORM = {
   senderAddress: 'no-reply@new.example',
   ticketPageUrl: 'https://new.example/ticket',
   allowedOrigins: 'https://new.example\nhttps://dev.new.example',
+  testOrigins: ' https://test.new.example \n\n',
   monthlyEmailShare: '50',
   attachmentsKeepDays: '30',
   textKeepDays: '365',
@@ -194,12 +196,14 @@ describe('products', () => {
     expect(response.headers.get('Location')).toBe('/admin/products/new-app');
     const write = writes(statements)[0];
     expect(write?.sql).toMatch(/INSERT INTO products/);
-    expect(write?.values.slice(0, 8)).toEqual([
+    expect(write?.values.slice(0, 9)).toEqual([
       'new-app',
       'New App',
       'no-reply@new.example',
       'https://new.example/ticket',
       '["https://new.example","https://dev.new.example"]',
+      // Its TEST sites, one per line, trimmed (shyden-labs/shydesk#263 AC1).
+      '["https://test.new.example"]',
       50,
       30,
       365,
@@ -223,6 +227,20 @@ describe('products', () => {
     const response = await get('/admin/products/shytalk', ADMIN, env);
     expect(response.status).toBe(200);
     expect(await response.text()).toContain('value="no-reply@shytalk.example"');
+  });
+
+  it("shows the product's TEST origins in their own box, which may be left empty (shyden-labs/shydesk#263)", async () => {
+    const page = await (await get('/admin/products/shytalk', ADMIN, setup().env)).text();
+    expect(page).toContain('<label for="testOrigins">TEST site origins, one per line (their tickets are marked TEST)</label>');
+    expect(page).toContain('<textarea id="testOrigins" name="testOrigins" rows="2"></textarea>');
+  });
+
+  it('keeps the typed TEST origins when the form is refused', async () => {
+    const response = await post('/admin/products', ADMIN, setup().env, { ...PRODUCT_FORM, testOrigins: 'https://new.example' });
+    expect(response.status).toBe(400);
+    const page = await response.text();
+    expect(page).toContain('Test origin &quot;https://new.example&quot; is already an allowed origin.');
+    expect(page).toContain('name="testOrigins" rows="2">https://new.example</textarea>');
   });
 
   it('answers 404 for a product that does not exist', async () => {

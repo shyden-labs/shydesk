@@ -19,6 +19,7 @@ const ticket: DeskTicket = {
   seq: 1,
   token_sealed: null,
   text_deleted_at: null,
+  test_origin: null,
   last_notice_bounced: 0,
 };
 
@@ -513,6 +514,29 @@ describe('bounced notices', () => {
 
   it('shows nothing when no notice bounced', async () => {
     expect(await render(ticketPage(view({ messages, notices: [] })))).not.toContain('bounced');
+  });
+
+  // shyden-labs/shydesk#263 AC2: a TEST site's ticket is never mistaken for a live customer's.
+  it('marks a TEST ticket TEST in the list, and a live one not', async () => {
+    const marked = await render(listPage(list({ tickets: [{ ...ticket, test_origin: 'https://test.shytalk.app' }] })));
+    expect(marked).toContain('<td><strong class="test-mark">TEST</strong> <a href="/desk/tickets/t1">Sign in</a></td>');
+    expect(await render(listPage(list()))).not.toContain('class="test-mark"');
+  });
+
+  it('names the TEST site on a TEST ticket page, and nothing on a live one', async () => {
+    const page = await render(ticketPage(view({ ticket: { ...ticket, test_origin: 'https://test.shytalk.app' } })));
+    expect(page).toMatch(
+      /<p role="note" aria-label="TEST ticket">\s*<strong class="test-mark">TEST<\/strong> From the TEST site https:\/\/test\.shytalk\.app\. Live tickets come first\.\s*<\/p>/,
+    );
+    expect(await render(ticketPage(view()))).not.toContain('class="test-mark"');
+  });
+
+  it('reads the TEST site with every ticket it lists or opens', async () => {
+    const { db, statements } = standInDb();
+    await listTickets(db, { products: ['shytalk'], role: 'admin' }, {});
+    await getTicket(db, { products: ['shytalk'], role: 'admin' }, 't1');
+    expect(statements[0]?.sql).toContain('text_deleted_at, test_origin, ');
+    expect(statements[1]?.sql).toContain('text_deleted_at, test_origin, ');
   });
 
   it('marks the list "Email bounced" only when the latest notice bounced', async () => {

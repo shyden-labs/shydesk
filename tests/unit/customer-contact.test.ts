@@ -10,12 +10,15 @@ import { standInDb, type Statement } from './d1-stand-in.ts';
 // 20 per client IP per hour), answered with the private link and whether the
 // notice email went.
 const ORIGIN = 'https://shytalk.app';
+/** ShyTalk's TEST site (shyden-labs/shydesk#263). */
+const TEST_ORIGIN = 'https://test.shytalk.app';
 const PRODUCT = {
   id: 'shytalk',
   name: 'ShyTalk',
   sender_address: 'no-reply@shytalk.app',
   ticket_page_url: 'https://shytalk.app/support/ticket',
   allowed_origins_json: JSON.stringify([ORIGIN, 'http://localhost:8788']),
+  test_origins_json: JSON.stringify([TEST_ORIGIN]),
   monthly_email_share: 100,
   attachments_keep_days: 30,
   text_keep_days: 365,
@@ -43,6 +46,8 @@ interface World {
   ticketWriteFails?: boolean;
   /** Sets dev's test-ticket setting (shyden-labs/shydesk#254) for product shytalk. */
   testTickets?: boolean;
+  /** The page's origin; ShyTalk's live site unless set (shyden-labs/shydesk#263). */
+  origin?: string;
 }
 
 function appWith(world: World = {}) {
@@ -88,7 +93,7 @@ function appWith(world: World = {}) {
     ...(world.testTickets ? { TEST_TICKET_PRODUCT: 'shytalk', TEST_TICKET_EMAIL: 'support-test+*@shyden.co.uk' } : {}),
     TICKET_TIMER,
   };
-  const headers = { Origin: ORIGIN, 'Content-Type': 'application/json', 'CF-Connecting-IP': '203.0.113.9' };
+  const headers = { Origin: world.origin ?? ORIGIN, 'Content-Type': 'application/json', 'CF-Connecting-IP': '203.0.113.9' };
   const post = (body: unknown, product = 'shytalk') =>
     app.request(
       `/support-api/tickets?product=${product}`,
@@ -138,6 +143,71 @@ describe('GET /support-api/config', () => {
     const response = await config('nope');
     expect(response.status).toBe(404);
     expect(response.headers.get('Access-Control-Allow-Origin')).toBeNull();
+  });
+});
+
+/** The value a ticket insert binds to `column`: its place among the VALUES that are `?`, not literals. */
+const boundTo = (insert: Statement | undefined, column: string): unknown => {
+  const sql = insert?.sql ?? '';
+  const columns =
+    /\(([^)]*)\)/
+      .exec(sql)?.[1]
+      ?.split(',')
+      .map((c) => c.trim()) ?? [];
+  const values =
+    /VALUES \((.*)\)\s*$/s
+      .exec(sql)?.[1]
+      ?.split(/,\s*(?![^(]*\))/)
+      .map((v) => v.trim()) ?? [];
+  const at = columns.indexOf(column);
+  if (at === -1 || values[at] !== '?') return 'column not written';
+  return insert?.values[values.slice(0, at).filter((v) => v === '?').length];
+};
+
+/** Shyden's wording, approved 2026-11-22 (shyden-labs/shydesk#263). */
+const TEST_SITE_REPLY =
+  'Thanks for trying the test version of ShyTalk. Your message has arrived safely. Requests from the live version of ShyTalk ' +
+  'are always answered first, so messages from the test version have no set reply time and may not always get a reply. ' +
+  'Every report still helps make ShyTalk better.';
+
+// shyden-labs/shydesk#263: a TEST site's tickets go to the live desk, marked TEST, with the test-version reply.
+describe('POST /support-api/tickets from a TEST site', () => {
+  const fromTest = { origin: TEST_ORIGIN, turnstile: { success: true, hostname: 'test.shytalk.app' } };
+
+  it('accepts a Turnstile result solved on the TEST host', async () => {
+    const { post } = appWith(fromTest);
+    expect((await post(good())).status).toBe(201);
+  });
+
+  it('stores the TEST site the ticket came from', async () => {
+    const { post, statements } = appWith(fromTest);
+    await post(good());
+    expect(boundTo(ticketInserts(statements)[0], 'test_origin')).toBe(TEST_ORIGIN);
+  });
+
+  it('stores no TEST site for a ticket from the live site', async () => {
+    const { post, statements } = appWith();
+    await post(good());
+    expect(boundTo(ticketInserts(statements)[0], 'test_origin')).toBeNull();
+  });
+
+  it("links to the ticket on the TEST site's own ticket page", async () => {
+    const { post, sent } = appWith(fromTest);
+    const body = (await (await post(good())).json()) as { ticketLink: string };
+    expect(body.ticketLink).toMatch(/^https:\/\/test\.shytalk\.app\/support\/ticket#t=[A-Za-z0-9_-]{43}$/);
+    expect(sent[0]?.text).toContain(body.ticketLink);
+  });
+
+  it('opens the notice email with the test-version reply', async () => {
+    const { post, sent } = appWith(fromTest);
+    await post(good());
+    expect(sent[0]?.text).toContain(TEST_SITE_REPLY);
+  });
+
+  it('sends no test-version reply for a ticket from the live site', async () => {
+    const { post, sent } = appWith();
+    await post(good());
+    expect(sent[0]?.text).not.toContain('test version');
   });
 });
 
