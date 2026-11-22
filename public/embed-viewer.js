@@ -192,8 +192,13 @@ export function openViewer({ doc, host, items, start, onClose }) {
     'aria-label': 'Attachment viewer',
     tabindex: '-1',
   });
-  const css = el('style');
-  css.textContent = VIEWER_CSS;
+  // A constructed sheet, which a page CSP without style-src 'unsafe-inline' still applies, added
+  // beside the sheets of the root that holds the overlay (the page, or the piece's shadow root,
+  // which a page sheet does not reach) and taken away on close (shyden-labs/shydesk#266).
+  const sheet = new CSSStyleSheet();
+  sheet.replaceSync(VIEWER_CSS);
+  const styled = host instanceof ShadowRoot ? host : doc;
+  styled.adoptedStyleSheets = [...styled.adoptedStyleSheets, sheet];
   const controls = el('div', { class: 'controls' });
   const line = el('p', { class: 'line', role: 'status', 'aria-label': 'Viewer status' });
   const stage = el('div', { class: 'stage', 'aria-label': 'Viewer stage' });
@@ -304,7 +309,7 @@ export function openViewer({ doc, host, items, start, onClose }) {
     controls.append(button);
   }
   controls.append(line);
-  overlay.append(css, controls, stage);
+  overlay.append(controls, stage);
 
   /** A point on screen, measured from the middle of the stage, where zooming keeps the picture still. */
   const fromMiddle = (/** @type {number} */ x, /** @type {number} */ y) => {
@@ -411,6 +416,7 @@ export function openViewer({ doc, host, items, start, onClose }) {
   function close() {
     layer?.watch.disconnect();
     overlay.remove();
+    styled.adoptedStyleSheets = styled.adoptedStyleSheets.filter((one) => one !== sheet);
     onClose?.();
     if (returnFocus instanceof HTMLElement) returnFocus.focus();
   }

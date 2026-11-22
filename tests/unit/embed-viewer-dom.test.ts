@@ -104,6 +104,10 @@ afterEach(() => {
   document.body.replaceChildren();
 });
 
+/** The viewer's constructed sheets on the page (shyden-labs/shydesk#266). */
+const viewerSheets = (): CSSStyleSheet[] =>
+  document.adoptedStyleSheets.filter((sheet) => [...sheet.cssRules].some((rule) => rule.cssText.includes('.shydesk-viewer')));
+
 describe('opening the viewer', () => {
   it('puts a labelled modal dialog over the page and gives it focus', () => {
     const { overlay } = open([photo('/a.jpg')]);
@@ -113,7 +117,9 @@ describe('opening the viewer', () => {
     expect(overlay.getAttribute('aria-label')).toBe('Attachment viewer');
     expect(overlay.getAttribute('tabindex')).toBe('-1');
     expect(document.activeElement).toBe(overlay);
-    expect(overlay.querySelector('style')?.textContent).toContain('.shydesk-viewer{position:fixed');
+    // A constructed sheet added to the page's own, not a <style> element (shyden-labs/shydesk#266).
+    expect(overlay.querySelector('style')).toBeNull();
+    expect(viewerSheets().length).toBeGreaterThan(0);
     expect(overlay.querySelector('.stage')?.getAttribute('aria-label')).toBe('Viewer stage');
     expect(overlay.querySelector('.line')?.getAttribute('aria-label')).toBe('Viewer status');
   });
@@ -303,9 +309,16 @@ describe('the controls', () => {
     document.body.append(opener);
     opener.focus();
     const onClose = vi.fn();
+    const pageSheet = new CSSStyleSheet();
+    document.adoptedStyleSheets = [...document.adoptedStyleSheets, pageSheet];
+    const before = document.adoptedStyleSheets.length;
     const { press, overlay } = open([video('/v.mp4')], 0, onClose);
+    expect(document.adoptedStyleSheets).toHaveLength(before + 1);
     press('Close viewer');
     expect(overlay.isConnected).toBe(false);
+    // Its sheet goes with it, and the page's own sheets stay (shyden-labs/shydesk#266).
+    expect(document.adoptedStyleSheets).toHaveLength(before);
+    expect(document.adoptedStyleSheets).toContain(pageSheet);
     expect(onClose).toHaveBeenCalledOnce();
     expect(document.activeElement).toBe(opener);
     expect(observers[0]?.disconnected).toBe(true);
@@ -468,6 +481,24 @@ describe('inside the shared piece', () => {
     viewer.close();
     expect(root.querySelector('.shydesk-viewer')).toBeNull();
     expect(root.activeElement).toBe(opener);
+  });
+
+  // A page sheet does not reach into a shadow root: the viewer's sheet goes on the root that holds it,
+  // keeping the piece's own, and leaves with it (shyden-labs/shydesk#266; e2e on PR shyden-labs/shydesk#269 drew it off-screen).
+  it("styles itself on the shadow root that holds it, keeping the piece's own sheet, and leaves the page's alone", () => {
+    const holder = document.createElement('div');
+    document.body.append(holder);
+    const root = holder.attachShadow({ mode: 'open' });
+    const pieceSheet = new CSSStyleSheet();
+    root.adoptedStyleSheets = [pieceSheet];
+    const pageSheets = document.adoptedStyleSheets.length;
+    const viewer = openViewer({ doc: document, host: root, items: [photo('/a.jpg')], start: 0 });
+    expect(root.adoptedStyleSheets).toHaveLength(2);
+    expect(root.adoptedStyleSheets[0]).toBe(pieceSheet);
+    expect([...(root.adoptedStyleSheets[1]?.cssRules ?? [])].map((rule) => rule.cssText).join('')).toContain('.shydesk-viewer');
+    expect(document.adoptedStyleSheets).toHaveLength(pageSheets);
+    viewer.close();
+    expect(root.adoptedStyleSheets).toEqual([pieceSheet]);
   });
 
   it('gives focus to nothing when nothing in the shadow root had it', () => {
