@@ -192,11 +192,13 @@ export function openViewer({ doc, host, items, start, onClose }) {
     'aria-label': 'Attachment viewer',
     tabindex: '-1',
   });
-  // A constructed sheet added beside the page's own, which a page CSP without style-src
-  // 'unsafe-inline' still applies, and taken away on close (shyden-labs/shydesk#266).
+  // A constructed sheet, which a page CSP without style-src 'unsafe-inline' still applies, added
+  // beside the sheets of the root that holds the overlay (the page, or the piece's shadow root,
+  // which a page sheet does not reach) and taken away on close (shyden-labs/shydesk#266).
   const sheet = new CSSStyleSheet();
   sheet.replaceSync(VIEWER_CSS);
-  document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+  const styled = host instanceof ShadowRoot ? host : doc;
+  styled.adoptedStyleSheets = [...styled.adoptedStyleSheets, sheet];
   const controls = el('div', { class: 'controls' });
   const line = el('p', { class: 'line', role: 'status', 'aria-label': 'Viewer status' });
   const stage = el('div', { class: 'stage', 'aria-label': 'Viewer stage' });
@@ -414,7 +416,7 @@ export function openViewer({ doc, host, items, start, onClose }) {
   function close() {
     layer?.watch.disconnect();
     overlay.remove();
-    document.adoptedStyleSheets = document.adoptedStyleSheets.filter((one) => one !== sheet);
+    styled.adoptedStyleSheets = styled.adoptedStyleSheets.filter((one) => one !== sheet);
     onClose?.();
     if (returnFocus instanceof HTMLElement) returnFocus.focus();
   }

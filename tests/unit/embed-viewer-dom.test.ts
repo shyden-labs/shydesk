@@ -483,6 +483,24 @@ describe('inside the shared piece', () => {
     expect(root.activeElement).toBe(opener);
   });
 
+  // A page sheet does not reach into a shadow root: the viewer's sheet goes on the root that holds it,
+  // keeping the piece's own, and leaves with it (shyden-labs/shydesk#266; e2e on PR shyden-labs/shydesk#269 drew it off-screen).
+  it("styles itself on the shadow root that holds it, keeping the piece's own sheet, and leaves the page's alone", () => {
+    const holder = document.createElement('div');
+    document.body.append(holder);
+    const root = holder.attachShadow({ mode: 'open' });
+    const pieceSheet = new CSSStyleSheet();
+    root.adoptedStyleSheets = [pieceSheet];
+    const pageSheets = document.adoptedStyleSheets.length;
+    const viewer = openViewer({ doc: document, host: root, items: [photo('/a.jpg')], start: 0 });
+    expect(root.adoptedStyleSheets).toHaveLength(2);
+    expect(root.adoptedStyleSheets[0]).toBe(pieceSheet);
+    expect([...(root.adoptedStyleSheets[1]?.cssRules ?? [])].map((rule) => rule.cssText).join('')).toContain('.shydesk-viewer');
+    expect(document.adoptedStyleSheets).toHaveLength(pageSheets);
+    viewer.close();
+    expect(root.adoptedStyleSheets).toEqual([pieceSheet]);
+  });
+
   it('gives focus to nothing when nothing in the shadow root had it', () => {
     const holder = document.createElement('div');
     document.body.append(holder);
