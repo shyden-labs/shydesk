@@ -83,6 +83,18 @@ export function demoPage(html: string, shydesk: string, product: string): string
   return html.replace(`${NON_PROD_SHYDESK}/embed.js`, `${shydesk}/embed.js`).replace('product="demo"', `product="${product}"`);
 }
 
+/**
+ * The page's style policy (shyden-labs/shydesk#266): its own <style> blocks by hash and nothing
+ * else inline, so a piece that needs style-src 'unsafe-inline' draws unstyled and the journey's
+ * size checks fail.
+ */
+export function pageStylePolicy(html: string): string {
+  const hashes = [...html.matchAll(/<style>([\s\S]*?)<\/style>/g)].map(
+    ([, css = '']) => `'sha256-${createHash('sha256').update(css).digest('base64')}'`,
+  );
+  return ["style-src 'self'", ...hashes].join(' ');
+}
+
 /** `npx` arguments for the local ShyDesk, its state kept in `stateDir`. */
 export function wranglerDevArgs(stateDir: string, accessKeys: string): string[] {
   return [

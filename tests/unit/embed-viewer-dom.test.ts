@@ -104,6 +104,10 @@ afterEach(() => {
   document.body.replaceChildren();
 });
 
+/** The viewer's constructed sheets on the page (shyden-labs/shydesk#266). */
+const viewerSheets = (): CSSStyleSheet[] =>
+  document.adoptedStyleSheets.filter((sheet) => [...sheet.cssRules].some((rule) => rule.cssText.includes('.shydesk-viewer')));
+
 describe('opening the viewer', () => {
   it('puts a labelled modal dialog over the page and gives it focus', () => {
     const { overlay } = open([photo('/a.jpg')]);
@@ -113,7 +117,9 @@ describe('opening the viewer', () => {
     expect(overlay.getAttribute('aria-label')).toBe('Attachment viewer');
     expect(overlay.getAttribute('tabindex')).toBe('-1');
     expect(document.activeElement).toBe(overlay);
-    expect(overlay.querySelector('style')?.textContent).toContain('.shydesk-viewer{position:fixed');
+    // A constructed sheet added to the page's own, not a <style> element (shyden-labs/shydesk#266).
+    expect(overlay.querySelector('style')).toBeNull();
+    expect(viewerSheets().length).toBeGreaterThan(0);
     expect(overlay.querySelector('.stage')?.getAttribute('aria-label')).toBe('Viewer stage');
     expect(overlay.querySelector('.line')?.getAttribute('aria-label')).toBe('Viewer status');
   });
@@ -303,9 +309,16 @@ describe('the controls', () => {
     document.body.append(opener);
     opener.focus();
     const onClose = vi.fn();
+    const pageSheet = new CSSStyleSheet();
+    document.adoptedStyleSheets = [...document.adoptedStyleSheets, pageSheet];
+    const before = document.adoptedStyleSheets.length;
     const { press, overlay } = open([video('/v.mp4')], 0, onClose);
+    expect(document.adoptedStyleSheets).toHaveLength(before + 1);
     press('Close viewer');
     expect(overlay.isConnected).toBe(false);
+    // Its sheet goes with it, and the page's own sheets stay (shyden-labs/shydesk#266).
+    expect(document.adoptedStyleSheets).toHaveLength(before);
+    expect(document.adoptedStyleSheets).toContain(pageSheet);
     expect(onClose).toHaveBeenCalledOnce();
     expect(document.activeElement).toBe(opener);
     expect(observers[0]?.disconnected).toBe(true);

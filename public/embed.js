@@ -86,6 +86,7 @@
     .field { display: grid; gap: 4px; }
     .attachments { min-height: 1px; overflow-wrap: anywhere; white-space: pre-line; }
     .picker-name { font-weight: 600; }
+    .text { white-space: pre-wrap; }
     ::slotted(input) { font: inherit; min-width: 0; box-sizing: border-box; min-height: 44px; }
     label { display: grid; gap: 4px; font-weight: 600; }
     input, select, textarea, button { box-sizing: border-box; min-height: 44px; }
@@ -164,7 +165,11 @@
     connectedCallback() {
       if (this.begun) return;
       this.begun = true;
-      this.shadow.append(make('style', {}, [CSS]), this.statusLine);
+      // A constructed sheet, which a page CSP without style-src 'unsafe-inline' still applies (shyden-labs/shydesk#266).
+      const sheet = new CSSStyleSheet();
+      sheet.replaceSync(CSS);
+      this.shadow.adoptedStyleSheets = [sheet];
+      this.shadow.append(this.statusLine);
       void this.load();
     }
 
@@ -695,7 +700,7 @@
         ...messages.map((one) =>
           make('article', {}, [
             make('strong', {}, [one.author === 'staff' ? TEXT.staff : TEXT.customer]),
-            make('p', { style: 'white-space: pre-wrap' }, [one.body]),
+            make('p', { class: 'text' }, [one.body]),
             ...one.attachments.map((file) => this.attachmentLine(file, file.removed ? previews : ++previews, stored)),
           ]),
         ),
