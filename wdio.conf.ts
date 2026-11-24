@@ -54,8 +54,14 @@ const STATE = join(RUNS, 'shydesk-state');
 const DEMO_PAGE = 'demo-host/public/index.html';
 const TICKET_PAGE = 'demo-host/public/support/ticket/index.html';
 const APPEAL_PAGE = 'demo-host/public/support/appeal/index.html';
+const DARK_PAGE = 'demo-host/public/dark/index.html';
 /** The demo pages the suite serves with the piece pointed at the local ShyDesk. */
-const DEMO_PAGES: Record<string, string> = { 'contact.html': DEMO_PAGE, 'support/ticket': TICKET_PAGE, 'support/appeal': APPEAL_PAGE };
+const DEMO_PAGES: Record<string, string> = {
+  'contact.html': DEMO_PAGE,
+  'support/ticket': TICKET_PAGE,
+  'support/appeal': APPEAL_PAGE,
+  'dark.html': DARK_PAGE,
+};
 /** How long the local ShyDesk may take to answer /health before the run fails naming its log. */
 const SHYDESK_START_MS = 90_000;
 const TYPES: Record<string, string> = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript' };
