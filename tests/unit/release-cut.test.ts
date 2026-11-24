@@ -1,3 +1,4 @@
+import { commandPath } from '../../scripts/command-path.ts';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -198,14 +199,14 @@ describe('gatherFacts', () => {
     answer(repoReplies());
     expect(gatherFacts('release/2026-10-23', HEAD, 7)).toEqual(good);
     expect(git.mock.calls.map((c) => [c[0], (c[1] as string[]).join(' ')])).toEqual([
-      ['git', FETCH],
-      ['git', LS_REMOTE],
-      ['git', ancestor(HEAD)],
-      ['git', 'rev-list --parents -n 1 refs/remotes/pull/merge'],
-      ['git', 'rev-parse refs/remotes/pull/merge^{tree}'],
-      ['git', `rev-parse ${HEAD}^{tree}`],
-      ['git', 'rev-list --parents origin/develop..origin/main'],
-      ['git', ancestor(OLD_CUT)],
+      [commandPath('git'), FETCH],
+      [commandPath('git'), LS_REMOTE],
+      [commandPath('git'), ancestor(HEAD)],
+      [commandPath('git'), 'rev-list --parents -n 1 refs/remotes/pull/merge'],
+      [commandPath('git'), 'rev-parse refs/remotes/pull/merge^{tree}'],
+      [commandPath('git'), `rev-parse ${HEAD}^{tree}`],
+      [commandPath('git'), 'rev-list --parents origin/develop..origin/main'],
+      [commandPath('git'), ancestor(OLD_CUT)],
     ]);
   });
 

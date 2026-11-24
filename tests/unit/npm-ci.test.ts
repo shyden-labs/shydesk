@@ -1,3 +1,4 @@
+import { NPM_CLI } from '../../scripts/command-path.ts';
 import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
 import { spawnSync, type SpawnSyncReturns } from 'node:child_process';
 import { readdirSync, readFileSync } from 'node:fs';
@@ -62,7 +63,7 @@ describe('main', () => {
   it('runs npm ci with its output captured, and passes a clean install', () => {
     spawn.mockReturnValue(result({ stdout: 'added 212 packages\n' }));
     expect(main()).toBe(0);
-    expect(spawn).toHaveBeenCalledWith('npm', ['ci'], { encoding: 'utf8', stdio: ['inherit', 'pipe', 'pipe'] });
+    expect(spawn).toHaveBeenCalledWith(process.execPath, [NPM_CLI, 'ci'], { encoding: 'utf8', stdio: ['inherit', 'pipe', 'pipe'] });
     expect(out).toHaveBeenCalledWith('added 212 packages\n');
   });
 

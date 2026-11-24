@@ -15,6 +15,7 @@
 import { execFileSync } from 'node:child_process';
 import { assertWholeRead, emptyBoardNote } from './board-progress.ts';
 import { runIfEntry } from './cli.ts';
+import { commandPath } from './command-path.ts';
 
 export interface OpenPullRequest {
   title: string;
@@ -98,7 +99,7 @@ export const QUERY = `query($id: ID!, $endCursor: String) {
 const PR_LIMIT = 500;
 
 function gh(args: string[]): unknown {
-  return JSON.parse(execFileSync('gh', args, { encoding: 'utf8', maxBuffer: 64e6 }));
+  return JSON.parse(execFileSync(commandPath('gh'), args, { encoding: 'utf8', maxBuffer: 64e6 }));
 }
 
 export function main(args: string[]): number {

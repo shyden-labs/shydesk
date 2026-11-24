@@ -18,6 +18,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { assertTitle } from './board-progress.ts';
 import { runIfEntry } from './cli.ts';
+import { commandPath } from './command-path.ts';
 
 export interface Story {
   repo: string;
@@ -113,7 +114,7 @@ export function boardFields(fields: Field[], story: Story) {
   };
 }
 
-const gh = (args: string[]): unknown => JSON.parse(execFileSync('gh', args, { encoding: 'utf8' }));
+const gh = (args: string[]): unknown => JSON.parse(execFileSync(commandPath('gh'), args, { encoding: 'utf8' }));
 
 const READ_BOARD = `query($id: ID!) { node(id: $id) { ... on ProjectV2 { title
   fields(first: 50) { nodes { ... on ProjectV2FieldCommon { id name dataType }

@@ -1,3 +1,4 @@
+import { commandPath, NPM_CLI } from '../../scripts/command-path.ts';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, symlinkSync } from 'node:fs';
@@ -84,7 +85,11 @@ describe('main', () => {
   /** Stands in git and npm; `failing` names the commit on which `failCheck` fails. */
   const serve = (revList: string, failing?: string, failCheck = 'lint') => {
     let checkedOut = '';
-    run.mockImplementation(((cmd: string, args: string[], options?: { cwd?: string }) => {
+    run.mockImplementation(((path: string, given: string[], options?: { cwd?: string }) => {
+      // Commands run by absolute path (shyden-labs/shydesk#291): git from a fixed folder, npm as node's own npm-cli.js.
+      const npm = path === process.execPath && given[0] === NPM_CLI;
+      const cmd = path === commandPath('git') ? 'git' : npm ? 'npm' : `not by a fixed path: ${path}`;
+      const args = npm ? given.slice(1) : given;
       calls.push({ cmd, args, cwd: options?.cwd });
       if (cmd === 'git' && args[0] === 'rev-parse') return `${ROOT}\n`;
       if (cmd === 'git' && args[0] === 'rev-list') return revList;
