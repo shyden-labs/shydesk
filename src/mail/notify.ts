@@ -95,11 +95,12 @@ export async function sendNoReply(
   let noticeId: string | null = null;
   try {
     const { login, host } = senderLogin(env.SMTP_LOGINS, product.senderAddress);
+    const lead = about.lead === undefined ? '' : `${about.lead}\r\n\r\n`;
     const mail: SmtpMail = {
       from: product.senderAddress,
       to,
       subject: NOTICE_SUBJECT,
-      text: `${product.name} support\r\n\r\n${about.lead === undefined ? '' : `${about.lead}\r\n\r\n`}There is a new update on your support request. Open it here: ${link}`,
+      text: `${product.name} support\r\n\r\n${lead}There is a new update on your support request. Open it here: ${link}`,
     };
     // Written down before it leaves, so a bounce that comes back fast finds its row (shyden-labs/shydesk#232).
     if (env.BOUNCE_DOMAIN !== undefined) {
