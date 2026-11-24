@@ -8,7 +8,7 @@ import { standInDb } from './d1-stand-in.ts';
 // The Worker serves the admin screen (shyden-labs/shydesk#17). Until Access is
 // configured on a deploy (shyden-labs/shydesk#13), /admin refuses everyone
 // with 401 and never reads the database.
-const unconfigured: StaffEnv = { DB: {} as D1Database, ACCESS_TEAM_DOMAIN: '', ACCESS_AUD: '', FIRST_ADMIN_EMAIL: '' };
+const unconfigured: StaffEnv = { DB: {} as unknown as D1Database, ACCESS_TEAM_DOMAIN: '', ACCESS_AUD: '', FIRST_ADMIN_EMAIL: '' };
 
 describe('/admin on the Worker', () => {
   it('is served, and refuses a request with no Access token with 401', async () => {

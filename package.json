@@ -34,7 +34,7 @@
     "prettier": "3.10.1",
     "swagger-ui-dist": "5.35.1",
     "typescript": "6.0.3",
-    "typescript-eslint": "8.72.2",
+    "typescript-eslint": "8.73.0",
     "vitest": "5.1.1",
     "webdriverio": "10.2.0",
     "wrangler": "4.166.0",
@@ -58,6 +58,6 @@
   "dependencies": {
     "hono": "4.13.19",
     "jose": "6.2.18",
-    "mediabunny": "1.65.2"
+    "mediabunny": "1.66.2"
   }
 }
