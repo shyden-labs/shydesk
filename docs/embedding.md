@@ -51,15 +51,21 @@ and gets Non-Prod data, with nothing else to change.
 The piece draws inside its own shadow root, so the page's CSS does not reach
 it. It reads these custom properties from the page instead:
 
-| Property                    | Used for                       |
-| --------------------------- | ------------------------------ |
-| `--shydesk-font`            | All text                       |
-| `--shydesk-text`            | Text colour                    |
-| `--shydesk-background`      | Form background                |
-| `--shydesk-accent`          | The send button and focus ring |
-| `--shydesk-accent-text`     | Text on the send button        |
-| `--shydesk-border`          | Field borders                  |
-| `--shydesk-error`           | Field error messages           |
+| Property                     | Used for                                                            |
+| ---------------------------- | ------------------------------------------------------------------- |
+| `--shydesk-font`             | All text                                                            |
+| `--shydesk-text`             | Text colour                                                         |
+| `--shydesk-background`       | Form background                                                     |
+| `--shydesk-accent`           | The send button and focus ring                                      |
+| `--shydesk-accent-text`      | Text on the send button                                             |
+| `--shydesk-border`           | Field borders                                                       |
+| `--shydesk-field-background` | Field background (default: `--shydesk-background`)                  |
+| `--shydesk-field-text`       | Typed text and the list arrow in fields (default: `--shydesk-text`) |
+| `--shydesk-error`            | Field error messages                                                |
+
+A page with a dark theme sets `--shydesk-text` and `--shydesk-background`;
+the fields follow them, so typed text stays readable. Set the two field
+properties only for fields coloured differently from the form.
 
 ```css
 shydesk-support {
