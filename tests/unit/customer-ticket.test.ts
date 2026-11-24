@@ -1,9 +1,10 @@
-import type { R2Bucket } from '@cloudflare/workers-types';
+import type { DurableObjectNamespace, R2Bucket } from '@cloudflare/workers-types';
 import { describe, expect, it } from 'vitest';
 import { ticketRoutes } from '../../src/customer/ticket.ts';
 import { MESSAGES } from '../../src/customer/messages.ts';
 import { hashKey } from '../../src/products.ts';
 import type { TimerPlan } from '../../src/tickets/status.ts';
+import type { TicketTimer } from '../../src/timers/ticket-timer.ts';
 import { standInDb } from './d1-stand-in.ts';
 
 // The customer's private ticket page (shyden-labs/shydesk#23). The token lives
@@ -100,7 +101,7 @@ async function world(
         return Promise.resolve();
       },
     }),
-  };
+  } as unknown as DurableObjectNamespace<TicketTimer>;
   const app = ticketRoutes();
   const call = (path: string, init: RequestInit = {}, productId = 'shytalk', token: string | null = TOKEN) =>
     app.request(

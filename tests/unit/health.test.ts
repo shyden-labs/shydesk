@@ -5,7 +5,7 @@ import type { Env } from '../../src/env.ts';
 
 // The Worker's health check: what a deploy is read back with (shyden-labs/shydesk#14).
 // The database is a stand-in: /health must answer without touching it.
-const env: Env = { DB: {} as D1Database };
+const env: Env = { DB: {} as unknown as D1Database };
 
 describe('GET /health', () => {
   it('answers 200 with {"ok":true} as JSON', async () => {
