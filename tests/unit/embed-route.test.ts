@@ -1,3 +1,4 @@
+import type { Fetcher } from '@cloudflare/workers-types';
 import { describe, expect, it } from 'vitest';
 import { embedRoutes } from '../../src/customer/embed.ts';
 
@@ -46,7 +47,7 @@ describe('GET /embed.js', () => {
 describe.each(['/embed-media.js', '/embed-video.js', '/embed-viewer.js'])('GET %s', (path) => {
   const asset = () => new Response('/* media */', { headers: { 'Content-Type': 'text/javascript', ETag: '"abc"' } });
   const call = (body = asset()) =>
-    embedRoutes().request(`https://shydesk.dpdns.org${path}`, {}, { ASSETS: { fetch: () => Promise.resolve(body) } });
+    embedRoutes().request(`https://shydesk.dpdns.org${path}`, {}, { ASSETS: { fetch: () => Promise.resolve(body) } as unknown as Fetcher });
 
   it('serves the media code to any site, with CORS, cacheable like the piece', async () => {
     const response = await call();
