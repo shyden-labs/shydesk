@@ -359,7 +359,7 @@
             callback: (/** @type {string} */ token) => {
               this.token = token;
               updateSend();
-              if (!refused) this.tell(TEXT.ready);
+              this.tell(TEXT.ready);
             },
             'expired-callback': () => {
               this.token = '';
