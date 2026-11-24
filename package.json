@@ -57,6 +57,6 @@
   "dependencies": {
     "hono": "4.13.19",
     "jose": "6.2.18",
-    "mediabunny": "1.65.2"
+    "mediabunny": "1.66.2"
   }
 }
