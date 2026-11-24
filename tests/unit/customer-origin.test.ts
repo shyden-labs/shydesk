@@ -20,14 +20,14 @@ const SHYTALK = {
   created_at: 1,
 };
 
-function appWith() {
+function appWith(secrets: { FORWARDER_SECRET?: string } = {}) {
   const { db } = standInDb((sql, values) => (sql.includes('FROM products') && values[0] === 'shytalk' ? [SHYTALK] : []));
   const app = new Hono<CustomerEnv>();
   app.use('/support-api/*', requireProductOrigin());
   app.get('/support-api/whoami', (c) => c.json({ product: c.var.product.id, ip: c.var.clientIp }));
   app.post('/support-api/whoami', (c) => c.json({ product: c.var.product.id }));
   app.get('/support-api/test-origin', (c) => c.json({ testOrigin: c.var.testOrigin }));
-  const call = (path: string, init: RequestInit = {}) => app.request(path, init, { DB: db });
+  const call = (path: string, init: RequestInit = {}) => app.request(path, init, { DB: db, ...secrets });
   return { call };
 }
 
@@ -124,5 +124,30 @@ describe('requireProductOrigin', () => {
     const { call } = appWith();
     const response = await call('/support-api/test-origin?product=shytalk', from('https://shytalk.app'));
     expect(await response.json()).toEqual({ testOrigin: null });
+  });
+  it('names the customer IP the forwarder sends when its secret matches (shyden-labs/shydesk#273)', async () => {
+    const { call } = appWith({ FORWARDER_SECRET: 'the-forwarder-secret' });
+    const response = await call(
+      '/support-api/whoami?product=shytalk',
+      from('https://shytalk.app', {
+        'CF-Connecting-IP': '2a06:98c0:3600::103',
+        'ShyDesk-Client-IP': '203.0.113.44',
+        'ShyDesk-Forwarder-Secret': 'the-forwarder-secret',
+      }),
+    );
+    expect(await response.json()).toEqual({ product: 'shytalk', ip: '203.0.113.44' });
+  });
+
+  it('ignores a forwarded IP whose secret does not match, naming CF-Connecting-IP', async () => {
+    const { call } = appWith({ FORWARDER_SECRET: 'the-forwarder-secret' });
+    const response = await call(
+      '/support-api/whoami?product=shytalk',
+      from('https://shytalk.app', {
+        'CF-Connecting-IP': '203.0.113.9',
+        'ShyDesk-Client-IP': '198.51.100.1',
+        'ShyDesk-Forwarder-Secret': 'guessed',
+      }),
+    );
+    expect(await response.json()).toEqual({ product: 'shytalk', ip: '203.0.113.9' });
   });
 });

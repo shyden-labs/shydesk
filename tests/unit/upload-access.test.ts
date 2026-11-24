@@ -28,7 +28,7 @@ const PRODUCT = {
   created_at: 1,
 };
 
-async function world(grant: { left: number; live: boolean } | null) {
+async function world(grant: { left: number; live: boolean } | null, secrets: { FORWARDER_SECRET?: string } = {}) {
   const key = `grant:shytalk:${await hashKey('the-grant')}`;
   const answer: Answer = (sql, values) => {
     if (sql.includes('FROM products')) return ['shytalk', 'yawelo-idle'].includes(String(values[0])) ? [{ ...PRODUCT, id: values[0] }] : [];
@@ -42,11 +42,18 @@ async function world(grant: { left: number; live: boolean } | null) {
     return [];
   };
   const { db, statements } = standInDb(answer);
-  const app = new Hono<{ Bindings: { DB: D1Database }; Variables: { product: { id: string }; clientIp: string } }>();
+  const app = new Hono<{
+    Bindings: { DB: D1Database; FORWARDER_SECRET?: string };
+    Variables: { product: { id: string }; clientIp: string };
+  }>();
   app.use('/support-api/uploads/*', requireOriginOrGrant());
   app.all('/support-api/uploads/*', (c) => c.json({ product: c.var.product.id, ip: c.var.clientIp }));
   const call = (path: string, method: string, headers: Record<string, string>, productId = 'shytalk') =>
-    app.request(`${path}?product=${productId}`, { method, headers: { 'CF-Connecting-IP': '203.0.113.9', ...headers } }, { DB: db });
+    app.request(
+      `${path}?product=${productId}`,
+      { method, headers: { 'CF-Connecting-IP': '203.0.113.9', ...headers } },
+      { DB: db, ...secrets },
+    );
   /** A request exactly as given: no product query and no IP header added. */
   const raw = (url: string, method: string, headers: Record<string, string>) => app.request(url, { method, headers }, { DB: db });
   return { call, raw, statements, grant };
@@ -156,5 +163,17 @@ describe('grant edges', () => {
     const response = await w.raw('/support-api/uploads?product=shytalk', 'POST', GRANT);
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ product: 'shytalk', ip: '' });
+  });
+});
+
+describe('a grant call through the forwarder (shyden-labs/shydesk#273)', () => {
+  it('counts the customer IP the forwarder sends when its secret matches', async () => {
+    const w = await world({ left: 2, live: true }, { FORWARDER_SECRET: 'the-forwarder-secret' });
+    const response = await w.call('/support-api/uploads', 'POST', {
+      ...GRANT,
+      'ShyDesk-Client-IP': '203.0.113.44',
+      'ShyDesk-Forwarder-Secret': 'the-forwarder-secret',
+    });
+    expect(await response.json()).toEqual({ product: 'shytalk', ip: '203.0.113.44' });
   });
 });
