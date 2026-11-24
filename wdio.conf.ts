@@ -234,23 +234,26 @@ async function startShydesk(): Promise<void> {
   execFileSync('npx', ['wrangler', 'd1', 'execute', 'DB', ...local, '--file', seed], { stdio: 'inherit' });
   const log = join(RUNS, 'shydesk.log');
   writeFileSync(log, '');
-  shydesk = spawn('npx', wranglerDevArgs(STATE, await accessStandIn()), { stdio: ['ignore', 'pipe', 'pipe'] });
+  const server = spawn('npx', wranglerDevArgs(STATE, await accessStandIn()), { stdio: ['ignore', 'pipe', 'pipe'] });
+  shydesk = server;
   const append = (chunk: Buffer) => {
     writeFileSync(log, chunk, { flag: 'a' });
   };
   shydesk.stdout?.on('data', append);
   shydesk.stderr?.on('data', append);
   const until = Date.now() + SHYDESK_START_MS;
-  while (Date.now() < until) {
-    if (shydesk.exitCode !== null) break;
+  // Polling for the server to come up; each try starts the next, so no loop awaits (shyden-labs/shydesk#291).
+  const answers = async (): Promise<boolean> => {
+    if (Date.now() >= until || server.exitCode !== null) return false;
     const up = await fetch(`${SHYDESK}/health`).then(
       (r) => r.ok,
       () => false,
     );
-    if (up) return;
-    // Polling for the server to come up (shyden-labs/shydesk#185).
-    await new Promise((resolve) => setTimeout(resolve, 500)); // NOSONAR
-  }
+    if (up) return true;
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    return answers();
+  };
+  if (await answers()) return;
   shydesk.kill();
   throw new Error(
     `the local ShyDesk did not answer ${SHYDESK}/health within ${String(SHYDESK_START_MS / 1000)} s:\n${readFileSync(log, 'utf8').slice(-2000)}`,

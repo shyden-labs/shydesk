@@ -82,6 +82,10 @@ describe('the docs page', () => {
     expect(page).not.toMatch(/<script>(?!<\/script>)/);
   });
 
+  it('loads its start-up script as a module, so the script can await at the top level (shyden-labs/shydesk#291)', () => {
+    expect(page).toContain('<script type="module" src="init.js"></script>');
+  });
+
   it('shows the spec served beside it', () => {
     expect(start).toContain("url: 'shydesk.v1.yaml'");
   });
