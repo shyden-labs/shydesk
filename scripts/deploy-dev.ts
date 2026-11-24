@@ -3,7 +3,8 @@
  *
  *   node scripts/deploy-dev.ts changed-files.txt "$GITHUB_OUTPUT"
  *
- * The Worker area (src/, public/, migrations/, openapi/, demo-host/, wrangler.jsonc)
+ * The Worker area (src/, public/, migrations/, openapi/, demo-host/, wrangler.jsonc and the npm
+ * dependencies in package.json and package-lock.json)
  * deploys, the demo support page with it (shyden-labs/shydesk#19), and
  * the script appends `worker=true` to the step output for the workflow's
  * deploy step. Files that never deploy (docs, tests, scripts, workflows,
@@ -14,15 +15,14 @@ import { appendFileSync, readFileSync } from 'node:fs';
 import { runIfEntry } from './cli.ts';
 
 const WORKER_FOLDERS = ['src', 'public', 'migrations', 'openapi', 'demo-host'];
-const WORKER_FILES = ['wrangler.jsonc'];
+// The Worker bundles its npm dependencies and wrangler builds and deploys it (shyden-labs/shydesk#288).
+const WORKER_FILES = ['wrangler.jsonc', 'package.json', 'package-lock.json'];
 const NEVER_DEPLOYED_FOLDERS = ['docs', 'tests', 'scripts', '.github', '.githooks'];
 const NEVER_DEPLOYED_FILES = [
   'README.md',
   'docker/node/Dockerfile',
   'LICENSE',
   'NOTICE',
-  'package.json',
-  'package-lock.json',
   'audit-exceptions.json',
   'tsconfig.json',
   'eslint.config.js',
@@ -67,7 +67,7 @@ export function verdict(paths: string[]): { code: number; worker: boolean; lines
       code: 0,
       worker: true,
       lines: [
-        'Deploying the Worker and the demo page: a file under src/, public/, migrations/, openapi/, demo-host/ or wrangler.jsonc changed.',
+        'Deploying the Worker and the demo page: a file under src/, public/, migrations/, openapi/, demo-host/, wrangler.jsonc, package.json or package-lock.json changed.',
       ],
     };
   }
