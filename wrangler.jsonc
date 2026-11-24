@@ -12,7 +12,7 @@
   "observability": { "enabled": true },
   // shyden-labs/shydesk#13: live is served on its own domain only.
   "routes": [{ "pattern": "shydesk.dpdns.org", "custom_domain": true }],
-  // Public values only; TURNSTILE_SECRET, SMTP_LOGINS and TICKET_TOKEN_KEY are Worker secrets.
+  // Public values only; TURNSTILE_SECRET, SMTP_LOGINS, TICKET_TOKEN_KEY and FORWARDER_SECRET (shyden-labs/shydesk#273) are Worker secrets.
   "vars": {
     "TURNSTILE_SITE_KEY": "0x4AAAAAAFzxpu4P-1-Vh2oT",
     "SMTP_HOST": "web-par-01.sparkedhost.us",

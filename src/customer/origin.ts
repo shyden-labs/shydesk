@@ -1,3 +1,4 @@
+import { clientIp, type ForwarderBindings } from '../client-ip.ts';
 import type { MiddlewareHandler } from 'hono';
 import type { Env } from '../env.ts';
 import { productForOrigin, type Product } from '../products.ts';
@@ -5,7 +6,7 @@ import { MESSAGES } from './messages.ts';
 
 /** What /support-api handlers see: the product being asked about and the caller's IP. */
 export interface CustomerEnv {
-  Bindings: Env;
+  Bindings: Env & ForwarderBindings;
   /** testOrigin: the TEST site the call came from (shyden-labs/shydesk#263), null for a live one. */
   Variables: { product: Product; clientIp: string; testOrigin: string | null };
 }
@@ -39,7 +40,7 @@ export function requireProductOrigin(): MiddlewareHandler<CustomerEnv> {
       return c.body(null, 204);
     }
     c.set('product', product);
-    c.set('clientIp', c.req.header('CF-Connecting-IP') ?? '');
+    c.set('clientIp', clientIp(c.req.raw.headers, c.env.FORWARDER_SECRET));
     c.set('testOrigin', test ?? null);
     return next();
   };
