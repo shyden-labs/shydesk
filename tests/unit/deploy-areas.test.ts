@@ -6,7 +6,7 @@ import { undeployedPaths, workerChanged, verdict, main } from '../../scripts/dep
 
 /**
  * The dev deploy's areas (shyden-labs/shydesk#14): the Worker (src/,
- * public/, migrations/, openapi/, wrangler.jsonc) deploys; docs, tests, scripts,
+ * public/, migrations/, openapi/, wrangler.jsonc, package.json, package-lock.json) deploys; docs, tests, scripts,
  * workflows, hooks and root config never do. A change outside both fails,
  * naming the path, so new deployable code can never land without a dev deploy
  * defined for it.
@@ -22,8 +22,6 @@ describe('undeployedPaths', () => {
         '.github/workflows/ci.yml',
         '.githooks/pre-push',
         'README.md',
-        'package.json',
-        'package-lock.json',
         'audit-exceptions.json',
         'tsconfig.json',
         'eslint.config.js',
@@ -79,6 +77,14 @@ describe('workerChanged', () => {
     expect(workerChanged(['demo-host/public/index.html'])).toBe(true);
   });
 
+  // The Worker bundles its npm dependencies and wrangler builds and deploys it, so a dependency
+  // change is a Worker change (shyden-labs/shydesk#288).
+  it('is true for a change to package.json or package-lock.json', () => {
+    expect(workerChanged(['package.json']), 'package.json').toBe(true);
+    expect(workerChanged(['package-lock.json']), 'package-lock.json').toBe(true);
+    expect(undeployedPaths(['package.json', 'package-lock.json'])).toEqual([]);
+  });
+
   it('is true for a change to the OpenAPI spec under openapi/', () => {
     expect(workerChanged(['openapi/shydesk.v1.yaml'])).toBe(true);
     expect(undeployedPaths(['openapi/shydesk.v1.yaml'])).toEqual([]);
@@ -104,9 +110,13 @@ describe('verdict', () => {
       code: 0,
       worker: true,
       lines: [
-        'Deploying the Worker and the demo page: a file under src/, public/, migrations/, openapi/, demo-host/ or wrangler.jsonc changed.',
+        'Deploying the Worker and the demo page: a file under src/, public/, migrations/, openapi/, demo-host/, wrangler.jsonc, package.json or package-lock.json changed.',
       ],
     });
+  });
+
+  it('deploys the Worker when only the lockfile changed, as a Dependabot update does', () => {
+    expect(verdict(['package-lock.json']).worker).toBe(true);
   });
 
   // Even with a Worker change, an unknown path fails the whole deploy.
