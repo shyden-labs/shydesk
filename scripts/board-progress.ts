@@ -15,6 +15,7 @@
  */
 import { execFileSync } from 'node:child_process';
 import { runIfEntry } from './cli.ts';
+import { commandPath } from './command-path.ts';
 
 export interface BoardItem {
   /** `null` for a draft card, which has no number. */
@@ -318,7 +319,7 @@ export function main(args: string[]): number {
   if (id === undefined || title === undefined) {
     throw new Error('usage: node scripts/board-progress.ts <board-node-id> "<board title>"');
   }
-  const out = execFileSync('gh', ['api', 'graphql', '--paginate', '--slurp', '-f', `query=${QUERY}`, '-f', `id=${id}`], {
+  const out = execFileSync(commandPath('gh'), ['api', 'graphql', '--paginate', '--slurp', '-f', `query=${QUERY}`, '-f', `id=${id}`], {
     encoding: 'utf8',
   });
   const pages = JSON.parse(out) as RawPage[];

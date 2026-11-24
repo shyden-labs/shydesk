@@ -1,3 +1,4 @@
+import { commandPath } from '../../scripts/command-path.ts';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import { emptyBoardNote } from '../../scripts/board-progress.ts';
@@ -192,9 +193,9 @@ describe('main', () => {
     reply([board], [], [[{ name: 'main' }]]);
     main(ARGS);
     expect(gh.mock.calls.map((c) => [c[0], (c[1] as string[]).filter((a) => !a.startsWith('query='))])).toEqual([
-      ['gh', ['api', 'graphql', '--paginate', '--slurp', '-f', '-f', 'id=PVT_1']],
+      [commandPath('gh'), ['api', 'graphql', '--paginate', '--slurp', '-f', '-f', 'id=PVT_1']],
       [
-        'gh',
+        commandPath('gh'),
         [
           'pr',
           'list',
@@ -208,7 +209,7 @@ describe('main', () => {
           'title,body,headRefName,closingIssuesReferences',
         ],
       ],
-      ['gh', ['api', '--paginate', '--slurp', 'repos/shyden-labs/repo/branches?per_page=100']],
+      [commandPath('gh'), ['api', '--paginate', '--slurp', 'repos/shyden-labs/repo/branches?per_page=100']],
     ]);
   });
 

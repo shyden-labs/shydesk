@@ -265,6 +265,20 @@ describe('TicketTimer.alarm', () => {
     expect(store.alarm()).toBe(NOW + 365 * DAY_MS);
   });
 
+  it('runs timers due together in their set order, attachments before text', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const failing = { delete: () => Promise.reject(new Error('R2 is down')) };
+    const { timer, store } = timerWith('closed', [{ id: 'a1', r2_key: 'k1', thumb_key: null, bytes: 1 }], failing);
+    store.values.set('ticket', 't1');
+    store.values.set('due:text', NOW - 1);
+    store.values.set('due:attachments', NOW - 1);
+    await timer.alarm();
+    expect(error.mock.calls.map((call) => String(call[0]))).toEqual([
+      'ticket t1: attachments timer failed: R2 is down',
+      'ticket t1: text timer failed: R2 is down',
+    ]);
+  });
+
   it('stored attachments with no R2 binding fail naming the story that adds it', async () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const { timer } = timerWith('closed', [{ id: 'a1', r2_key: 'k1', thumb_key: null, bytes: 1 }], null);

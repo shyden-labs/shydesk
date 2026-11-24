@@ -1,3 +1,4 @@
+import { commandPath } from '../../scripts/command-path.ts';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import { emptyBoardNote } from '../../scripts/board-progress.ts';
@@ -326,9 +327,13 @@ describe('main', () => {
   it('reads the board by its node id', () => {
     serve(boardOf(node('Todo')));
     main(ARGS);
-    expect(gh).toHaveBeenCalledWith('gh', ['api', 'graphql', '--paginate', '--slurp', '-f', `query=${QUERY}`, '-f', 'id=PVT_1'], {
-      encoding: 'utf8',
-    });
+    expect(gh).toHaveBeenCalledWith(
+      commandPath('gh'),
+      ['api', 'graphql', '--paginate', '--slurp', '-f', `query=${QUERY}`, '-f', 'id=PVT_1'],
+      {
+        encoding: 'utf8',
+      },
+    );
   });
 
   it('refuses an answer with no pages', () => {

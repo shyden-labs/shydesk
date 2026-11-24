@@ -376,15 +376,21 @@ export async function uploadAttachment({ host, product, file, kind, mime, thumbn
     }),
   );
   const { id, partSize, parts: count, thumbId } = /** @type {{ id: string, partSize: number, parts: number, thumbId: string }} */ (started);
+  /** @type {{ n: number, etag: unknown }[]} */
   const parts = [];
   // Parts go one at a time on purpose: progress reads in order and only one part is in memory (shyden-labs/shydesk#185).
-  for (let n = 1; n <= count; n += 1) {
+  // Each part's step starts the next, so no loop awaits (shyden-labs/shydesk#291).
+  /** @param {number} n */
+  const sendFrom = async (n) => {
+    if (n > count) return;
     const end = Math.min(n * partSize, file.size);
     const body = file.slice((n - 1) * partSize, end);
-    const sent = await answerOf(await ask(url(`/${id}/parts/${String(n)}`), { method: 'PUT', body })); // NOSONAR
+    const sent = await answerOf(await ask(url(`/${id}/parts/${String(n)}`), { method: 'PUT', body }));
     parts.push({ n, etag: sent.etag });
     onProgress?.(end / file.size);
-  }
+    await sendFrom(n + 1);
+  };
+  await sendFrom(1);
   await answerOf(
     await ask(url(`/${id}/complete`), {
       method: 'POST',

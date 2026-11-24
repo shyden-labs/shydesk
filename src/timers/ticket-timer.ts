@@ -39,18 +39,27 @@ export class TicketTimer extends DurableObject<TicketTimerEnv> {
     const ticketId = await this.storage.get<string>('ticket');
     if (ticketId === undefined) return;
     const now = Date.now();
-    // In order on purpose: each timer is cleared before it runs, and one failing does not stop the next (shyden-labs/shydesk#185).
-    for (const kind of KINDS) {
-      const at = await this.storage.get<number>(due(kind)); // NOSONAR
-      if (at === undefined || at > now) continue;
-      await this.storage.delete(due(kind)); // NOSONAR
+    await this.fire(KINDS, ticketId, now);
+    await this.arm();
+  }
+
+  /**
+   * Runs each due timer in KINDS order on purpose: each is cleared before it runs, and one failing
+   * does not stop the next (shyden-labs/shydesk#185). Each step starts the next, so no loop awaits (shyden-labs/shydesk#291).
+   */
+  private async fire(kinds: readonly Kind[], ticketId: string, now: number): Promise<void> {
+    const [kind, ...rest] = kinds;
+    if (kind === undefined) return;
+    const at = await this.storage.get<number>(due(kind));
+    if (at !== undefined && at <= now) {
+      await this.storage.delete(due(kind));
       try {
-        await this.run(kind, ticketId, now); // NOSONAR
+        await this.run(kind, ticketId, now);
       } catch (error) {
         console.error(`ticket ${ticketId}: ${kind} timer failed: ${(error as Error).message}`);
       }
     }
-    await this.arm();
+    await this.fire(rest, ticketId, now);
   }
 
   private async run(kind: Kind, ticketId: string, now: number): Promise<void> {
@@ -72,9 +81,9 @@ export class TicketTimer extends DurableObject<TicketTimerEnv> {
   }
 
   private async write(plan: TimerPlan): Promise<void> {
-    // Cancels land before the new times, in plan order (shyden-labs/shydesk#185).
-    for (const kind of plan.cancel) await this.storage.delete(due(kind)); // NOSONAR
-    for (const [kind, at] of Object.entries(plan.schedule)) await this.storage.put(due(kind as Kind), at); // NOSONAR
+    // Cancels land before the new times (shyden-labs/shydesk#185); within each, the keys are independent (shyden-labs/shydesk#291).
+    await Promise.all(plan.cancel.map((kind) => this.storage.delete(due(kind))));
+    await Promise.all(Object.entries(plan.schedule).map(([kind, at]) => this.storage.put(due(kind as Kind), at)));
     await this.arm();
   }
 

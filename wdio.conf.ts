@@ -21,6 +21,7 @@ import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import { readFile } from 'node:fs/promises';
+import { homedir } from 'node:os';
 import { extname, join, normalize } from 'node:path';
 import {
   E2E_ACCESS_AUD,
@@ -44,6 +45,13 @@ import {
 import { driver } from './tests/e2e/harness/driver.ts';
 import { savePhoneScreen, supportPieceState } from './tests/e2e/harness/report.ts';
 import { FORWARD_PORTS, adbProblem, checkForwards, setForwards, type Adb } from './tests/e2e/harness/adb-forwards.ts';
+import { commandPath, FIXED_DIRS, NPX_CLI } from './scripts/command-path.ts';
+/** adb from the Android SDK first (ANDROID_HOME, then its default place), then the fixed folders (shyden-labs/shydesk#291). */
+const ADB_DIRS = [
+  ...(process.env.ANDROID_HOME ? [join(process.env.ANDROID_HOME, 'platform-tools')] : []),
+  join(homedir(), 'Library', 'Android', 'sdk', 'platform-tools'),
+  ...FIXED_DIRS,
+];
 
 const RUNS = '.e2e-runs';
 const PAGES = 'tests/e2e/pages';
@@ -92,7 +100,7 @@ async function stopRun(problem: string): Promise<never> {
   const { SevereServiceError } = (await import(name)) as { SevereServiceError: new (message: string) => Error };
   throw new SevereServiceError(problem);
 }
-const adb: Adb = (args) => execFileSync('adb', args, { encoding: 'utf8' });
+const adb: Adb = (args) => execFileSync(commandPath('adb', { dirs: ADB_DIRS }), args, { encoding: 'utf8' });
 /** When each Android forward was last listed, and which workers run on Android (shyden-labs/shydesk#153). */
 const forwardsSeen = new Map<number, Date>();
 const androidWorkers = new Set<string>();
@@ -134,13 +142,13 @@ export const config: Options.Testrunner & Capabilities.WithRequestedTestrunnerCa
       // The server listens on the LAN for the iPhone, so nothing outside the pages folder is served.
       let path = '';
       try {
-        path = normalize(decodeURIComponent(new URL(request.url ?? '/', 'http://x').pathname)).replace(/^\/+/, '');
+        path = normalize(decodeURIComponent(new URL(request.url ?? '/', 'https://x').pathname)).replace(/^\/+/, '');
       } catch {
         // A malformed address is not a page.
       }
       const demo = DEMO_PAGES[path];
       if (demo !== undefined) {
-        const product = new URL(request.url ?? '/', 'http://x').searchParams.get('product') ?? 'demo';
+        const product = new URL(request.url ?? '/', 'https://x').searchParams.get('product') ?? 'demo';
         try {
           // The piece loads from the host the page was asked on: localhost for Android, the LAN for the iPhone.
           const local = shydeskOrigin(`http://${request.headers.host ?? ''}`);
@@ -230,27 +238,32 @@ async function startShydesk(): Promise<void> {
     ),
   );
   const local = ['--local', '--persist-to', STATE];
-  execFileSync('npx', ['wrangler', 'd1', 'migrations', 'apply', 'DB', ...local], { stdio: 'inherit' });
-  execFileSync('npx', ['wrangler', 'd1', 'execute', 'DB', ...local, '--file', seed], { stdio: 'inherit' });
+  execFileSync(process.execPath, [NPX_CLI, 'wrangler', 'd1', 'migrations', 'apply', 'DB', ...local], { stdio: 'inherit' });
+  execFileSync(process.execPath, [NPX_CLI, 'wrangler', 'd1', 'execute', 'DB', ...local, '--file', seed], { stdio: 'inherit' });
   const log = join(RUNS, 'shydesk.log');
   writeFileSync(log, '');
-  shydesk = spawn('npx', wranglerDevArgs(STATE, await accessStandIn()), { stdio: ['ignore', 'pipe', 'pipe'] });
+  const server = spawn(process.execPath, [NPX_CLI, ...wranglerDevArgs(STATE, await accessStandIn())], {
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  shydesk = server;
   const append = (chunk: Buffer) => {
     writeFileSync(log, chunk, { flag: 'a' });
   };
   shydesk.stdout?.on('data', append);
   shydesk.stderr?.on('data', append);
   const until = Date.now() + SHYDESK_START_MS;
-  while (Date.now() < until) {
-    if (shydesk.exitCode !== null) break;
+  // Polling for the server to come up; each try starts the next, so no loop awaits (shyden-labs/shydesk#291).
+  const answers = async (): Promise<boolean> => {
+    if (Date.now() >= until || server.exitCode !== null) return false;
     const up = await fetch(`${SHYDESK}/health`).then(
       (r) => r.ok,
       () => false,
     );
-    if (up) return;
-    // Polling for the server to come up (shyden-labs/shydesk#185).
-    await new Promise((resolve) => setTimeout(resolve, 500)); // NOSONAR
-  }
+    if (up) return true;
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    return answers();
+  };
+  if (await answers()) return;
   shydesk.kill();
   throw new Error(
     `the local ShyDesk did not answer ${SHYDESK}/health within ${String(SHYDESK_START_MS / 1000)} s:\n${readFileSync(log, 'utf8').slice(-2000)}`,

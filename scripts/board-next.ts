@@ -23,6 +23,7 @@ import { execFileSync } from 'node:child_process';
 import { assertWholeRead, emptyBoardNote } from './board-progress.ts';
 import { PRIORITY_OPTIONS } from './board-setup.ts';
 import { runIfEntry } from './cli.ts';
+import { commandPath } from './command-path.ts';
 
 /** An issue, by repository, so issue 3 of another repository is not this one's. */
 export interface IssueRef {
@@ -237,7 +238,7 @@ export function main(args: string[]): number {
   if (id === undefined || title === undefined) {
     throw new Error('usage: node scripts/board-next.ts <board-node-id> "<board title>"');
   }
-  const out = execFileSync('gh', ['api', 'graphql', '--paginate', '--slurp', '-f', `query=${QUERY}`, '-f', `id=${id}`], {
+  const out = execFileSync(commandPath('gh'), ['api', 'graphql', '--paginate', '--slurp', '-f', `query=${QUERY}`, '-f', `id=${id}`], {
     encoding: 'utf8',
   });
   const pages = JSON.parse(out) as RawPage[];

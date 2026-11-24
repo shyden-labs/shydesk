@@ -54,6 +54,20 @@ export function isExactOrigin(origin: string): boolean {
 
 const isWhole = (n: number, min: number): boolean => Number.isInteger(n) && n >= min;
 
+/** The allowed and test origins' rules the product breaks, in form order. */
+function originErrors(p: ProductInput): string[] {
+  const errors: string[] = [];
+  if (p.allowedOrigins.length === 0) errors.push('At least one allowed origin is required.');
+  for (const origin of p.allowedOrigins) {
+    if (!isExactOrigin(origin)) errors.push(`Allowed origin "${origin}" must be exactly https://host or https://host:port.`);
+  }
+  for (const origin of p.testOrigins ?? []) {
+    if (!isExactOrigin(origin)) errors.push(`Test origin "${origin}" must be exactly https://host or https://host:port.`);
+    else if (p.allowedOrigins.includes(origin)) errors.push(`Test origin "${origin}" is already an allowed origin.`);
+  }
+  return errors;
+}
+
 /** Every rule the product breaks, in form order; empty when it is valid. */
 export function validateProduct(p: ProductInput): string[] {
   const errors: string[] = [];
@@ -63,14 +77,7 @@ export function validateProduct(p: ProductInput): string[] {
   const page = parse(p.ticketPageUrl);
   const pageOk = page !== null && page.protocol === 'https:' && !p.ticketPageUrl.includes('#');
   if (!pageOk) errors.push('Ticket page URL must be an https address with no #fragment.');
-  if (p.allowedOrigins.length === 0) errors.push('At least one allowed origin is required.');
-  for (const origin of p.allowedOrigins) {
-    if (!isExactOrigin(origin)) errors.push(`Allowed origin "${origin}" must be exactly https://host or https://host:port.`);
-  }
-  for (const origin of p.testOrigins ?? []) {
-    if (!isExactOrigin(origin)) errors.push(`Test origin "${origin}" must be exactly https://host or https://host:port.`);
-    else if (p.allowedOrigins.includes(origin)) errors.push(`Test origin "${origin}" is already an allowed origin.`);
-  }
+  errors.push(...originErrors(p));
   if (pageOk && p.allowedOrigins.length > 0 && !p.allowedOrigins.includes(page.origin)) {
     errors.push("The ticket page URL's origin must be one of the allowed origins.");
   }

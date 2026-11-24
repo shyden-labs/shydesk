@@ -12,11 +12,10 @@
  */
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
 import { runIfEntry } from './cli.ts';
+import { NPM_CLI } from './command-path.ts';
 
 /** The npm CLI shipped beside the running node, so PATH is never searched for `npm` (Sonar S4036). */
-const NPM_CLI = join(dirname(process.execPath), '..', 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js');
 
 export interface AuditException {
   /** The advisory id, e.g. GHSA-fc5q-39xc-vjpf. */

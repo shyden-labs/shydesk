@@ -1,3 +1,4 @@
+import { commandPath } from '../../scripts/command-path.ts';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import { readdirSync, readFileSync } from 'node:fs';
@@ -466,9 +467,13 @@ describe('main', () => {
   it('reads the board by its node id', () => {
     gh.mockReturnValueOnce(JSON.stringify([boardPage('Example Stories', [card(1)])]));
     main(['PVT_1', 'Example Stories']);
-    expect(gh).toHaveBeenCalledWith('gh', ['api', 'graphql', '--paginate', '--slurp', '-f', `query=${QUERY}`, '-f', 'id=PVT_1'], {
-      encoding: 'utf8',
-    });
+    expect(gh).toHaveBeenCalledWith(
+      commandPath('gh'),
+      ['api', 'graphql', '--paginate', '--slurp', '-f', `query=${QUERY}`, '-f', 'id=PVT_1'],
+      {
+        encoding: 'utf8',
+      },
+    );
   });
 
   it('refuses when any page names another board', () => {
