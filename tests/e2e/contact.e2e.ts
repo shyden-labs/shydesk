@@ -9,7 +9,8 @@
 import { describe, it } from 'mocha';
 import { strict as assert } from 'node:assert';
 import { driver } from './harness/driver.ts';
-import { JOURNEY_WAIT as WAIT, named, textHolding } from './harness/find.ts';
+import { JOURNEY_WAIT as WAIT, named } from './harness/find.ts';
+import { textHolding } from './harness/text.ts';
 import { openPage } from './harness/open-page.ts';
 import { touchSized } from './harness/touch.ts';
 import { readable } from './harness/contrast.ts';
