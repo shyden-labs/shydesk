@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { colourOf, contrastRatio, gradientColours } from '../e2e/harness/contrast.ts';
+import { colourOf, contrastRatio, gradientColours, partShortfalls } from '../e2e/harness/contrast.ts';
 
 // The e2e suite measures how readable typed text is from the browser's computed colours (shyden-labs/shydesk#282).
 describe('colourOf', () => {
@@ -57,5 +57,40 @@ describe('gradientColours', () => {
 
   it('lists nothing for no image', () => {
     expect(gradientColours('none')).toEqual([]);
+  });
+});
+
+// Every word and control on the form, not only typed text, is measured on light and dark pages (shyden-labs/shydesk#299).
+describe('partShortfalls', () => {
+  it('passes text at 4.5:1 and a border at 3:1', () => {
+    expect(
+      partShortfalls([
+        { what: 'label "Email"', kind: 'text', color: 'rgb(0, 0, 0)', background: 'rgb(255, 255, 255)' },
+        { what: 'border of "Email"', kind: 'border', color: 'rgb(118, 118, 118)', background: 'rgb(255, 255, 255)' },
+      ]),
+    ).toEqual([]);
+  });
+
+  it('names text under 4.5:1 with both colours and its ratio', () => {
+    expect(
+      partShortfalls([{ what: 'error "Enter an email"', kind: 'text', color: 'rgb(179, 38, 30)', background: 'rgb(30, 30, 38)' }]),
+    ).toEqual(['error "Enter an email" rgb(179, 38, 30) on rgb(30, 30, 38) is 2.06:1, needs 4.5:1']);
+  });
+
+  it('names a border under 3:1, which text at the same ratio would pass as graphics', () => {
+    expect(
+      partShortfalls([{ what: 'border of "Email"', kind: 'border', color: 'rgb(200, 200, 208)', background: 'rgb(255, 255, 255)' }]),
+    ).toEqual(['border of "Email" rgb(200, 200, 208) on rgb(255, 255, 255) is 1.62:1, needs 3:1']);
+  });
+
+  it('holds a border at 3:1 exactly, not at the text bar', () => {
+    // rgb(148, 148, 148) on white is 3.03:1: enough for a border, short of text.
+    const part = { what: 'x', color: 'rgb(148, 148, 148)', background: 'rgb(255, 255, 255)' };
+    expect(partShortfalls([{ ...part, kind: 'border' }])).toEqual([]);
+    expect(partShortfalls([{ ...part, kind: 'text' }])).toHaveLength(1);
+  });
+
+  it('refuses an empty measurement, since a form with nothing found proves nothing', () => {
+    expect(partShortfalls([])).toEqual(['no part of the form was found to measure']);
   });
 });

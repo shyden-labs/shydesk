@@ -67,3 +67,68 @@ export async function readable(labels: readonly string[]): Promise<void> {
   }
   assert.deepEqual(short, [], `under WCAG contrast: ${short.join('; ')}`);
 }
+
+/** One measured part of the form: words against what lies behind them, or a field's border against its surroundings. */
+export interface Part {
+  what: string;
+  kind: 'text' | 'border';
+  color: string;
+  background: string;
+}
+
+/**
+ * Every part under WCAG contrast, each naming its colours and ratio: words at 4.5:1, a field's
+ * border at 3:1 as the graphic that shows where the field is (shyden-labs/shydesk#299).
+ */
+export function partShortfalls(parts: readonly Part[]): string[] {
+  if (parts.length === 0) return ['no part of the form was found to measure'];
+  const short: string[] = [];
+  for (const part of parts) {
+    const needed = part.kind === 'text' ? TEXT_CONTRAST : GRAPHIC_CONTRAST;
+    const ratio = contrastRatio(part.color, part.background);
+    if (ratio < needed) short.push(`${part.what} ${part.color} on ${part.background} is ${ratio.toFixed(2)}:1, needs ${String(needed)}:1`);
+  }
+  return short;
+}
+
+/**
+ * Lists, from the support piece's shadow root, every shown label, status line, error, link and
+ * enabled button with its text colour, and every field's border, each against the first opaque
+ * background behind it (white if the page sets none, as a browser draws it).
+ */
+const LIST_PARTS = `
+  const host = document.querySelector('shydesk-support');
+  if (host === null || host.shadowRoot === null) return [];
+  const root = host.shadowRoot;
+  const opaque = (colour) => !/^rgba\\(.*,\\s*0\\)$/.test(colour) && colour !== 'transparent';
+  const behind = (element) => {
+    for (let at = element; at !== null; at = at.parentElement ?? (at.getRootNode() instanceof ShadowRoot ? at.getRootNode().host : null)) {
+      const colour = getComputedStyle(at).backgroundColor;
+      if (opaque(colour)) return colour;
+    }
+    return 'rgb(255, 255, 255)';
+  };
+  const shown = (element) => element.getClientRects().length > 0 && element.textContent.trim() !== '';
+  const words = (element) => element.textContent.trim().replace(/\\s+/g, ' ').slice(0, 40);
+  const parts = [];
+  for (const label of root.querySelectorAll('label')) {
+    if (shown(label)) parts.push({ what: 'label "' + words(label) + '"', kind: 'text', color: getComputedStyle(label).color, background: behind(label) });
+  }
+  for (const element of root.querySelectorAll('[role=status], .error, a[href], button:not(.preview):not(:disabled)')) {
+    if (!shown(element)) continue;
+    const kind = element.matches('.error') ? 'error' : element.matches('a') ? 'link' : element.matches('button') ? 'button' : 'status';
+    parts.push({ what: kind + ' "' + words(element) + '"', kind: 'text', color: getComputedStyle(element).color, background: behind(element) });
+  }
+  for (const field of root.querySelectorAll('input:not([type=file]):not([type=hidden]), select, textarea')) {
+    if (field.getClientRects().length === 0) continue;
+    const name = field.labels?.[0] ? words(field.labels[0]) : field.name;
+    parts.push({ what: 'border of "' + name + '"', kind: 'border', color: getComputedStyle(field).borderTopColor, background: behind(field.parentElement) });
+  }
+  return parts;
+`;
+
+/** Fails, naming every shortfall at once, unless every shown word and field border on the form meets WCAG contrast. */
+export async function everyPartReadable(): Promise<void> {
+  const short = partShortfalls(await driver().execute<Part[]>(LIST_PARTS));
+  assert.deepEqual(short, [], `under WCAG contrast: ${short.join('; ')}`);
+}
