@@ -35,6 +35,8 @@ export interface NoticeAbout {
 }
 
 export type NoticeResult = 'sent' | 'share-used-up' | 'failed';
+/** A notice that did not go, and why (shyden-labs/shydesk#274). */
+export type NoticeUnsent = Exclude<NoticeResult, 'sent'>;
 
 const COUNT_SEND =
   'INSERT INTO counters (key, value) VALUES (?, 1) ON CONFLICT(key) DO UPDATE SET value = value + 1 WHERE value < ? RETURNING value';

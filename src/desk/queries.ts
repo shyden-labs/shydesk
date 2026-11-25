@@ -6,6 +6,7 @@ import { offenderHistory, type OffenderHistory } from '../reports/history.ts';
 import type { Staff } from '../auth/staff.ts';
 import type { StoredFile } from '../uploads/serve.ts';
 import { NOT_WITHHELD } from '../holds/rules.ts';
+import type { NoticeUnsent } from '../mail/notify.ts';
 
 /**
  * What the staff desk reads and marks (shyden-labs/shydesk#24; plan Task 10).
@@ -34,6 +35,8 @@ export interface DeskTicket {
   test_origin: string | null;
   /** 1 while the ticket's latest notice bounced (shyden-labs/shydesk#232), else 0. */
   last_notice_bounced: 0 | 1;
+  /** Why the new ticket's first email was not sent (shyden-labs/shydesk#274); null once sent. */
+  first_notice_unsent: NoticeUnsent | null;
 }
 
 /** A notice that bounced: the reply it announced (null for a new ticket), where it went, and the server's answer. */

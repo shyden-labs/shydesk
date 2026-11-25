@@ -3,6 +3,7 @@
 // message it announces or none for a new ticket, and a failed send leaves no row.
 import { describe, expect, inject, it, vi } from 'vitest';
 import { sendNoReply, type Deliver, type MailEnv } from '../../src/mail/notify.ts';
+import { getTicket } from '../../src/desk/queries.ts';
 import { getProduct, saveProduct, saveTicketType, supportTypeId, type Product } from '../../src/products.ts';
 import { restD1 } from './d1.ts';
 
@@ -17,12 +18,12 @@ const env: MailEnv = {
   BOUNCE_DOMAIN: 'bounce.example',
 };
 
-async function seed(): Promise<Product> {
+async function seed(id = 'it-nt'): Promise<Product> {
   await saveProduct(
     db,
     {
-      id: 'it-nt',
-      name: 'Product it-nt',
+      id,
+      name: `Product ${id}`,
       senderAddress: SENDER,
       ticketPageUrl: 'https://it-nt.example/ticket',
       allowedOrigins: ['https://it-nt.example'],
@@ -32,21 +33,22 @@ async function seed(): Promise<Product> {
     },
     1000,
   );
-  await saveTicketType(db, { productId: 'it-nt', name: 'Support', fields: [] });
+  await saveTicketType(db, { productId: id, name: 'Support', fields: [] });
   await db
     .prepare(
       `INSERT INTO tickets (id, product_id, type_id, status, customer_email, subject, category, fields_json, token_hash, created_at, updated_at, seq)
-       VALUES ('it-nt-t1', 'it-nt', ?, 'open', 'pat@example.com', 'Subject', 'bug', '{}', 'hash-it-nt-t1', 1000, 1000, 0)`,
+       VALUES (?, ?, ?, 'open', 'pat@example.com', 'Subject', 'bug', '{}', ?, 1000, 1000, 0)`,
     )
-    .bind(supportTypeId('it-nt'))
+    .bind(`${id}-t1`, id, supportTypeId(id), `hash-${id}-t1`)
     .run();
   await db
     .prepare(
-      "INSERT INTO messages (id, ticket_id, author, staff_email, body, created_at) VALUES ('it-nt-m1', 'it-nt-t1', 'staff', 'rep@example.com', 'Hi', 1000)",
+      "INSERT INTO messages (id, ticket_id, author, staff_email, body, created_at) VALUES (?, ?, 'staff', 'rep@example.com', 'Hi', 1000)",
     )
+    .bind(`${id}-m1`, `${id}-t1`)
     .run();
-  const product = await getProduct(db, 'it-nt');
-  if (product === null) throw new Error('seeded product it-nt was not read back');
+  const product = await getProduct(db, id);
+  if (product === null) throw new Error(`seeded product ${id} was not read back`);
   return product;
 }
 
@@ -83,6 +85,24 @@ describe('notice rows', () => {
     ]);
     const envelopes = deliver.mock.calls.map((call) => call[1].envelopeFrom);
     expect(envelopes).toEqual(stored.map((r) => `bounce-${String(r.id)}@bounce.example`));
+    vi.restoreAllMocks();
+  });
+
+  // shyden-labs/shydesk#274 AC1: the desk reads why a new ticket's first email did not go.
+  it("notes a new ticket's first email that did not go, and the desk reads it with the ticket", async () => {
+    const product = await seed('it-nu');
+    const fails = vi.fn<Deliver>(() => Promise.reject(new Error('SMTP rcpt failed: 550 no such user')));
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const scope = { products: ['it-nu'], role: 'rep' as const };
+    const first = { ticketId: 'it-nu-t1', messageId: null };
+
+    await expect(sendNoReply(env, product, 'pat@example.com', LINK, fails, NOW, first)).resolves.toBe('failed');
+    expect.soft((await getTicket(db, scope, 'it-nu-t1'))?.ticket.first_notice_unsent).toBe('failed');
+
+    await expect(sendNoReply(env, { ...product, monthlyEmailShare: 0 }, 'pat@example.com', LINK, fails, NOW, first)).resolves.toBe(
+      'share-used-up',
+    );
+    expect.soft((await getTicket(db, scope, 'it-nu-t1'))?.ticket.first_notice_unsent).toBe('share-used-up');
     vi.restoreAllMocks();
   });
 });
