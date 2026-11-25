@@ -8,7 +8,7 @@
 import { describe, it } from 'mocha';
 import { strict as assert } from 'node:assert';
 import { driver } from './harness/driver.ts';
-import { textHolding } from './harness/find.ts';
+import { textHolding } from './harness/text.ts';
 import { tap, type } from './harness/input.ts';
 import { seededAppealToken, SHYDESK_PORT } from './harness/local-shydesk.ts';
 import { openPage } from './harness/open-page.ts';
