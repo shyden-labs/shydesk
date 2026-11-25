@@ -51,15 +51,21 @@ and gets Non-Prod data, with nothing else to change.
 The piece draws inside its own shadow root, so the page's CSS does not reach
 it. It reads these custom properties from the page instead:
 
-| Property                    | Used for                       |
-| --------------------------- | ------------------------------ |
-| `--shydesk-font`            | All text                       |
-| `--shydesk-text`            | Text colour                    |
-| `--shydesk-background`      | Form background                |
-| `--shydesk-accent`          | The send button and focus ring |
-| `--shydesk-accent-text`     | Text on the send button        |
-| `--shydesk-border`          | Field borders                  |
-| `--shydesk-error`           | Field error messages           |
+| Property                     | Used for                                                            |
+| ---------------------------- | ------------------------------------------------------------------- |
+| `--shydesk-font`             | All text                                                            |
+| `--shydesk-text`             | Text colour                                                         |
+| `--shydesk-background`       | Form background                                                     |
+| `--shydesk-accent`           | The send button and focus ring                                      |
+| `--shydesk-accent-text`      | Text on the send button                                             |
+| `--shydesk-border`           | Field borders                                                       |
+| `--shydesk-field-background` | Field background (default: `--shydesk-background`)                  |
+| `--shydesk-field-text`       | Typed text and the list arrow in fields (default: `--shydesk-text`) |
+| `--shydesk-error`            | Field error messages                                                |
+
+A page with a dark theme sets `--shydesk-text` and `--shydesk-background`;
+the fields follow them, so typed text stays readable. Set the two field
+properties only for fields coloured differently from the form.
 
 ```css
 shydesk-support {
@@ -91,3 +97,21 @@ The form takes photos and videos. On the first file picked, the piece imports
 Policy must allow that host in `script-src` and `connect-src`. Photos are shrunk
 in the browser and sent in parts straight to ShyDesk. Videos go as they are for
 now (shyden-labs/shydesk#21), and a video over 30 seconds is refused before upload.
+
+## Content Security Policy
+
+The piece needs only these sources on the support and ticket pages, where
+`<ShyDesk host>` is the host its script is loaded from:
+
+| Directive     | Sources                                                    |
+| ------------- | ---------------------------------------------------------- |
+| `script-src`  | `<ShyDesk host>` and `https://challenges.cloudflare.com`   |
+| `connect-src` | `<ShyDesk host>`                                           |
+| `frame-src`   | `https://challenges.cloudflare.com` (Turnstile)            |
+| `img-src`     | `blob:` (previews and the viewer)                          |
+| `media-src`   | `blob:`                                                    |
+
+It needs no `style-src 'unsafe-inline'`: the form and the viewer style
+themselves with constructed style sheets (`adoptedStyleSheets`), which a
+page's `style-src` does not block, and set no `style` attributes
+(shyden-labs/shydesk#266). It starts no worker and uses no `data:` URLs.

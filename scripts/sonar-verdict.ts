@@ -104,14 +104,17 @@ async function judge(path: string): Promise<{ ok: boolean; lines: string[]; dash
   if (!existsSync(path)) fail(`no report-task.txt at ${path}: the scan did not run`);
   const report = parseReportTask(readFileSync(path, 'utf8'));
   const ceiling = Number(process.env.SONAR_CEILING_SECONDS || 300);
-  let task: { status: string; analysisId?: string; pullRequest?: string; errorMessage?: string };
-  // Polling: each read waits for the one before it (shyden-labs/shydesk#185).
-  for (let waited = 0; ; waited += STEP_MS / 1000) {
-    task = ((await get(`${report.serverUrl}/api/ce/task?id=${report.ceTaskId}`, token)) as { task: typeof task }).task; // NOSONAR
-    if (task.status !== 'PENDING' && task.status !== 'IN_PROGRESS') break;
-    if (waited >= ceiling) fail(`task ${report.ceTaskId} is still ${task.status} after ${ceiling} s; no verdict to read`);
-    await sleep(STEP_MS); // NOSONAR
-  }
+  type Task = { status: string; analysisId?: string; pullRequest?: string; errorMessage?: string };
+  // Polling: each read waits for the one before it, and starts the next, so no loop awaits (shyden-labs/shydesk#291).
+  const poll = async (waited: number): Promise<Task> => {
+    const answer = (await get(`${report.serverUrl}/api/ce/task?id=${report.ceTaskId}`, token)) as { task: Task };
+    const read = answer.task;
+    if (read.status !== 'PENDING' && read.status !== 'IN_PROGRESS') return read;
+    if (waited >= ceiling) fail(`task ${report.ceTaskId} is still ${read.status} after ${ceiling} s; no verdict to read`);
+    await sleep(STEP_MS);
+    return poll(waited + STEP_MS / 1000);
+  };
+  const task = await poll(0);
   if (task.status !== 'SUCCESS') {
     const why = task.errorMessage ? ' (' + task.errorMessage + ')' : '';
     fail(`task ${report.ceTaskId} ended ${task.status}${why}; no verdict to read`);

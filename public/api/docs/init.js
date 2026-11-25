@@ -27,7 +27,5 @@ function startSwaggerUi(methods) {
   });
 }
 
-// A promise chain, not top-level await: index.html loads this as a classic
-// script, where await at the top level does not parse (Sonar S7785,
-// shyden-labs/shydesk#184).
-void allowedMethods().then(startSwaggerUi); // NOSONAR
+// index.html loads this as a module, so it can await at the top level (shyden-labs/shydesk#291).
+startSwaggerUi(await allowedMethods());

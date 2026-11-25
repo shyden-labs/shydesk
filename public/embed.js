@@ -86,11 +86,12 @@
     .field { display: grid; gap: 4px; }
     .attachments { min-height: 1px; overflow-wrap: anywhere; white-space: pre-line; }
     .picker-name { font-weight: 600; }
+    .text { white-space: pre-wrap; }
     ::slotted(input) { font: inherit; min-width: 0; box-sizing: border-box; min-height: 44px; }
     label { display: grid; gap: 4px; font-weight: 600; }
     input, select, textarea, button { box-sizing: border-box; min-height: 44px; }
-    input, select, textarea { font: inherit; font-weight: 400; padding: 10px; min-width: 0; border-radius: 8px; border: 1px solid var(--shydesk-border, #c8c8d0); background: #ffffff; color: inherit; }
-    select { -webkit-appearance: none; appearance: none; padding-right: 36px; background-image: linear-gradient(45deg, transparent 50%, #1b1b1f 50%), linear-gradient(135deg, #1b1b1f 50%, transparent 50%); background-position: calc(100% - 20px) 50%, calc(100% - 15px) 50%; background-size: 5px 5px; background-repeat: no-repeat; }
+    input, select, textarea { font: inherit; font-weight: 400; padding: 10px; min-width: 0; border-radius: 8px; border: 1px solid var(--shydesk-border, #c8c8d0); background: var(--shydesk-field-background, var(--shydesk-background, #ffffff)); color: var(--shydesk-field-text, var(--shydesk-text, #1b1b1f)); }
+    select { -webkit-appearance: none; appearance: none; padding-right: 36px; background-image: linear-gradient(45deg, transparent 50%, var(--shydesk-field-text, var(--shydesk-text, #1b1b1f)) 50%), linear-gradient(135deg, var(--shydesk-field-text, var(--shydesk-text, #1b1b1f)) 50%, transparent 50%); background-position: calc(100% - 20px) 50%, calc(100% - 15px) 50%; background-size: 5px 5px; background-repeat: no-repeat; }
     textarea { min-height: 140px; resize: vertical; }
     :focus-visible { outline: 3px solid var(--shydesk-accent, #4b3fd8); outline-offset: 2px; }
     button { font: inherit; font-weight: 600; padding: 12px 16px; border: 0; border-radius: 8px; cursor: pointer; background: var(--shydesk-accent, #4b3fd8); color: var(--shydesk-accent-text, #ffffff); }
@@ -164,7 +165,11 @@
     connectedCallback() {
       if (this.begun) return;
       this.begun = true;
-      this.shadow.append(make('style', {}, [CSS]), this.statusLine);
+      // A constructed sheet, which a page CSP without style-src 'unsafe-inline' still applies (shyden-labs/shydesk#266).
+      const sheet = new CSSStyleSheet();
+      sheet.replaceSync(CSS);
+      this.shadow.adoptedStyleSheets = [sheet];
+      this.shadow.append(this.statusLine);
       void this.load();
     }
 
@@ -695,7 +700,7 @@
         ...messages.map((one) =>
           make('article', {}, [
             make('strong', {}, [one.author === 'staff' ? TEXT.staff : TEXT.customer]),
-            make('p', { style: 'white-space: pre-wrap' }, [one.body]),
+            make('p', { class: 'text' }, [one.body]),
             ...one.attachments.map((file) => this.attachmentLine(file, file.removed ? previews : ++previews, stored)),
           ]),
         ),

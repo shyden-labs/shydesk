@@ -9,9 +9,11 @@
 import { describe, it } from 'mocha';
 import { strict as assert } from 'node:assert';
 import { driver } from './harness/driver.ts';
-import { JOURNEY_WAIT as WAIT, named, textHolding } from './harness/find.ts';
+import { JOURNEY_WAIT as WAIT, named } from './harness/find.ts';
+import { textHolding } from './harness/text.ts';
 import { openPage } from './harness/open-page.ts';
 import { touchSized } from './harness/touch.ts';
+import { readable } from './harness/contrast.ts';
 import { clickMiddleOf, pickFile, press, pressVideoControl, swipeLeft, tap, tapToNewPage, type, zoomIn } from './harness/input.ts';
 import { ownControlsPoints, type Box } from './harness/targets.ts';
 import { SEEDED_TICKET_TOKEN, SHYDESK_PORT } from './harness/local-shydesk.ts';
@@ -116,6 +118,8 @@ describe('the contact form', () => {
     await type('Subject', subject);
     await type('Message', 'It closes as soon as it starts.');
     await type('Device', 'Test phone');
+    // What is typed reads clearly on its field, and the category arrow shows (shyden-labs/shydesk#282).
+    await readable(['Email', 'Subject', 'Category', 'Message', 'Device']);
     // A refused send keeps saying why after the check hands over a new token, until the form changes
     // (shyden-labs/shydesk#242).
     await textHolding('Support status', 'Ready to send');
@@ -298,6 +302,16 @@ describe('the contact form', () => {
     await textHolding('Ticket list', `TEST ${subject}`);
     await tapToNewPage(subject);
     await textHolding('TEST ticket', `From the TEST site ${new URL(link).origin}. Live tickets come first.`);
+  });
+
+  it("keeps typed text and the category arrow readable on a product's dark page", async () => {
+    // The page sets only a dark product's theme (light text, dark form), as ShyTalk's does (shyden-labs/shydesk#282).
+    await openPage('/dark.html?product=demo');
+    await type('Email', 'dark-page@example.com');
+    await type('Subject', 'Can I read this?');
+    await type('Message', 'Every letter should show on the field.');
+    await type('Device', 'Test phone');
+    await readable(['Email', 'Subject', 'Category', 'Message', 'Device']);
   });
 
   it('cannot load on a page whose origin the product does not allow', async () => {

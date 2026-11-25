@@ -24,6 +24,7 @@ describe('row types', () => {
       token_sealed: null,
       text_deleted_at: null,
       test_origin: null,
+      first_notice_unsent: null,
     };
     expect(row.token_sealed).toBeNull();
   });
@@ -36,6 +37,11 @@ describe('row types', () => {
   it('TicketRow has test_origin, null for a ticket from a live site (shyden-labs/shydesk#263)', () => {
     const row: Pick<TicketRow, 'test_origin'> = { test_origin: null };
     expect(row.test_origin).toBeNull();
+  });
+
+  it("TicketRow has first_notice_unsent, why the new ticket's first email was not sent (shyden-labs/shydesk#274)", () => {
+    const row: Pick<TicketRow, 'first_notice_unsent'> = { first_notice_unsent: 'share-used-up' };
+    expect(row.first_notice_unsent).toBe('share-used-up');
   });
 
   it('ProductRow has test_origins_json, the TEST sites as JSON text (shyden-labs/shydesk#263)', () => {
@@ -59,7 +65,13 @@ describe('row types', () => {
       created_at: 0,
       deleted_at: null,
       received_bytes: 0,
+      thumb_bytes: 0,
     };
     expect(row.received_bytes).toBe(0);
+  });
+
+  it("AttachmentRow has thumb_bytes, the thumbnail's own size (shyden-labs/shydesk#271)", () => {
+    const row: Pick<AttachmentRow, 'thumb_bytes'> = { thumb_bytes: 7183 };
+    expect(row.thumb_bytes).toBe(7183);
   });
 });

@@ -118,26 +118,27 @@ async function clearAbandoned(env: UploadBindings): Promise<void> {
   )
     .bind(now - UNATTACHED_EXPIRES_MS)
     .all<Attachment>();
-  // One upload at a time: each is closed out after its object goes, and one failing does not stop the rest (shyden-labs/shydesk#185).
-  for (const row of stale) {
+  // The uploads are independent, so they clear together (shyden-labs/shydesk#291). Each is closed out after
+  // its object goes, and one failing does not stop the rest (shyden-labs/shydesk#185).
+  const abort = async (row: Attachment): Promise<void> => {
     try {
       // With no upload id a `complete` stopped part way, and the object may exist.
-      if (row.r2_upload_id !== null)
-        await env.FILES.resumeMultipartUpload(row.r2_key, row.r2_upload_id).abort(); // NOSONAR
-      else await env.FILES.delete(row.r2_key); // NOSONAR
-      await closeOut(env, row.id, 'pending'); // NOSONAR
+      if (row.r2_upload_id !== null) await env.FILES.resumeMultipartUpload(row.r2_key, row.r2_upload_id).abort();
+      else await env.FILES.delete(row.r2_key);
+      await closeOut(env, row.id, 'pending');
     } catch (error) {
       console.error(`upload ${row.id} could not be aborted`, error);
     }
-  }
-  for (const row of unattached) {
+  };
+  const expire = async (row: Attachment): Promise<void> => {
     try {
-      await env.FILES.delete([row.r2_key, row.thumb_key]); // NOSONAR
-      await closeOut(env, row.id, 'stored'); // NOSONAR
+      await env.FILES.delete([row.r2_key, row.thumb_key]);
+      await closeOut(env, row.id, 'stored');
     } catch (error) {
       console.error(`upload ${row.id} could not be expired`, error);
     }
-  }
+  };
+  await Promise.all([...stale.map(abort), ...unattached.map(expire)]);
 }
 
 const pending = (env: UploadBindings, id: string, productId: string): Promise<Pending | null> =>
@@ -293,7 +294,8 @@ export function uploadRoutes(): Hono<UploadEnv> {
     if (!(await addStoredWithin(c.env.DB, body.byteLength))) return c.json({ error: MESSAGES.storageFull }, 422);
     await c.env.FILES.put(key, body, { httpMetadata: { contentType: MIME_OF[kind] } });
     // On the attachment too: retention takes `bytes` off the total when it deletes both objects.
-    await c.env.DB.prepare('UPDATE attachments SET bytes = bytes + ? WHERE id = ?').bind(body.byteLength, row.id).run();
+    // Its own size too, so the desk can show the file's size alone (shyden-labs/shydesk#271).
+    await c.env.DB.prepare('UPDATE attachments SET bytes = bytes + ?1, thumb_bytes = ?1 WHERE id = ?2').bind(body.byteLength, row.id).run();
     return c.json({ ok: true });
   });
 

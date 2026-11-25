@@ -86,10 +86,6 @@ export const pageTimers = {
 };
 
 if (typeof document !== 'undefined') {
-  const badge = document.querySelector('[data-unread]');
-  // Not awaited: awaiting the badge's first fetch would hold up wiring the
-  // reply buttons below (Sonar S7785, shyden-labs/shydesk#184).
-  if (badge !== null) void startBadge(badge, document, fetch.bind(globalThis), pageTimers); // NOSONAR
   const box = /** @type {HTMLTextAreaElement | null} */ (document.querySelector('[data-reply]'));
   if (box !== null) {
     for (const button of document.querySelectorAll('button[data-canned]')) {
@@ -110,4 +106,7 @@ if (typeof document !== 'undefined') {
       );
     });
   }
+  // Last, so waiting for the badge's first count holds up none of the buttons above (shyden-labs/shydesk#291).
+  const badge = document.querySelector('[data-unread]');
+  if (badge !== null) await startBadge(badge, document, fetch.bind(globalThis), pageTimers);
 }

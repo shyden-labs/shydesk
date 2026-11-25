@@ -239,7 +239,12 @@ describe('the contact form', () => {
       const error = root.getElementById(control.getAttribute('aria-describedby') ?? '');
       expect(error?.className).toBe('error');
     }
-    expect(root.querySelector('style')?.textContent).toContain('--shydesk-accent');
+    // Styled through a constructed sheet, which a page CSP without style-src 'unsafe-inline' allows
+    // (shyden-labs/shydesk#266): no <style> element.
+    expect(root.querySelector('style')).toBeNull();
+    const css = root.adoptedStyleSheets.flatMap((sheet) => [...sheet.cssRules].map((rule) => rule.cssText)).join('\n');
+    expect(css).toContain('--shydesk-accent');
+    expect(css).toMatch(/\.text\s*\{\s*white-space:\s*pre-wrap/);
   });
 
   it('puts the file picker and the Turnstile widget in the page, shown through slots', async () => {
@@ -664,7 +669,9 @@ describe('the private link', () => {
     const articles = [...(log?.querySelectorAll('article') ?? [])];
     expect(articles.map((one) => one.querySelector('strong')?.textContent)).toEqual(['You', 'Support']);
     expect(articles.map((one) => one.querySelector('p')?.textContent)).toEqual(['Help\nplease', 'Looking now']);
-    expect(articles[0]?.querySelector('p')?.getAttribute('style')).toBe('white-space: pre-wrap');
+    // Line breaks kept by a class, not a style attribute, which a strict CSP blocks (shyden-labs/shydesk#266).
+    expect(articles[0]?.querySelector('p')?.hasAttribute('style')).toBe(false);
+    expect(articles[0]?.querySelector('p')?.className).toBe('text');
     const call = asked.find((one) => one.path === 'ticket');
     expect(call?.init?.headers).toEqual({ Authorization: 'Ticket secret' });
     expect(call?.product).toBe('demo');
@@ -675,7 +682,7 @@ describe('the private link', () => {
     const buttons = [...(log?.querySelectorAll('button.preview') ?? [])];
     expect(buttons.map((one) => one.getAttribute('aria-label'))).toEqual(['Open photo 1', 'Open video 2']);
     expect(buttons.every((one) => one.getAttribute('type') === 'button')).toBe(true);
-    const lines = [...(log?.querySelectorAll('article > p:not([style])') ?? [])].map((one) => one.textContent);
+    const lines = [...(log?.querySelectorAll('article > p:not(.text)') ?? [])].map((one) => one.textContent);
     expect(lines).toEqual(['Attachment, 2 KB', 'Attachment removed after 30 days.', 'Video, 3 KB']);
   });
 

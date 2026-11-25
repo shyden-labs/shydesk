@@ -26,7 +26,7 @@ function headers(block: string): Map<string, string> {
 
 /** A Content-Type's parameter, case-insensitive, quoted or not. */
 function parameter(contentType: string, name: string): string | undefined {
-  const match = new RegExp(`;\\s*${name}\\s*=\\s*(?:"([^"]*)"|([^;\\s]+))`, 'i').exec(contentType);
+  const match = new RegExp(String.raw`;\s*${name}\s*=\s*(?:"([^"]*)"|([^;\s]+))`, 'i').exec(contentType);
   return match?.[1] ?? match?.[2];
 }
 
@@ -51,7 +51,7 @@ function failedRecipient(deliveryStatus: string): Bounce | null {
 }
 
 export function readBounce(raw: string): Bounce | null {
-  const message = split(raw.replace(/\r\n/g, '\n'));
+  const message = split(raw.replaceAll('\r\n', '\n'));
   if (message === null) return null;
   const contentType = headers(message.head).get('content-type') ?? '';
   if (!/^multipart\/report\b/i.test(contentType)) return null;

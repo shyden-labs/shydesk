@@ -6,6 +6,7 @@ import { offenderHistory, type OffenderHistory } from '../reports/history.ts';
 import type { Staff } from '../auth/staff.ts';
 import type { StoredFile } from '../uploads/serve.ts';
 import { NOT_WITHHELD } from '../holds/rules.ts';
+import type { NoticeUnsent } from '../mail/notify.ts';
 
 /**
  * What the staff desk reads and marks (shyden-labs/shydesk#24; plan Task 10).
@@ -34,6 +35,8 @@ export interface DeskTicket {
   test_origin: string | null;
   /** 1 while the ticket's latest notice bounced (shyden-labs/shydesk#232), else 0. */
   last_notice_bounced: 0 | 1;
+  /** Why the new ticket's first email was not sent (shyden-labs/shydesk#274); null once sent. */
+  first_notice_unsent: NoticeUnsent | null;
 }
 
 /** A notice that bounced: the reply it announced (null for a new ticket), where it went, and the server's answer. */
@@ -57,7 +60,8 @@ export interface DeskAttachment {
   id: string;
   message_id: string;
   mime: string;
-  bytes: number;
+  /** The customer's file alone, without its thumbnail (shyden-labs/shydesk#271). */
+  file_bytes: number;
   duration_ms: number | null;
   state: string;
   /** 1 while a live csam hold covers it: never shown nor served (shyden-labs/shydesk#62). */
@@ -71,7 +75,7 @@ export interface TicketFilter {
 }
 
 const COLUMNS =
-  'id, product_id, type_id, status, customer_email, subject, category, fields_json, created_at, updated_at, seq, token_sealed, text_deleted_at, test_origin, ' +
+  'id, product_id, type_id, status, customer_email, subject, category, fields_json, created_at, updated_at, seq, token_sealed, text_deleted_at, test_origin, first_notice_unsent, ' +
   'COALESCE((SELECT n.bounced_at IS NOT NULL FROM notices n WHERE n.ticket_id = tickets.id ORDER BY n.sent_at DESC, n.rowid DESC LIMIT 1), 0) AS last_notice_bounced';
 const marks = (values: unknown[]): string => values.map(() => '?').join(', ');
 
@@ -132,7 +136,7 @@ export async function getTicket(
     .all<DeskMessage>();
   const { results: attachments } = await db
     .prepare(
-      `SELECT a.id, a.message_id, a.mime, a.bytes, a.duration_ms, a.state, CASE WHEN ${NOT_WITHHELD} THEN 0 ELSE 1 END AS withheld
+      `SELECT a.id, a.message_id, a.mime, a.bytes - a.thumb_bytes AS file_bytes, a.duration_ms, a.state, CASE WHEN ${NOT_WITHHELD} THEN 0 ELSE 1 END AS withheld
        FROM attachments a WHERE a.ticket_id = ? AND a.message_id IS NOT NULL AND a.state IN ('stored', 'deleted')`,
     )
     .bind(id)

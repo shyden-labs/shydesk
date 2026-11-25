@@ -35,6 +35,8 @@ export interface NoticeAbout {
 }
 
 export type NoticeResult = 'sent' | 'share-used-up' | 'failed';
+/** A notice that did not go, and why (shyden-labs/shydesk#274). */
+export type NoticeUnsent = Exclude<NoticeResult, 'sent'>;
 
 const COUNT_SEND =
   'INSERT INTO counters (key, value) VALUES (?, 1) ON CONFLICT(key) DO UPDATE SET value = value + 1 WHERE value < ? RETURNING value';
@@ -43,6 +45,8 @@ const COUNT_SEND =
 const GIVE_BACK = 'UPDATE counters SET value = value - 1 WHERE key = ? AND value > 0';
 
 const INSERT_NOTICE = 'INSERT INTO notices (id, ticket_id, message_id, to_address, sent_at) VALUES (?, ?, ?, ?, ?)';
+/** Why a new ticket's first email did not go, for the desk (shyden-labs/shydesk#274). */
+const NOTE_UNSENT = 'UPDATE tickets SET first_notice_unsent = ? WHERE id = ?';
 /** A notice that never left is not shown as sent. */
 const DELETE_NOTICE = 'DELETE FROM notices WHERE id = ?';
 
@@ -91,15 +95,20 @@ export async function sendNoReply(
   now: Date,
   about: NoticeAbout,
 ): Promise<NoticeResult> {
-  if (!(await countSend(env.DB, product, now))) return 'share-used-up';
+  if (!(await countSend(env.DB, product, now))) {
+    // Never silent (shyden-labs/shydesk#274): the product and its share, never the customer's address.
+    console.error(`mail for ${product.id} not sent: its monthly email share of ${String(product.monthlyEmailShare)} is used up`);
+    return unsent(env.DB, about, 'share-used-up');
+  }
   let noticeId: string | null = null;
   try {
     const { login, host } = senderLogin(env.SMTP_LOGINS, product.senderAddress);
+    const lead = about.lead === undefined ? '' : `${about.lead}\r\n\r\n`;
     const mail: SmtpMail = {
       from: product.senderAddress,
       to,
       subject: NOTICE_SUBJECT,
-      text: `${product.name} support\r\n\r\n${about.lead === undefined ? '' : `${about.lead}\r\n\r\n`}There is a new update on your support request. Open it here: ${link}`,
+      text: `${product.name} support\r\n\r\n${lead}There is a new update on your support request. Open it here: ${link}`,
     };
     // Written down before it leaves, so a bounce that comes back fast finds its row (shyden-labs/shydesk#232).
     if (env.BOUNCE_DOMAIN !== undefined) {
@@ -113,6 +122,12 @@ export async function sendNoReply(
     console.error(`mail for ${product.id} failed: ${(error as Error).message}`);
     if (noticeId !== null) await env.DB.prepare(DELETE_NOTICE).bind(noticeId).run();
     await env.DB.prepare(GIVE_BACK).bind(shareKey(product, now)).run();
-    return 'failed';
+    return unsent(env.DB, about, 'failed');
   }
+}
+
+/** Notes on a new ticket (no message) why its first email did not go, and returns why. */
+async function unsent(db: D1Database, about: NoticeAbout, why: NoticeUnsent): Promise<NoticeUnsent> {
+  if (about.messageId === null) await db.prepare(NOTE_UNSENT).bind(why, about.ticketId).run();
+  return why;
 }

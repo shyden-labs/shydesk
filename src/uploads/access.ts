@@ -1,3 +1,4 @@
+import { clientIp } from '../client-ip.ts';
 import type { MiddlewareHandler } from 'hono';
 import { MESSAGES } from '../customer/messages.ts';
 import { requireProductOrigin, type CustomerEnv } from '../customer/origin.ts';
@@ -34,7 +35,7 @@ export function requireOriginOrGrant(): MiddlewareHandler<CustomerEnv> {
       c.header('Vary', 'Origin');
     }
     c.set('product', product);
-    c.set('clientIp', c.req.header('CF-Connecting-IP') ?? '');
+    c.set('clientIp', clientIp(c.req.raw.headers, c.env.FORWARDER_SECRET));
     return next();
   };
 }

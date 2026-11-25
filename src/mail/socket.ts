@@ -55,21 +55,22 @@ export function socketConnection(socket: SmtpSocket): SmtpConnection {
     writer.releaseLock();
   };
 
+  /** A stream is read in order, one chunk after another; each read starts the next, so no loop awaits (shyden-labs/shydesk#291). */
+  const readReply = async (): Promise<string[]> => {
+    const reply = wholeReply(buffered);
+    if (reply !== null) {
+      buffered = buffered.slice(reply.end);
+      return reply.lines;
+    }
+    if (buffered.length > MAX_REPLY_CHARS) throw new Error('the mail server sent a reply over 64 KiB');
+    const { done, value } = await reader.read();
+    if (done) throw new Error('the mail server closed the connection before its reply ended');
+    buffered += decoder.decode(value, { stream: true });
+    return readReply();
+  };
+
   return {
-    async readReply() {
-      // A stream is read in order, one chunk after another (shyden-labs/shydesk#185).
-      for (;;) {
-        const reply = wholeReply(buffered);
-        if (reply !== null) {
-          buffered = buffered.slice(reply.end);
-          return reply.lines;
-        }
-        if (buffered.length > MAX_REPLY_CHARS) throw new Error('the mail server sent a reply over 64 KiB');
-        const { done, value } = await reader.read(); // NOSONAR
-        if (done) throw new Error('the mail server closed the connection before its reply ended');
-        buffered += decoder.decode(value, { stream: true });
-      }
-    },
+    readReply,
     async write(text) {
       await writer.write(encoder.encode(text));
     },

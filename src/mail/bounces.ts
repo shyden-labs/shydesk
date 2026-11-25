@@ -26,7 +26,7 @@ const MOST_BYTES = 1_000_000;
 
 const RECORD = 'UPDATE notices SET bounced_at = ?, bounce_status = ?, bounce_reason = ? WHERE id = ? AND bounced_at IS NULL';
 
-const escaped = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const escaped = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
 
 export async function handleBounce(message: BounceMessage, env: BounceEnv, now = Date.now()): Promise<void> {
   const domain = env.BOUNCE_DOMAIN;

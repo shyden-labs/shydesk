@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Demo dark support page</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 16px;
+        font-family: system-ui, sans-serif;
+        background: #121218;
+        color: #ececf1;
+      }
+      main {
+        max-width: 640px;
+        margin: 0 auto;
+      }
+      shydesk-support {
+        --shydesk-text: #ececf1;
+        --shydesk-background: #1e1e26;
+        --shydesk-border: #4a4a58;
+        --shydesk-accent: #8b7fff;
+        --shydesk-accent-text: #121218;
+      }
+    </style>
+    <!-- Loaded from the Non-Prod ShyDesk exactly as docs/embedding.md tells products. -->
+    <script src="https://shydesk.shydesk-non-prod.workers.dev/embed.js" defer></script>
+  </head>
+  <body>
+    <main>
+      <h1>Demo dark support page</h1>
+      <p>
+        A test page on its own origin showing the ShyDesk support piece embedded the way a product with a dark page embeds it: only the
+        theme variables a dark product sets, no field colours.
+      </p>
+      <shydesk-support product="demo" view="contact" lang="en"></shydesk-support>
+    </main>
+  </body>
+</html>

@@ -11,6 +11,7 @@
  */
 import { spawnSync } from 'node:child_process';
 import { runIfEntry } from './cli.ts';
+import { NPM_CLI } from './command-path.ts';
 
 const WARNING = [/^npm warn\b/i, /^\(node:\d+\) (?:\[\w+\] )?\w*Warning\b/];
 
@@ -20,7 +21,7 @@ export function warnings(output: string): string[] {
 }
 
 export function main(): number {
-  const run = spawnSync('npm', ['ci'], { encoding: 'utf8', stdio: ['inherit', 'pipe', 'pipe'] });
+  const run = spawnSync(process.execPath, [NPM_CLI, 'ci'], { encoding: 'utf8', stdio: ['inherit', 'pipe', 'pipe'] });
   if (run.error) throw new Error(`npm ci did not run: ${run.error.message}`);
   process.stdout.write(run.stdout);
   process.stderr.write(run.stderr);

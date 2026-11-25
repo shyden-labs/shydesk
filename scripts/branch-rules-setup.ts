@@ -24,6 +24,7 @@
  */
 import { execFileSync } from 'node:child_process';
 import { runIfEntry } from './cli.ts';
+import { commandPath } from './command-path.ts';
 
 export interface Rule {
   type: string;
@@ -246,7 +247,7 @@ export function auditDevEnvironment(env: DevEnvironment | undefined): string[] {
 
 /** gh's JSON answer. */
 function gh(args: string[], input?: string): unknown {
-  return JSON.parse(execFileSync('gh', args, { encoding: 'utf8', input }));
+  return JSON.parse(execFileSync(commandPath('gh'), args, { encoding: 'utf8', input }));
 }
 
 type ListedEnvironment = DevEnvironment & { name: string; protection_rules?: { type: string }[] };

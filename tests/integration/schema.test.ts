@@ -68,6 +68,7 @@ describe('tables', () => {
       'token_sealed',
       'text_deleted_at',
       'test_origin',
+      'first_notice_unsent',
     ]);
   });
   it('messages', async () => {
@@ -89,6 +90,7 @@ describe('tables', () => {
       'created_at',
       'deleted_at',
       'received_bytes',
+      'thumb_bytes',
     ]);
   });
   it('canned_replies', async () => {

@@ -99,17 +99,64 @@ describe('the monthly share', () => {
     expect(statements.map(({ sql, values }) => ({ sql, values }))).toEqual([COUNT]);
   });
 
-  it('once used up, returns share-used-up and delivers nothing', async () => {
+  it('once used up, returns share-used-up, delivers nothing, and logs one line naming the product and its share', async () => {
+    const error = logged();
     const { env, deliver } = world({ shareLeft: false });
     await expect(sendNoReply(env, shytalk(), 'pat@example.com', LINK, deliver, NOW, ABOUT)).resolves.toBe('share-used-up');
     expect(deliver).not.toHaveBeenCalled();
+    // shyden-labs/shydesk#274 AC2: never silent, and no customer address in the log.
+    expect(error.mock.calls).toEqual([['mail for shytalk not sent: its monthly email share of 500 is used up']]);
   });
 
-  it('of zero sends nothing and counts nothing', async () => {
+  it('of zero sends nothing, counts nothing, and logs the share of 0', async () => {
+    const error = logged();
     const { env, statements, deliver } = world({ shareLeft: true });
     await expect(sendNoReply(env, shytalk(0), 'pat@example.com', LINK, deliver, NOW, ABOUT)).resolves.toBe('share-used-up');
     expect(statements).toEqual([]);
     expect(deliver).not.toHaveBeenCalled();
+    expect(error.mock.calls).toEqual([['mail for shytalk not sent: its monthly email share of 0 is used up']]);
+  });
+});
+
+// A new ticket's first email that did not go is noted on the ticket for the desk (shyden-labs/shydesk#274 AC1).
+describe("a new ticket's first email that is not sent", () => {
+  const FIRST = { ticketId: 't1', messageId: null };
+  const NOTE = (why: string) => ({ sql: 'UPDATE tickets SET first_notice_unsent = ? WHERE id = ?', values: [why, 't1'] });
+  const written = (statements: { sql: string; values: unknown[] }[]) => statements.map(({ sql, values }) => ({ sql, values }));
+
+  it('notes share-used-up on the ticket', async () => {
+    logged();
+    const { env, statements, deliver } = world({ shareLeft: false });
+    await expect(sendNoReply(env, shytalk(), 'pat@example.com', LINK, deliver, NOW, FIRST)).resolves.toBe('share-used-up');
+    expect(written(statements)).toEqual([COUNT, NOTE('share-used-up')]);
+  });
+
+  it('notes share-used-up on the ticket when the share is 0', async () => {
+    logged();
+    const { env, statements, deliver } = world({ shareLeft: true });
+    await expect(sendNoReply(env, shytalk(0), 'pat@example.com', LINK, deliver, NOW, FIRST)).resolves.toBe('share-used-up');
+    expect(written(statements)).toEqual([NOTE('share-used-up')]);
+  });
+
+  it('notes failed on the ticket after giving the share back', async () => {
+    logged();
+    const { env, statements, deliver } = world({ shareLeft: true });
+    deliver.mockRejectedValueOnce(new Error('connect timed out'));
+    await expect(sendNoReply(env, shytalk(), 'pat@example.com', LINK, deliver, NOW, FIRST)).resolves.toBe('failed');
+    expect(written(statements)).toEqual([COUNT, GIVE_BACK, NOTE('failed')]);
+  });
+
+  it('notes nothing when it is sent', async () => {
+    const { env, statements, deliver } = world({ shareLeft: true });
+    await expect(sendNoReply(env, shytalk(), 'pat@example.com', LINK, deliver, NOW, FIRST)).resolves.toBe('sent');
+    expect(written(statements)).toEqual([COUNT]);
+  });
+
+  it("notes nothing on the ticket for a reply's email that is not sent", async () => {
+    logged();
+    const { env, statements, deliver } = world({ shareLeft: false });
+    await expect(sendNoReply(env, shytalk(), 'pat@example.com', LINK, deliver, NOW, ABOUT)).resolves.toBe('share-used-up');
+    expect(written(statements)).toEqual([COUNT]);
   });
 });
 
@@ -212,6 +259,7 @@ describe('the bounce address', () => {
   });
 
   it('a used-up share writes no row', async () => {
+    logged();
     const { env, statements, deliver } = world({ shareLeft: false, bounceDomain: 'bounce.example' });
     await expect(sendNoReply(env, shytalk(), 'pat@example.com', LINK, deliver, NOW, ABOUT)).resolves.toBe('share-used-up');
     expect(statements.map((s) => s.sql)).toEqual([COUNT.sql]);
