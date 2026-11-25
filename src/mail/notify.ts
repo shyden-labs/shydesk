@@ -45,6 +45,8 @@ const COUNT_SEND =
 const GIVE_BACK = 'UPDATE counters SET value = value - 1 WHERE key = ? AND value > 0';
 
 const INSERT_NOTICE = 'INSERT INTO notices (id, ticket_id, message_id, to_address, sent_at) VALUES (?, ?, ?, ?, ?)';
+/** Why a new ticket's first email did not go, for the desk (shyden-labs/shydesk#274). */
+const NOTE_UNSENT = 'UPDATE tickets SET first_notice_unsent = ? WHERE id = ?';
 /** A notice that never left is not shown as sent. */
 const DELETE_NOTICE = 'DELETE FROM notices WHERE id = ?';
 
@@ -93,7 +95,11 @@ export async function sendNoReply(
   now: Date,
   about: NoticeAbout,
 ): Promise<NoticeResult> {
-  if (!(await countSend(env.DB, product, now))) return 'share-used-up';
+  if (!(await countSend(env.DB, product, now))) {
+    // Never silent (shyden-labs/shydesk#274): the product and its share, never the customer's address.
+    console.error(`mail for ${product.id} not sent: its monthly email share of ${String(product.monthlyEmailShare)} is used up`);
+    return unsent(env.DB, about, 'share-used-up');
+  }
   let noticeId: string | null = null;
   try {
     const { login, host } = senderLogin(env.SMTP_LOGINS, product.senderAddress);
@@ -116,6 +122,12 @@ export async function sendNoReply(
     console.error(`mail for ${product.id} failed: ${(error as Error).message}`);
     if (noticeId !== null) await env.DB.prepare(DELETE_NOTICE).bind(noticeId).run();
     await env.DB.prepare(GIVE_BACK).bind(shareKey(product, now)).run();
-    return 'failed';
+    return unsent(env.DB, about, 'failed');
   }
+}
+
+/** Notes on a new ticket (no message) why its first email did not go, and returns why. */
+async function unsent(db: D1Database, about: NoticeAbout, why: NoticeUnsent): Promise<NoticeUnsent> {
+  if (about.messageId === null) await db.prepare(NOTE_UNSENT).bind(why, about.ticketId).run();
+  return why;
 }

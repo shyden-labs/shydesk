@@ -74,7 +74,7 @@ export interface TicketFilter {
 }
 
 const COLUMNS =
-  'id, product_id, type_id, status, customer_email, subject, category, fields_json, created_at, updated_at, seq, token_sealed, text_deleted_at, test_origin, ' +
+  'id, product_id, type_id, status, customer_email, subject, category, fields_json, created_at, updated_at, seq, token_sealed, text_deleted_at, test_origin, first_notice_unsent, ' +
   'COALESCE((SELECT n.bounced_at IS NOT NULL FROM notices n WHERE n.ticket_id = tickets.id ORDER BY n.sent_at DESC, n.rowid DESC LIMIT 1), 0) AS last_notice_bounced';
 const marks = (values: unknown[]): string => values.map(() => '?').join(', ');
 
