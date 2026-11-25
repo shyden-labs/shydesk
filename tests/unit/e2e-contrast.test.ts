@@ -74,13 +74,13 @@ describe('partShortfalls', () => {
   it('names text under 4.5:1 with both colours and its ratio', () => {
     expect(
       partShortfalls([{ what: 'error "Enter an email"', kind: 'text', color: 'rgb(179, 38, 30)', background: 'rgb(30, 30, 38)' }]),
-    ).toEqual(['error "Enter an email" rgb(179, 38, 30) on rgb(30, 30, 38) is 2.06:1, needs 4.5:1']);
+    ).toEqual(['error "Enter an email" rgb(179, 38, 30) on rgb(30, 30, 38) is 2.53:1, needs 4.5:1']);
   });
 
   it('names a border under 3:1, which text at the same ratio would pass as graphics', () => {
     expect(
       partShortfalls([{ what: 'border of "Email"', kind: 'border', color: 'rgb(200, 200, 208)', background: 'rgb(255, 255, 255)' }]),
-    ).toEqual(['border of "Email" rgb(200, 200, 208) on rgb(255, 255, 255) is 1.62:1, needs 3:1']);
+    ).toEqual(['border of "Email" rgb(200, 200, 208) on rgb(255, 255, 255) is 1.66:1, needs 3:1']);
   });
 
   it('holds a border at 3:1 exactly, not at the text bar', () => {
