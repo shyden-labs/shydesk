@@ -163,8 +163,17 @@ jobs:
       # a channel that cannot install fails here by name.
       - name: Install the desktop browsers
         run: ./node_modules/.bin/playwright install --with-deps chromium chrome firefox webkit msedge
+      # The test list each browser should run, read before the run so a browser that runs fewer is named (shyden-labs/shydesk#176).
+      - name: List the tests each desktop browser runs
+        run: |
+          mkdir -p .e2e-runs
+          ./node_modules/.bin/playwright test --config playwright.config.ts --list --reporter=json > .e2e-runs/playwright-list.json
       - name: End-to-end suite on every desktop browser
         run: npm run test:e2e:pw
+      # Checked even after a red run; this step's own exit fails the job on any difference between browsers.
+      - name: Every desktop browser ran the same tests and assertions
+        if: always()
+        run: ./node_modules/.bin/one-suite --group desktop=chromium,chrome,firefox,webkit,msedge --list .e2e-runs/playwright-list.json --report .e2e-runs/playwright-report.json --assertions .e2e-runs/assertions.json
 
   # The SonarCloud quality gate, blocking (shyden-labs/repo-template#27, shyden-labs/repo-template#60): the reusable workflow
   # scans, then fails unless this scan's gate is OK (docs/sonarcloud.md).
