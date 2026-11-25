@@ -32,6 +32,7 @@ interface Row {
   mime: string;
   bytes: number;
   received_bytes: number;
+  thumb_bytes: number;
   ticket_id?: string | null;
   duration_ms: number | null;
   state: string;
@@ -164,6 +165,7 @@ function world(options: Options = {}) {
         mime,
         bytes,
         received_bytes: 0,
+        thumb_bytes: 0,
         ticket_id: null,
         duration_ms: null,
         state: 'pending',
@@ -196,7 +198,10 @@ function world(options: Options = {}) {
     }
     if (sql.includes('UPDATE attachments') && sql.includes('bytes = bytes +')) {
       const row = rows.get(String(v[1]));
-      if (row) row.bytes += Number(v[0]);
+      if (row) {
+        row.bytes += Number(v[0]);
+        if (sql.includes('thumb_bytes = ?1')) row.thumb_bytes = Number(v[0]);
+      }
       return [];
     }
     if (sql.includes('UPDATE attachments') && sql.includes("state = 'deleted'")) {
@@ -352,6 +357,7 @@ describe('starting an upload', () => {
     mime: 'video/mp4',
     bytes: 50,
     received_bytes: 0,
+    thumb_bytes: 0,
     ticket_id: null,
     duration_ms: null,
     state: 'pending',
@@ -423,6 +429,7 @@ describe('starting an upload', () => {
       mime: 'video/mp4',
       bytes: 5,
       received_bytes: 0,
+      thumb_bytes: 0,
       duration_ms: null,
       state: 'pending',
       created_at: 0,
@@ -443,6 +450,7 @@ describe('starting an upload', () => {
       mime: 'video/mp4',
       bytes: 5,
       received_bytes: 0,
+      thumb_bytes: 0,
       duration_ms: null,
       state: 'pending',
       created_at: Date.now() - 60_000,
@@ -788,6 +796,8 @@ describe('sending a thumbnail', () => {
     expect(w.r2.objects.get(w.rows.get(id)?.thumb_key ?? '')?.length).toBe(photo.length);
     expect(w.rows.get(id)?.bytes).toBe(photo.length * 2);
     expect(w.counters.stored).toBe(photo.length * 2);
+    // shyden-labs/shydesk#271: the thumbnail's own size is kept, so the desk can show the file's size alone.
+    expect(w.rows.get(id)?.thumb_bytes).toBe(photo.length);
   });
 
   it('accepts exactly 1 MB', async () => {

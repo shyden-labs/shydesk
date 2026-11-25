@@ -60,7 +60,8 @@ export interface DeskAttachment {
   id: string;
   message_id: string;
   mime: string;
-  bytes: number;
+  /** The customer's file alone, without its thumbnail (shyden-labs/shydesk#271). */
+  file_bytes: number;
   duration_ms: number | null;
   state: string;
   /** 1 while a live csam hold covers it: never shown nor served (shyden-labs/shydesk#62). */

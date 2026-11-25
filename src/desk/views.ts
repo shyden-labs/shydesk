@@ -316,7 +316,7 @@ const attachmentLine = (a: DeskAttachment, number: number): Page => {
     <button type="button" data-view data-id="${a.id}" data-mime="${a.mime}" aria-label="Open ${kind.toLowerCase()} ${String(number)}">
       <img src="/desk/files/${a.id}/thumb" alt="${kind} ${String(number)} preview" width="160" />
     </button>
-    ${kind} ${String(number)}${length}, ${String(Math.ceil(a.bytes / 1000))} KB
+    ${kind} ${String(number)}${length}, ${String(Math.ceil(a.file_bytes / 1000))} KB
   </li>`;
 };
 

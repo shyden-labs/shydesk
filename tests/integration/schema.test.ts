@@ -90,6 +90,7 @@ describe('tables', () => {
       'created_at',
       'deleted_at',
       'received_bytes',
+      'thumb_bytes',
     ]);
   });
   it('canned_replies', async () => {

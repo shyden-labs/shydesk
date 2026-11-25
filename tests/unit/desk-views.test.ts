@@ -93,7 +93,15 @@ describe('the legal holds panel', () => {
     orderPending: false,
     noReportReason: null,
   };
-  const file = { id: 'a1', message_id: 'm1', mime: 'image/jpeg', bytes: 2000, duration_ms: null, state: 'stored', withheld: 0 as const };
+  const file = {
+    id: 'a1',
+    message_id: 'm1',
+    mime: 'image/jpeg',
+    file_bytes: 2000,
+    duration_ms: null,
+    state: 'stored',
+    withheld: 0 as const,
+  };
   const message = { id: 'm1', author: 'customer', staff_email: null, body: 'Hi', created_at: 5 };
 
   it('shows a rep each live hold and the form to place one, but no admin actions', async () => {
@@ -275,7 +283,7 @@ describe('ticketPage', () => {
     id: 'a1',
     message_id: 'm1',
     mime: 'image/jpeg',
-    bytes: 2000,
+    file_bytes: 2000,
     duration_ms: null,
     state: 'stored',
     withheld: 0 as const,
@@ -288,7 +296,7 @@ describe('ticketPage', () => {
           messages: [message, { ...message, id: 'm2' }],
           attachments: [
             attachment,
-            { ...attachment, id: 'a2', mime: 'video/mp4', bytes: 1001 },
+            { ...attachment, id: 'a2', mime: 'video/mp4', file_bytes: 1001 },
             { ...attachment, id: 'a3', message_id: 'm3' },
           ],
         }),
@@ -297,6 +305,12 @@ describe('ticketPage', () => {
     expect(page).toContain('Photo 1, 2 KB');
     expect(page).toContain('Video 2, 2 KB');
     expect(page.match(/KB/g)).toHaveLength(2);
+  });
+
+  // shyden-labs/shydesk#271 AC1: the size is the file the viewer opens, never the file plus its thumbnail.
+  it("shows the size of the customer's file alone", async () => {
+    const page = await render(ticketPage(view({ messages: [message], attachments: [{ ...attachment, file_bytes: 13_863 }] })));
+    expect(page).toContain('Photo 1, 14 KB');
   });
 
   it('numbers the stored files only, so a removed one before them takes no number', async () => {
