@@ -10,8 +10,8 @@ the shared package `@shyden-labs/playwright-devices`, on phones and desktop brow
 ShyDesk's e2e suite is WebdriverIO (`wdio.conf.ts`, `tests/e2e/*.e2e.ts`); the package drives
 Playwright only (playwright-devices-e3, 2026-11-25). Version 0.1.5 on npm exports the desktop
 browsers (`./desktop`) and the one-suite checks (`.`, the `one-suite` CLI, the
-`./assertion-counter` reporter). The phone layer follows with playwright-devices#54 (about
-2026-11-27 to 11-28, a guess). This design covers #176 AC2 and AC3, so the phones (AC1) only add
+`./assertion-counter` reporter). The phone layer follows with shyden-labs/playwright-devices#54 (about
+2026-11-27 to 11-28, a guess). This design covers shyden-labs/shydesk#176 AC2 and AC3, so the phones (AC1) only add
 projects later.
 
 ## Goals
@@ -27,7 +27,7 @@ projects later.
 
 ## Non-goals
 
-- Phones (AC1): they wait for playwright-devices#54 and #7. The WebdriverIO device runner
+- Phones (AC1): they wait for shyden-labs/playwright-devices#54 and shyden-labs/playwright-devices#7. The WebdriverIO device runner
   (`test:e2e:device`, Appium, `targets.ts`' phone parts) stays until then, unused on desktop.
 - Changing product behaviour. Only the colour work in shyden-labs/shydesk#299 changes the product,
   and it moves onto the Playwright suite after this port.

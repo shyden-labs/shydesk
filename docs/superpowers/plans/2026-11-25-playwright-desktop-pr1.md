@@ -33,7 +33,7 @@ TypeScript run by Node 26 type stripping as today, GitHub Actions `ubuntu-latest
 
 1. A browser that reports `isTrusted:false` for the file `change` event under `setFiles` (WebKit is
    the likeliest). The harness test asserts `file-change:true:<size>` on every browser, so it fails
-   by name. Never weaken it. Name the browser and the measurement, and take it to Shyden (#176 AC4).
+   by name. Never weaken it. Name the browser and the measurement, and take it to Shyden (shyden-labs/shydesk#176 AC4).
 2. `chrome` or `msedge` channels not installable on `ubuntu-latest`. The install step fails naming
    the channel. Fall back to `macos-26` per the spec and record why in the job comment.
 3. `wrangler dev` on Linux not answering `/health` within `SHYDESK_START_MS` (90 s). The global
