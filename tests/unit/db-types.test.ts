@@ -65,7 +65,13 @@ describe('row types', () => {
       created_at: 0,
       deleted_at: null,
       received_bytes: 0,
+      thumb_bytes: 0,
     };
     expect(row.received_bytes).toBe(0);
+  });
+
+  it("AttachmentRow has thumb_bytes, the thumbnail's own size (shyden-labs/shydesk#271)", () => {
+    const row: Pick<AttachmentRow, 'thumb_bytes'> = { thumb_bytes: 7183 };
+    expect(row.thumb_bytes).toBe(7183);
   });
 });

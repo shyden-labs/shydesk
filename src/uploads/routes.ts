@@ -294,7 +294,8 @@ export function uploadRoutes(): Hono<UploadEnv> {
     if (!(await addStoredWithin(c.env.DB, body.byteLength))) return c.json({ error: MESSAGES.storageFull }, 422);
     await c.env.FILES.put(key, body, { httpMetadata: { contentType: MIME_OF[kind] } });
     // On the attachment too: retention takes `bytes` off the total when it deletes both objects.
-    await c.env.DB.prepare('UPDATE attachments SET bytes = bytes + ? WHERE id = ?').bind(body.byteLength, row.id).run();
+    // Its own size too, so the desk can show the file's size alone (shyden-labs/shydesk#271).
+    await c.env.DB.prepare('UPDATE attachments SET bytes = bytes + ?1, thumb_bytes = ?1 WHERE id = ?2').bind(body.byteLength, row.id).run();
     return c.json({ ok: true });
   });
 

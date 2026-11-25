@@ -136,7 +136,7 @@ export async function getTicket(
     .all<DeskMessage>();
   const { results: attachments } = await db
     .prepare(
-      `SELECT a.id, a.message_id, a.mime, a.bytes, a.duration_ms, a.state, CASE WHEN ${NOT_WITHHELD} THEN 0 ELSE 1 END AS withheld
+      `SELECT a.id, a.message_id, a.mime, a.bytes - a.thumb_bytes AS file_bytes, a.duration_ms, a.state, CASE WHEN ${NOT_WITHHELD} THEN 0 ELSE 1 END AS withheld
        FROM attachments a WHERE a.ticket_id = ? AND a.message_id IS NOT NULL AND a.state IN ('stored', 'deleted')`,
     )
     .bind(id)

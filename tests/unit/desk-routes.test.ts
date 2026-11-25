@@ -134,7 +134,7 @@ function setup(w: World = {}) {
     }
     if (/FROM attachments a JOIN tickets/.test(sql)) return w.files ?? [{ r2_key: 'key-a2', thumb_key: 'thumb-a2', mime: 'video/mp4' }];
     if (/FROM attachments/.test(sql))
-      return w.attachments ?? [{ id: 'a1', message_id: 'm1', mime: 'image/jpeg', bytes: 2000, duration_ms: null, state: 'deleted' }];
+      return w.attachments ?? [{ id: 'a1', message_id: 'm1', mime: 'image/jpeg', file_bytes: 2000, duration_ms: null, state: 'deleted' }];
     if (/FROM tickets/.test(sql)) return tickets;
     return [];
   });
@@ -346,9 +346,9 @@ describe('the ticket view', () => {
 
 describe('the ticket view, attachments', () => {
   const stored = [
-    { id: 'a1', message_id: 'm1', mime: 'image/jpeg', bytes: 2000, duration_ms: null, state: 'stored' },
-    { id: 'a2', message_id: 'm1', mime: 'video/mp4', bytes: 9000, duration_ms: 65_000, state: 'stored' },
-    { id: 'a3', message_id: 'm2', mime: 'image/png', bytes: 1000, duration_ms: null, state: 'deleted' },
+    { id: 'a1', message_id: 'm1', mime: 'image/jpeg', file_bytes: 2000, duration_ms: null, state: 'stored' },
+    { id: 'a2', message_id: 'm1', mime: 'video/mp4', file_bytes: 9000, duration_ms: 65_000, state: 'stored' },
+    { id: 'a3', message_id: 'm2', mime: 'image/png', file_bytes: 1000, duration_ms: null, state: 'deleted' },
   ];
 
   it('shows each stored attachment as a preview that opens the viewer, numbered across the ticket', async () => {
