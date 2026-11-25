@@ -4,6 +4,7 @@ import type { HoldReason } from '../holds/rules.ts';
 import type { HtmlEscapedString } from 'hono/utils/html';
 import type { Canned } from '../products.ts';
 import type { PunishmentRow } from '../db/types.ts';
+import type { NoticeUnsent } from '../mail/notify.ts';
 import {
   PAGE_SIZE,
   fillCanned,
@@ -574,6 +575,14 @@ const bounceLine = (n: DeskNotice) => {
   return html`<p role="alert">Email to ${n.to_address} bounced at ${when(n.bounced_at)}. ${BOUNCE_REASON_LABEL} ${reason}</p>`;
 };
 
+/** Why a new ticket's first email was not sent, said under the first message (shyden-labs/shydesk#274). */
+const UNSENT_LINES: Record<NoticeUnsent, string> = {
+  'share-used-up': "The first email for this ticket was not sent: this product's monthly email share is used up.",
+  failed: 'The first email for this ticket was not sent: sending it failed. Workers Logs name the cause.',
+};
+const unsentLine = (t: DeskTicket) =>
+  t.first_notice_unsent === null ? '' : html`<p role="alert">${UNSENT_LINES[t.first_notice_unsent]}</p>`;
+
 export const ticketPage = (d: TicketData): Page => {
   const line = noticeLine(d);
   const values = { customer_email: d.ticket.customer_email, ticket_subject: d.ticket.subject };
@@ -605,6 +614,7 @@ export const ticketPage = (d: TicketData): Page => {
             html`<article>
               <strong>${m.author === 'staff' ? (m.staff_email ?? 'Staff') : 'Customer'}</strong> · ${when(m.created_at)}
               <p class="body">${m.body}</p>
+              ${index === 0 ? unsentLine(d.ticket) : ''}
               ${(d.notices ?? []).filter((n) => n.message_id === m.id || (n.message_id === null && index === 0)).map(bounceLine)}
               <ul>
                 ${d.attachments.filter((a) => a.message_id === m.id).map((a) => attachmentLine(a, order.indexOf(a) + 1))}

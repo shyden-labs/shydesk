@@ -68,6 +68,7 @@ describe('tables', () => {
       'token_sealed',
       'text_deleted_at',
       'test_origin',
+      'first_notice_unsent',
     ]);
   });
   it('messages', async () => {

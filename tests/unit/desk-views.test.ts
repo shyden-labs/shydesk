@@ -21,6 +21,7 @@ const ticket: DeskTicket = {
   text_deleted_at: null,
   test_origin: null,
   last_notice_bounced: 0,
+  first_notice_unsent: null,
 };
 
 const list = (over: Partial<ListData> = {}): ListData => ({
@@ -510,6 +511,22 @@ describe('bounced notices', () => {
     const [, second] = await articles([bounced({ bounce_reason: '<script>x</script>' })]);
     expect(second).toContain('&lt;script&gt;x&lt;/script&gt;');
     expect(second).not.toContain('<script>');
+  });
+
+  // shyden-labs/shydesk#274 AC1: a new ticket's first email that did not go is never silent on the desk.
+  it.each([
+    ['share-used-up', 'The first email for this ticket was not sent: this product&#39;s monthly email share is used up.'],
+    ['failed', 'The first email for this ticket was not sent: sending it failed. Workers Logs name the cause.'],
+  ] as const)('says under the first message why the first email was not sent (%s)', async (why, said) => {
+    const [first, second] = (await render(ticketPage(view({ ticket: { ...ticket, first_notice_unsent: why }, messages }))))
+      .split('<article>')
+      .slice(1);
+    expect(first).toContain(`<p role="alert">${said}</p>`);
+    expect(second).not.toContain('was not sent');
+  });
+
+  it('says nothing about the first email once it was sent', async () => {
+    expect(await render(ticketPage(view({ messages })))).not.toContain('was not sent');
   });
 
   it('shows nothing when no notice bounced', async () => {
