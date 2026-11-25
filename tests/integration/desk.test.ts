@@ -85,6 +85,23 @@ describe('getTicket', () => {
     expect(await getTicket(db, asRep(['desk-a']), 'd-theirs')).toBeNull();
     expect(await getTicket(db, asRep([]), 'd-theirs')).toBeNull();
   });
+
+  // shyden-labs/shydesk#271 AC1: an attachment's size on the desk leaves out its thumbnail.
+  it("reads each attachment's own file size, without its thumbnail", async () => {
+    await db
+      .prepare(
+        "INSERT INTO messages (id, ticket_id, author, staff_email, body, created_at) VALUES ('d-msg-size', 'd-closed', 'customer', NULL, 'Hi', 1000)",
+      )
+      .run();
+    await db
+      .prepare(
+        `INSERT INTO attachments (id, product_id, ticket_id, message_id, r2_key, thumb_key, mime, bytes, thumb_bytes, state, created_at)
+         VALUES ('d-att-size', 'desk-a', 'd-closed', 'd-msg-size', 'key-d-att-size', 'thumb-d-att-size', 'image/jpeg', 21046, 7183, 'stored', 1000)`,
+      )
+      .run();
+    const found = await getTicket(db, asRep(['desk-a']), 'd-closed');
+    expect(found?.attachments.map((a) => ({ id: a.id, file_bytes: a.file_bytes }))).toEqual([{ id: 'd-att-size', file_bytes: 13_863 }]);
+  });
 });
 
 describe('getFile', () => {

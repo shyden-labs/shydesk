@@ -1,7 +1,7 @@
 // One row type per table in migrations/0001_release_1.sql (shyden-labs/shydesk#15) and
 // migrations/0004_release_2.sql (shyden-labs/shydesk#57), with the columns that
 // 0002_upload_received_bytes.sql, 0003_ticket_token_sealed.sql, 0005_ticket_text_deleted.sql, 0007_test_sites.sql and
-// 0008_first_notice_unsent.sql add.
+// 0008_first_notice_unsent.sql and 0009_attachment_thumb_bytes.sql add.
 // Times are Unix epoch milliseconds; *_json columns hold JSON text.
 import type { NoticeUnsent } from '../mail/notify.ts';
 
@@ -100,6 +100,8 @@ export interface AttachmentRow {
   deleted_at: number | null;
   // migrations/0002_upload_received_bytes.sql: bytes a pending upload has sent so far.
   received_bytes: number;
+  // migrations/0009_attachment_thumb_bytes.sql: the thumbnail's own size, 0 until one is stored (shyden-labs/shydesk#271).
+  thumb_bytes: number;
 }
 
 export interface CannedReplyRow {

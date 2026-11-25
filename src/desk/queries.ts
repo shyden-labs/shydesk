@@ -60,7 +60,8 @@ export interface DeskAttachment {
   id: string;
   message_id: string;
   mime: string;
-  bytes: number;
+  /** The customer's file alone, without its thumbnail (shyden-labs/shydesk#271). */
+  file_bytes: number;
   duration_ms: number | null;
   state: string;
   /** 1 while a live csam hold covers it: never shown nor served (shyden-labs/shydesk#62). */
@@ -135,7 +136,7 @@ export async function getTicket(
     .all<DeskMessage>();
   const { results: attachments } = await db
     .prepare(
-      `SELECT a.id, a.message_id, a.mime, a.bytes, a.duration_ms, a.state, CASE WHEN ${NOT_WITHHELD} THEN 0 ELSE 1 END AS withheld
+      `SELECT a.id, a.message_id, a.mime, a.bytes - a.thumb_bytes AS file_bytes, a.duration_ms, a.state, CASE WHEN ${NOT_WITHHELD} THEN 0 ELSE 1 END AS withheld
        FROM attachments a WHERE a.ticket_id = ? AND a.message_id IS NOT NULL AND a.state IN ('stored', 'deleted')`,
     )
     .bind(id)
