@@ -137,6 +137,12 @@ test.describe('the contact form', () => {
             const moov = b.indexOf('moov', 0, 'latin1') - 4;
             if (moov >= 0)
               console.log(`[188 ${test.info().project.name}] moov ${b.subarray(moov, moov + b.readUInt32BE(moov)).toString('base64')}`);
+            // The whole stored file, WebKit's only, in numbered base64 lines, so it can be rebuilt and probed offline.
+            if (test.info().project.name === 'webkit') {
+              const all = b.toString('base64');
+              for (let i = 0; i * 60_000 < all.length; i++)
+                console.log(`[188 webkit] file ${String(i)} ${all.slice(i * 60_000, (i + 1) * 60_000)}`);
+            }
             console.log(
               `[188 ${test.info().project.name}] stored ${String(b.length)} bytes boxes=${boxes.join(',')} codecs=${codecs.join(',')} avc-profile-compat-level=${profile}`,
             );
