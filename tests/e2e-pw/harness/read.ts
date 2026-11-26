@@ -16,7 +16,7 @@ function named(page: Page, label: string): Locator {
  * The text of the element named `label` once it holds `expected`, or a failure naming the
  * text it last held (keeps shyden-labs/shydesk#294's behaviour).
  */
-export async function textHolding(page: Page, label: string, expected: string): Promise<string> {
+export async function textHolding(page: Page, label: string, expected: string, timeout = JOURNEY_WAIT): Promise<string> {
   const element = named(page, label);
   let text = '';
   await expect
@@ -25,7 +25,7 @@ export async function textHolding(page: Page, label: string, expected: string): 
         text = (await element.innerText()).trim();
         return text.includes(expected);
       },
-      { timeout: JOURNEY_WAIT, message: `"${label}" never held "${expected}"` },
+      { timeout, message: `"${label}" never held "${expected}"` },
     )
     .toBe(true)
     .catch((error: unknown) => {
