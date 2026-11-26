@@ -47,35 +47,7 @@ test.describe('the contact form', () => {
     test.setTimeout(300_000);
     // Each browser's ticket is its own: they share one local database, and the desk opens a ticket by its subject.
     const subject = `The app will not open ${String(Date.now())}`;
-    // DIAGNOSTIC (shyden-labs/shydesk#188), removed before merge: what the browser uploads, and what it says.
-    page.on('console', (m) => {
-      if (m.type() === 'error' || m.type() === 'warning')
-        console.log(`[188 ${test.info().project.name}] console.${m.type()} ${m.text().slice(0, 300)} at ${m.location().url}`);
-    });
-    page.on('response', (r) => {
-      if (r.status() < 400) return;
-      void r.text().then(
-        (t) => {
-          console.log(
-            `[188 ${test.info().project.name}] answer ${String(r.status())} ${r.request().method()} ${r.url()} body=${t.slice(0, 200)}`,
-          );
-        },
-        () => {
-          console.log(`[188 ${test.info().project.name}] answer ${String(r.status())} ${r.request().method()} ${r.url()} body unreadable`);
-        },
-      );
-    });
-    page.on('pageerror', (e) => {
-      console.log(`[188 ${test.info().project.name}] pageerror ${e.message.slice(0, 300)}`);
-    });
-    page.on('request', (r) => {
-      if (r.method() !== 'GET' && r.url().includes('/files'))
-        console.log(`[188 ${test.info().project.name}] upload ${r.method()} ${r.url()} bytes=${String(r.postDataBuffer()?.length ?? -1)}`);
-    });
     await page.goto('/contact.html?product=demo');
-    console.log(
-      `[188 ${test.info().project.name}] encoder ${await page.evaluate(() => `VideoEncoder=${typeof VideoEncoder} VideoDecoder=${typeof VideoDecoder} mp4canplay=${document.createElement('video').canPlayType('video/mp4; codecs="avc1.640028"')}`)}`,
-    );
     // Every control on the form takes a fingertip (shyden-labs/shydesk#256).
     await touchSized(page, ['Email', 'Subject', 'Category', 'Message', 'Device', 'Photos and videos', 'Send']);
     await type(page, 'Email', 'e2e');
@@ -117,50 +89,6 @@ test.describe('the contact form', () => {
     await everyPartReadable(page);
 
     // The private link opens the conversation, and a reply typed there joins it (shyden-labs/shydesk#23).
-    // DIAGNOSTIC (shyden-labs/shydesk#188), removed before merge: how the video's bytes reach the browser.
-    page.on('response', (r) => {
-      const h = r.headers();
-      if (!(h['content-type'] ?? '').startsWith('video/')) return;
-      if (!r.url().startsWith('blob:')) {
-        void r.body().then(
-          (b) => {
-            const boxes: string[] = [];
-            for (let at = 0; at + 8 <= b.length && boxes.length < 12;) {
-              const size = b.readUInt32BE(at);
-              boxes.push(`${b.toString('latin1', at + 4, at + 8)}:${String(size)}`);
-              if (size < 8) break;
-              at += size;
-            }
-            const codecs = ['avc1', 'avcC', 'hvc1', 'hev1', 'vp09', 'av01', 'mp4a', 'Opus'].filter((c) => b.includes(c, 0, 'latin1'));
-            const at = b.indexOf('avcC', 0, 'latin1');
-            const profile = at < 0 ? '-' : b.subarray(at + 5, at + 8).toString('hex');
-            const moov = b.indexOf('moov', 0, 'latin1') - 4;
-            if (moov >= 0)
-              console.log(`[188 ${test.info().project.name}] moov ${b.subarray(moov, moov + b.readUInt32BE(moov)).toString('base64')}`);
-            // The whole stored file, WebKit's only, in numbered base64 lines, so it can be rebuilt and probed offline.
-            if (test.info().project.name === 'webkit') {
-              const all = b.toString('base64');
-              for (let i = 0; i * 60_000 < all.length; i++)
-                console.log(`[188 webkit] file ${String(i)} ${all.slice(i * 60_000, (i + 1) * 60_000)}`);
-            }
-            console.log(
-              `[188 ${test.info().project.name}] stored ${String(b.length)} bytes boxes=${boxes.join(',')} codecs=${codecs.join(',')} avc-profile-compat-level=${profile}`,
-            );
-          },
-          (e: unknown) => {
-            console.log(`[188 ${test.info().project.name}] stored body unreadable ${String(e)}`);
-          },
-        );
-      }
-      console.log(
-        `[188 ${test.info().project.name}] ${String(r.status())} ${r.url()} req-range=${r.request().headers()['range'] ?? '-'} len=${h['content-length'] ?? '-'} cr=${h['content-range'] ?? '-'} ar=${h['accept-ranges'] ?? '-'} te=${h['transfer-encoding'] ?? '-'}`,
-      );
-    });
-    page.on('requestfailed', (r) => {
-      console.log(
-        `[188 ${test.info().project.name}] FAILED ${r.url()} ${r.failure()?.errorText ?? '-'} req-range=${r.headers()['range'] ?? '-'}`,
-      );
-    });
     await page.goto(link);
     await textHolding(page, 'Conversation', 'It closes as soon as it starts.');
     await touchSized(page, ['Reply', 'Photos and videos', 'Send reply']);
