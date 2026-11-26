@@ -57,6 +57,11 @@
         // hour after creation (Shyden 2026-11-22, shyden-labs/shydesk#254). Live sets neither.
         "TEST_TICKET_PRODUCT": "shyden-co-uk",
         "TEST_TICKET_EMAIL": "support-test+*@shyden.co.uk",
+        // The DEV door (shyden-labs/shydesk#302): only a DEV pass from dev-signin.shyden.co.uk, signed with
+        // this public key and naming this host, gets past /health and the embed scripts. Live sets none.
+        "DEV_PASS_HOST": "shydesk.shydesk-non-prod.workers.dev",
+        "DEV_PASS_KEYS": "{\"2026-11\":\"OBLprb_S4Kn2C--HFVaeA3_s6gEsApDiRAWPLc6WsK8\"}",
+        "DEV_PASS_EMBED_ORIGINS": "[\"https://dev.yaweloidle.com\",\"https://dev.shytalk.app\",\"https://dev.shyden.co.uk\"]",
       },
     },
   },
