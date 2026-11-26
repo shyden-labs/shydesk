@@ -13,7 +13,7 @@ import { JOURNEY_WAIT as WAIT, named } from './harness/find.ts';
 import { textHolding } from './harness/text.ts';
 import { openPage } from './harness/open-page.ts';
 import { touchSized } from './harness/touch.ts';
-import { readable } from './harness/contrast.ts';
+import { everyPartReadable, readable } from './harness/contrast.ts';
 import { clickMiddleOf, pickFile, press, pressVideoControl, swipeLeft, tap, tapToNewPage, type, zoomIn } from './harness/input.ts';
 import { ownControlsPoints, type Box } from './harness/targets.ts';
 import { SEEDED_TICKET_TOKEN, SHYDESK_PORT } from './harness/local-shydesk.ts';
@@ -131,6 +131,8 @@ describe('the contact form', () => {
       timeoutMsg: 'the check never handed over a new token',
     });
     await textHolding('Support status', 'Check the fields marked below.', 5_000);
+    // Every label, status, error, button and field border reads on the light page (shyden-labs/shydesk#299).
+    await everyPartReadable();
     await type('Email', '@example.com');
     await textHolding('Support status', 'Ready to send');
     // Too long is refused before any upload; then a video and a photo go straight to ShyDesk.
@@ -151,6 +153,8 @@ describe('the contact form', () => {
     await textHolding('Support status', 'The email could not be sent. Keep this link to follow the request.');
     const link = await textHolding('Private link', '#t=');
     assert.match(link, /\/support\/ticket#t=[A-Za-z0-9_-]{43}$/);
+    // The private link and the status beside it read on the light page too (shyden-labs/shydesk#299).
+    await everyPartReadable();
 
     // The private link opens the conversation, and a reply typed there joins it (shyden-labs/shydesk#23).
     await openPage(link);
@@ -304,14 +308,31 @@ describe('the contact form', () => {
     await textHolding('TEST ticket', `From the TEST site ${new URL(link).origin}. Live tickets come first.`);
   });
 
-  it("keeps typed text and the category arrow readable on a product's dark page", async () => {
+  it("keeps every word and control readable on a product's dark page", async () => {
     // The page sets only a dark product's theme (light text, dark form), as ShyTalk's does (shyden-labs/shydesk#282).
     await openPage('/dark.html?product=demo');
-    await type('Email', 'dark-page@example.com');
-    await type('Subject', 'Can I read this?');
+    await type('Email', 'dark-page');
+    await type('Subject', `Can I read this? ${String(Date.now())}`);
     await type('Message', 'Every letter should show on the field.');
     await type('Device', 'Test phone');
     await readable(['Email', 'Subject', 'Category', 'Message', 'Device']);
+    // A refused send shows its error lines; each word, button and field border reads on the dark form (shyden-labs/shydesk#299).
+    await textHolding('Support status', 'Ready to send');
+    await tap('Send');
+    await textHolding('Support status', 'Check the fields marked below.');
+    const send = await named('Send');
+    await driver().waitUntil(async () => (await send.getProperty('disabled')) === false, {
+      timeout: WAIT,
+      timeoutMsg: 'the check never handed over a new token',
+    });
+    await everyPartReadable();
+    // Then sent: the private link and its status read on the dark form too.
+    await type('Email', '@example.com');
+    await textHolding('Support status', 'Ready to send');
+    await tap('Send');
+    await textHolding('Support status', 'The email could not be sent. Keep this link to follow the request.');
+    await textHolding('Private link', '#t=');
+    await everyPartReadable();
   });
 
   it('cannot load on a page whose origin the product does not allow', async () => {
