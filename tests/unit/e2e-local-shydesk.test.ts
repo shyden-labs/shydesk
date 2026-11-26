@@ -11,6 +11,7 @@ import {
   SEEDED_TICKET_TOKEN,
   seededAppealToken,
 } from '../../tests/e2e/harness/local-shydesk.ts';
+import { desktopProjects } from '@shyden-labs/playwright-devices/desktop';
 import { TARGETS } from '../../tests/e2e/harness/targets.ts';
 
 // The e2e suite runs this branch's ShyDesk locally (shyden-labs/shydesk#19):
@@ -54,6 +55,18 @@ describe('seedSql', () => {
     }
     expect(sql).not.toContain('INSERT INTO appeals');
     expect(sql).not.toMatch(/lifted_at/);
+  });
+
+  // shyden-labs/shydesk#176: the Playwright suite's browsers each appeal their own punishment too.
+  it('seeds one unappealed punishment per Playwright desktop browser, found by its appeal token alone', async () => {
+    for (const browser of desktopProjects().map((project) => project.name ?? '')) {
+      const token = seededAppealToken(browser);
+      expect(token).toBe(`e2e-appeal-${browser}`);
+      expect(sql.match(new RegExp(`'seeded-ban-${browser}'`, 'g'))).toHaveLength(1);
+      expect(sql).toMatch(
+        new RegExp(`INSERT INTO punishments[^;]*'seeded-ban-${browser}', 'demo', 'seeded-report'[^;]*'${await hashKey(token)}'`),
+      );
+    }
   });
 
   it('allows the demo product only on the suite origin, with its ticket page there', () => {

@@ -7,7 +7,8 @@
  * served with its piece pointed at this ShyDesk.
  */
 import { createHash } from 'node:crypto';
-import { TARGETS, type Target } from './targets.ts';
+import { desktopProjects } from '@shyden-labs/playwright-devices/desktop';
+import { TARGETS } from './targets.ts';
 
 /** The ShyDesk the demo page loads the piece from when deployed. */
 export const NON_PROD_SHYDESK = 'https://shydesk.shydesk-non-prod.workers.dev';
@@ -40,7 +41,10 @@ export function shydeskOrigin(suiteOrigin: string): string {
 /** The ban notice token of the seeded punishment `target` appeals (shyden-labs/shydesk#61): one each, as all share one ShyDesk. */
 const sha256 = (text: string): string => createHash('sha256').update(text).digest('hex');
 
-export const seededAppealToken = (target: Target): string => `e2e-appeal-${target}`;
+export const seededAppealToken = (target: string): string => `e2e-appeal-${target}`;
+
+/** Every target that appeals: the WebdriverIO targets and the Playwright browsers (shyden-labs/shydesk#176), once each. */
+const APPEALING = [...new Set<string>([...TARGETS, ...desktopProjects().map((project) => project.name ?? '')])];
 
 /** The seed for the local D1, after the migrations; the demo product is also allowed on `otherOrigins`. */
 export function seedSql(suiteOrigin: string, otherOrigins: readonly string[] = []): string {
@@ -64,7 +68,7 @@ export function seedSql(suiteOrigin: string, otherOrigins: readonly string[] = [
     `INSERT INTO attachments (id, product_id, ticket_id, message_id, r2_key, thumb_key, mime, bytes, state, created_at) VALUES ('seeded-photo', 'demo', 'seeded', 'seeded-message', 'gone', 'gone-thumb', 'image/jpeg', 1, 'deleted', 0);`,
     `INSERT INTO ticket_types (id, product_id, kind, name, fields_json, reasons_json, enabled) VALUES ('demo:report', 'demo', 'report', 'Report', '[]', '["Cheating"]', 1);`,
     `INSERT INTO tickets (id, product_id, type_id, status, customer_email, subject, category, fields_json, token_hash, created_at, updated_at, seq) VALUES ('seeded-report', 'demo', 'demo:report', 'closed', '', 'Cheating: player p-2', 'Cheating', '{}', '${sha256('e2e-unused-report-token')}', 0, 0, 0);`,
-    ...TARGETS.map(
+    ...APPEALING.map(
       (target) =>
         `INSERT INTO punishments (id, product_id, report_ticket_id, subject_user_id, punishment_key, label, duration_seconds, applied_by, created_at, send_state, appeal_token_hash) VALUES ('seeded-ban-${target}', 'demo', 'seeded-report', 'p-2', 'ban-7d', 'Ban 7 days', 604800, '${E2E_REP}', 0, 'applied', '${sha256(seededAppealToken(target))}');`,
     ),
