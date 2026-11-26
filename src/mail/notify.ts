@@ -86,6 +86,15 @@ function senderLogin(logins: string | undefined, sender: string): { login: SmtpL
 }
 
 /** Tells the customer at `to` that their ticket has something new, linking to its private page. */
+/**
+ * `text` with each copy of the customer's address, in any letter case, replaced. A mail server's refusal
+ * often quotes the address, and the logs keep no personal data (shyden-labs/shydesk#306).
+ */
+function withoutAddress(text: string, address: string): string {
+  const literal = address.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
+  return text.replaceAll(new RegExp(literal, 'gi'), '[recipient]');
+}
+
 export async function sendNoReply(
   env: MailEnv,
   product: Product,
@@ -120,7 +129,7 @@ export async function sendNoReply(
     await deliver(login, mail, host ?? env.SMTP_HOST);
     return 'sent';
   } catch (error) {
-    console.error(`mail for ${product.id} failed: ${(error as Error).message}`);
+    console.error(`mail for ${product.id} failed: ${withoutAddress((error as Error).message, to)}`);
     if (noticeId !== null) await env.DB.prepare(DELETE_NOTICE).bind(noticeId).run();
     await env.DB.prepare(GIVE_BACK).bind(shareKey(product, now)).run();
     return unsent(env.DB, about, 'failed');
