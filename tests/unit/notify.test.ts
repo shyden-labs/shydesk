@@ -182,6 +182,13 @@ describe('a failure', () => {
   it.each([
     ['a refused SMTP step', new SmtpError('rcpt', '550 no such user'), 'mail for shytalk failed: SMTP rcpt failed: 550 no such user'],
     ['a connection that cannot open', new Error('connect timed out'), 'mail for shytalk failed: connect timed out'],
+    // The logs keep no personal data: the customer's address is replaced in any letter case (shyden-labs/shydesk#306).
+    [
+      'a refusal that quotes the address',
+      new SmtpError('rcpt', '550 5.1.1 <Pat@Example.com>: user unknown, pat@example.com'),
+      'mail for shytalk failed: SMTP rcpt failed: 550 5.1.1 <[recipient]>: user unknown, [recipient]',
+    ],
+    ['any error that quotes the address', new Error('no route to pat@example.com'), 'mail for shytalk failed: no route to [recipient]'],
   ])('on %s returns failed, names it, and delivers once', async (_case, thrown, message) => {
     const error = logged();
     const { env, statements, deliver } = world({ shareLeft: true });
@@ -191,6 +198,15 @@ describe('a failure', () => {
     expect(error.mock.calls).toEqual([[message]]);
     expect(statements.map(({ sql, values }) => ({ sql, values }))).toEqual([COUNT, GIVE_BACK]);
   });
+});
+
+// An address holding a regular-expression character is matched as plain text (shyden-labs/shydesk#306).
+it('keeps an address holding + out of the failure log', async () => {
+  const error = logged();
+  const { env, deliver } = world({ shareLeft: true });
+  deliver.mockRejectedValueOnce(new SmtpError('rcpt', '550 <pat+tag@example.com> refused'));
+  await expect(sendNoReply(env, shytalk(), 'pat+tag@example.com', LINK, deliver, NOW, ABOUT)).resolves.toBe('failed');
+  expect(error.mock.calls).toEqual([['mail for shytalk failed: SMTP rcpt failed: 550 <[recipient]> refused']]);
 });
 
 // Each notice is written down and sent from its own bounce address, so a bounce finds its ticket (shyden-labs/shydesk#232).
