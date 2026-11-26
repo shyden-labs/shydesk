@@ -40,6 +40,7 @@ an exclusion with no reason here (shyden-labs/shydesk#195).
 - `vitest.unit.config.ts`: settings for the unit suite's runner, proven by the suite running.
 - `vitest.integration.config.ts`: settings for the integration suite's runner, which runs in CI only.
 - `wdio.conf.ts`: WebdriverIO settings for the desktop and device journeys, which run in CI and on phones only.
+- `playwright.config.ts`: Playwright settings for the desktop journeys through shyden-labs/playwright-devices, which run in CI only (shyden-labs/shydesk#176).
 
 ## One-time setup for a new repository
 

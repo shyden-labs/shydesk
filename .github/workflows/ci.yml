@@ -142,6 +142,38 @@ jobs:
           E2E_TARGETS: chromium,firefox,safari
         run: npm run test:e2e
 
+  # The e2e suite on Playwright through the shared device layer, on every desktop browser it gives
+  # (shyden-labs/shydesk#176). It runs beside e2e-desktop until every test is ported, then replaces it.
+  e2e-playwright:
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # The exact Node, from the one file Dependabot bumps (shyden-labs/repo-template#143).
+      - id: node
+        run: |
+          version=$(sed -nE 's/^FROM node:([0-9]+\.[0-9]+\.[0-9]+)$/\1/p' docker/node/Dockerfile)
+          test -n "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ steps.node.outputs.version }}
+          cache: 'npm'
+      - run: node scripts/npm-ci.ts
+      # Each browser shyden-labs/playwright-devices names, installed for the Playwright in the lockfile;
+      # a channel that cannot install fails here by name.
+      - name: Install the desktop browsers
+        run: ./node_modules/.bin/playwright install --with-deps chromium chrome firefox webkit msedge
+      # The test list each browser should run, read before the run so a browser that runs fewer is named (shyden-labs/shydesk#176).
+      # It lives outside .e2e-runs, which the suite's global setup empties when the run starts.
+      - name: List the tests each desktop browser runs
+        run: ./node_modules/.bin/playwright test --config playwright.config.ts --list --reporter=json > "$RUNNER_TEMP/playwright-list.json"
+      - name: End-to-end suite on every desktop browser
+        run: npm run test:e2e:pw
+      # Checked even after a red run; this step's own exit fails the job on any difference between browsers.
+      - name: Every desktop browser ran the same tests and assertions
+        if: always()
+        run: ./node_modules/.bin/one-suite --group desktop=chromium,chrome,firefox,webkit,msedge --list "$RUNNER_TEMP/playwright-list.json" --report .e2e-runs/playwright-report.json --assertions .e2e-runs/assertions.json
+
   # The SonarCloud quality gate, blocking (shyden-labs/repo-template#27, shyden-labs/repo-template#60): the reusable workflow
   # scans, then fails unless this scan's gate is OK (docs/sonarcloud.md).
   sonarcloud:
