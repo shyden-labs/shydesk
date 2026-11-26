@@ -62,7 +62,7 @@ test.describe('the contact form', () => {
     await tap(page, 'Send');
     await textHolding(page, 'Support status', 'Check the fields marked below.');
     await sendEnabled(page, 'Send');
-    await textHolding(page, 'Support status', 'Check the fields marked below.');
+    await textHolding(page, 'Support status', 'Check the fields marked below.', 5_000);
     // Every label, status, error, button and field border reads on the light page (shyden-labs/shydesk#299).
     await everyPartReadable(page);
     await type(page, 'Email', '@example.com');

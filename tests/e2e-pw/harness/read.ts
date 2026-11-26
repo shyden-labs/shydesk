@@ -3,6 +3,7 @@
  * accessible name a person would read, and the touch size of controls.
  */
 import { expect, type Locator, type Page } from '@playwright/test';
+import { named as anyNamed } from './input.ts';
 
 /** How long a journey waits for a page to show what it should, as the WebdriverIO suite does. */
 export const JOURNEY_WAIT = 20_000;
@@ -41,9 +42,11 @@ export async function textHolding(page: Page, label: string, expected: string, t
 export async function touchSized(page: Page, labels: readonly string[]): Promise<void> {
   const small: string[] = [];
   for (const label of labels) {
-    const field = page.getByLabel(label, { exact: true });
-    const control = (await field.count()) > 0 ? field : page.getByRole('button', { name: label, exact: true });
-    const box = await control.boundingBox();
+    const box = await anyNamed(page, label)
+      .boundingBox({ timeout: JOURNEY_WAIT })
+      .catch((error: unknown) => {
+        throw new Error(`"${label}" never appeared`, { cause: error });
+      });
     if (box === null) small.push(`"${label}" not drawn`);
     else if (box.width < 44 || box.height < 44) small.push(`"${label}" ${String(box.width)}×${String(box.height)}`);
   }
