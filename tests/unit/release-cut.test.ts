@@ -528,7 +528,12 @@ describe('check-release-cut.yml', () => {
         '          test -n "$version"',
         '          echo "version=$version" >> "$GITHUB_OUTPUT"',
       ].join('\n'),
-      ['      - uses: actions/setup-node@<sha>', '        with:', '          node-version: ${{ steps.node.outputs.version }}'].join('\n'),
+      [
+        '      - uses: actions/setup-node@<sha>',
+        '        timeout-minutes: 5',
+        '        with:',
+        '          node-version: ${{ steps.node.outputs.version }}',
+      ].join('\n'),
     ]);
   });
 
@@ -584,7 +589,8 @@ describe('check-release-cut.yml', () => {
     const pins = (file: string) =>
       usesLines(readFileSync(`.github/workflows/${file}`, 'utf8')).filter((line) => !line.startsWith('uses: ./'));
     // ci.yml runs several jobs, each pinning the same actions: compare the distinct
-    // pins. A local reusable workflow (./.github/...) is in this repo, so has no pin.
-    expect(pins('check-release-cut.yml')).toEqual([...new Set(pins('ci.yml'))]);
+    // pins. A local reusable workflow (./.github/...) is in this repo, so has no pin. The cache is
+    // left out: this job holds a write permission, so it restores nothing (shyden-labs/shydesk#305).
+    expect(pins('check-release-cut.yml')).toEqual([...new Set(pins('ci.yml'))].filter((line) => !line.startsWith('uses: actions/cache@')));
   });
 });

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { withoutYamlComments, withoutYamlQuotes } from './source-text.ts';
+import { withoutPinnedShas, withoutYamlComments, withoutYamlQuotes } from './source-text.ts';
 import { leaks, parseGroups } from './dependabot-groups.ts';
 
 /**
@@ -121,7 +121,7 @@ const splitPins = (uses: Use[]) => {
 describe('the CI supply chain is pinned', () => {
   it('pins each action at one SHA in every workflow, judged over every pinned use', () => {
     const uses = externalUses();
-    expect({ pinned: uses.length, split: splitPins(uses) }).toEqual({ pinned: 19, split: [] });
+    expect({ pinned: uses.length, split: splitPins(uses) }).toEqual({ pinned: 24, split: [] });
   });
 
   it('names an action whose bump reached one workflow and missed another', () => {
@@ -293,13 +293,23 @@ const READ_STEP = [
   '    test -n "$version"',
   '    echo "version=$version" >> "$GITHUB_OUTPUT"',
 ];
+/** Node's download cache, the one step allowed between the read and setup-node (shyden-labs/shydesk#305). */
+const NODE_CACHE_STEP = [
+  /^- uses: actions\/cache@<sha>$/,
+  /^ {2}timeout-minutes: 5$/,
+  /^ {2}with:$/,
+  /^ {4}path: \$\{\{ runner\.tool_cache \}\}\/node\/\$\{\{ steps\.node\.outputs\.version \}\}$/,
+  /^ {4}key: node-\$\{\{ steps\.node\.outputs\.version \}\}-\$\{\{ runner\.os \}\}-\$\{\{ runner\.arch \}\}$/,
+];
+const isNodeCache = (step: string[]) =>
+  step.length === NODE_CACHE_STEP.length && NODE_CACHE_STEP.every((re, i) => re.test(step[i] as string));
 const TAKES_THE_READ = /^\s+node-version:\s*\$\{\{\s*steps\.node\.outputs\.version\s*\}\}\s*$/;
 
 /**
  * Every `actions/setup-node` step in one workflow, named with what is wrong:
  * it must take `node-version` from the read step, read no version file, and
- * come right after the read step, written exactly, or that workflow runs a
- * Node of its own choosing. A step runs from its `- ` line to the next line
+ * come right after the read step, written exactly, with at most Node's own
+ * download cache between them, or that workflow runs a Node of its own choosing. A step runs from its `- ` line to the next line
  * indented no deeper, so a later step's key is never credited to it.
  */
 const setupNodeSteps = (file: string, source: string): { where: string; wrong: string[] }[] => {
@@ -314,12 +324,17 @@ const setupNodeSteps = (file: string, source: string): { where: string; wrong: s
     let end = start + 1;
     while (end < lines.length && (lines[end] as string).trim() !== '' && indent(lines[end] as string) > dash) end++;
     const step = lines.slice(start, end);
-    let before = start - 1;
-    while (before > 0 && !((raw[before] as string).trimStart().startsWith('- ') && indent(raw[before] as string) === dash)) before--;
-    const previous = raw
-      .slice(before, start)
-      .filter((l) => l.trim() !== '')
-      .map((l) => l.slice(dash));
+    const stepBefore = (at: number): { from: number; text: string[] } => {
+      let from = at - 1;
+      while (from > 0 && !((raw[from] as string).trimStart().startsWith('- ') && indent(raw[from] as string) === dash)) from--;
+      const text = raw
+        .slice(from, at)
+        .filter((l) => l.trim() !== '')
+        .map((l) => withoutPinnedShas(l.slice(dash)));
+      return { from, text };
+    };
+    const next = stepBefore(start);
+    const previous = isNodeCache(next.text) ? stepBefore(next.from).text : next.text;
     const wrong = [
       ...(step.some((l) => TAKES_THE_READ.test(l)) ? [] : ["does not take the read step's version"]),
       ...(step.some((l) => /^\s+node-version-file:/.test(l)) ? ['reads a version file'] : []),
@@ -383,6 +398,13 @@ describe('the template runs one Node and one runner, pinned exactly', () => {
   const steps = (...lines: string[]) => ['    steps:', ...lines, ''].join('\n');
   const READ = READ_STEP.map((line) => `      ${line}`);
   const SETUP = [`      - uses: actions/setup-node@${SHA}`, '        with:', '          node-version: ${{ steps.node.outputs.version }}'];
+  const NODE_CACHE_PLANT = [
+    `      - uses: actions/cache@${SHA}`,
+    '        timeout-minutes: 5',
+    '        with:',
+    '          path: ${{ runner.tool_cache }}/node/${{ steps.node.outputs.version }}',
+    '          key: node-${{ steps.node.outputs.version }}-${{ runner.os }}-${{ runner.arch }}',
+  ];
   const wrongIn = (text: string) => setupNodeSteps('ci.yml', text).map(({ wrong }) => wrong);
 
   it.each([
@@ -408,6 +430,17 @@ describe('the template runs one Node and one runner, pinned exactly', () => {
       [['does not follow the read step']],
     ],
     ['has a step between the read and itself', steps(...READ, '      - run: true', ...SETUP), [['does not follow the read step']]],
+    [
+      'has another cache between the read and itself',
+      steps(...READ, ...NODE_CACHE_PLANT.map((l) => l.replace('key: node-', 'key: other-node-')), ...SETUP),
+      [['does not follow the read step']],
+    ],
+    ["has Node's cache between the read and itself", steps(...READ, ...NODE_CACHE_PLANT, ...SETUP), [[]]],
+    [
+      "has Node's cache and another step between",
+      steps(...READ, '      - run: true', ...NODE_CACHE_PLANT, ...SETUP),
+      [['does not follow the read step']],
+    ],
     [
       'has no with: at all',
       steps(...READ, `      - uses: actions/setup-node@${SHA}`, '      - run: npm ci'),
