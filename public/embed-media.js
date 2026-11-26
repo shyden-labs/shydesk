@@ -143,6 +143,12 @@ export async function shrinkImage(file) {
 /** @typedef {new (data: unknown, init: { timestamp: number, duration: number, rotation: number, flip: boolean }) => unknown} VideoSampleClass */
 
 /**
+ * A request to ShyDesk, as the piece's own caller takes it (shyden-labs/shydesk#302): headers as a
+ * plain record, so the caller can add the DEV pass to them.
+ * @typedef {Omit<RequestInit, 'headers'> & { headers?: Record<string, string> }} ShyDeskInit
+ */
+
+/**
  * @typedef {{ fillStyle: string | CanvasGradient | CanvasPattern, fillRect(x: number, y: number, w: number, h: number): void }} DrawingContext
  * @typedef {(w: number, h: number) => { canvas: unknown, context: DrawingContext } | null} CanvasMaker
  */
@@ -355,13 +361,13 @@ async function answerOf(response) {
 
 /**
  * Sends one file straight to ShyDesk, one part at a time.
- * @param {{ host: string, product: string, file: Blob, kind: string, mime: string, thumbnail: Blob | null, fetcher?: typeof fetch, onProgress?: (done: number) => void }} upload
+ * @param {{ host: string, product: string, file: Blob, kind: string, mime: string, thumbnail: Blob | null, fetcher?: (url: string, init?: ShyDeskInit) => Promise<Response>, onProgress?: (done: number) => void }} upload
  * @returns {Promise<{ id: string, bytes: number }>}
  */
 export async function uploadAttachment({ host, product, file, kind, mime, thumbnail, fetcher = fetch, onProgress }) {
   const url = (/** @type {string} */ path) => `${host}/support-api/uploads${path}?product=${encodeURIComponent(product)}`;
   /** A request that cannot connect throws the browser's own words, which mean nothing to a customer. */
-  const ask = async (/** @type {string} */ address, /** @type {RequestInit} */ init) => {
+  const ask = async (/** @type {string} */ address, /** @type {ShyDeskInit} */ init) => {
     try {
       return await fetcher(address, init);
     } catch {
