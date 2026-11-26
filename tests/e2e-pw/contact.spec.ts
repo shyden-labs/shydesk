@@ -89,6 +89,17 @@ test.describe('the contact form', () => {
     await everyPartReadable(page);
 
     // The private link opens the conversation, and a reply typed there joins it (shyden-labs/shydesk#23).
+    // DIAGNOSTIC (shyden-labs/shydesk#188), removed before merge: how the video's bytes reach the browser.
+    page.on('response', (r) => {
+      const h = r.headers();
+      if (!(h['content-type'] ?? '').startsWith('video/')) return;
+      console.log(
+        `[188] ${String(r.status())} ${r.url()} req-range=${r.request().headers()['range'] ?? '-'} len=${h['content-length'] ?? '-'} cr=${h['content-range'] ?? '-'} ar=${h['accept-ranges'] ?? '-'} te=${h['transfer-encoding'] ?? '-'}`,
+      );
+    });
+    page.on('requestfailed', (r) => {
+      console.log(`[188] FAILED ${r.url()} ${r.failure()?.errorText ?? '-'} req-range=${r.headers()['range'] ?? '-'}`);
+    });
     await page.goto(link);
     await textHolding(page, 'Conversation', 'It closes as soon as it starts.');
     await touchSized(page, ['Reply', 'Photos and videos', 'Send reply']);
