@@ -9,6 +9,11 @@ on:
   push:
     branches: [develop]
 
+# Read-only unless a job says otherwise (shyden-labs/shydesk#313): the repository's default token can write
+# and approve pull requests, and every job here runs third-party install scripts.
+permissions:
+  contents: read
+
 jobs:
   build-and-test:
     runs-on: ubuntu-26.04
@@ -32,11 +37,20 @@ jobs:
           version=$(sed -nE 's/^FROM node:([0-9]+\.[0-9]+\.[0-9]+)$/\1/p' docker/node/Dockerfile)
           test -n "$version"
           echo "version=$version" >> "$GITHUB_OUTPUT"
+      # Node's download, kept between runs under its exact version (shyden-labs/shydesk#305):
+      # a Dockerfile bump misses this cache, so the new version downloads.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        timeout-minutes: 5
+        with:
+          path: ${{ runner.tool_cache }}/node/${{ steps.node.outputs.version }}
+          key: node-${{ steps.node.outputs.version }}-${{ runner.os }}-${{ runner.arch }}
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        timeout-minutes: 5
         with:
           node-version: ${{ steps.node.outputs.version }}
           cache: 'npm'
       - run: node scripts/npm-ci.ts
+        timeout-minutes: 10
       # Any known vulnerability, of any severity and dev dependencies included, fails the build (shyden-labs/repo-template#156).
       - name: Audit
         run: node scripts/audit.ts
@@ -61,11 +75,20 @@ jobs:
           version=$(sed -nE 's/^FROM node:([0-9]+\.[0-9]+\.[0-9]+)$/\1/p' docker/node/Dockerfile)
           test -n "$version"
           echo "version=$version" >> "$GITHUB_OUTPUT"
+      # Node's download, kept between runs under its exact version (shyden-labs/shydesk#305):
+      # a Dockerfile bump misses this cache, so the new version downloads.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        timeout-minutes: 5
+        with:
+          path: ${{ runner.tool_cache }}/node/${{ steps.node.outputs.version }}
+          key: node-${{ steps.node.outputs.version }}-${{ runner.os }}-${{ runner.arch }}
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        timeout-minutes: 5
         with:
           node-version: ${{ steps.node.outputs.version }}
           cache: 'npm'
       - run: node scripts/npm-ci.ts
+        timeout-minutes: 10
       - run: npm run test:coverage
 
   # The integration suite against real D1 on ShyDesk Non-Prod (shyden-labs/shydesk#15):
@@ -84,11 +107,13 @@ jobs:
           version=$(sed -nE 's/^FROM node:([0-9]+\.[0-9]+\.[0-9]+)$/\1/p' docker/node/Dockerfile)
           test -n "$version"
           echo "version=$version" >> "$GITHUB_OUTPUT"
+      # This job holds a Cloudflare token, so it restores nothing from the cache (shyden-labs/shydesk#305).
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        timeout-minutes: 5
         with:
           node-version: ${{ steps.node.outputs.version }}
-          cache: 'npm'
       - run: node scripts/npm-ci.ts
+        timeout-minutes: 10
       - name: Integration suite
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -108,11 +133,20 @@ jobs:
           version=$(sed -nE 's/^FROM node:([0-9]+\.[0-9]+\.[0-9]+)$/\1/p' docker/node/Dockerfile)
           test -n "$version"
           echo "version=$version" >> "$GITHUB_OUTPUT"
+      # Node's download, kept between runs under its exact version (shyden-labs/shydesk#305):
+      # a Dockerfile bump misses this cache, so the new version downloads.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        timeout-minutes: 5
+        with:
+          path: ${{ runner.tool_cache }}/node/${{ steps.node.outputs.version }}
+          key: node-${{ steps.node.outputs.version }}-${{ runner.os }}-${{ runner.arch }}
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        timeout-minutes: 5
         with:
           node-version: ${{ steps.node.outputs.version }}
           cache: 'npm'
       - run: node scripts/npm-ci.ts
+        timeout-minutes: 10
       # Safari's driver ships with macOS but answers only once enabled.
       - name: Enable safaridriver
         run: sudo safaridriver --enable
@@ -154,14 +188,34 @@ jobs:
           version=$(sed -nE 's/^FROM node:([0-9]+\.[0-9]+\.[0-9]+)$/\1/p' docker/node/Dockerfile)
           test -n "$version"
           echo "version=$version" >> "$GITHUB_OUTPUT"
+      # Node's download, kept between runs under its exact version (shyden-labs/shydesk#305):
+      # a Dockerfile bump misses this cache, so the new version downloads.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        timeout-minutes: 5
+        with:
+          path: ${{ runner.tool_cache }}/node/${{ steps.node.outputs.version }}
+          key: node-${{ steps.node.outputs.version }}-${{ runner.os }}-${{ runner.arch }}
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        timeout-minutes: 5
         with:
           node-version: ${{ steps.node.outputs.version }}
           cache: 'npm'
       - run: node scripts/npm-ci.ts
+        timeout-minutes: 10
+      # Playwright's own browsers, kept between runs under the exact Playwright version npm installed
+      # (shyden-labs/shydesk#305): a Dependabot bump misses this cache, so that version's browsers download.
+      - id: playwright
+        run: ./node_modules/.bin/playwright --version | sed -nE 's/^Version ([0-9]+\.[0-9]+\.[0-9]+)$/version=\1/p' >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        timeout-minutes: 5
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ steps.playwright.outputs.version }}-${{ runner.os }}-${{ runner.arch }}
       # Each browser shyden-labs/playwright-devices names, installed for the Playwright in the lockfile;
-      # a channel that cannot install fails here by name.
+      # a channel that cannot install fails here by name. Cached browsers are not fetched again; the
+      # branded chrome and msedge channels and the OS packages still come from their sources, so stay current.
       - name: Install the desktop browsers
+        timeout-minutes: 10
         run: ./node_modules/.bin/playwright install --with-deps chromium chrome firefox webkit msedge
       # The test list each browser should run, read before the run so a browser that runs fewer is named (shyden-labs/shydesk#176).
       # It lives outside .e2e-runs, which the suite's global setup empties when the run starts.
@@ -177,6 +231,10 @@ jobs:
   # The SonarCloud quality gate, blocking (shyden-labs/repo-template#27, shyden-labs/repo-template#60): the reusable workflow
   # scans, then fails unless this scan's gate is OK (docs/sonarcloud.md).
   sonarcloud:
+    # What sonarcloud.yml asks for; a called workflow can never hold more than its caller gives it.
+    permissions:
+      contents: read
+      pull-requests: read
     uses: ./.github/workflows/sonarcloud.yml
     with:
       organization: shyden-labs

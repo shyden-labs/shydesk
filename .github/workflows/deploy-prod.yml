@@ -35,6 +35,7 @@ jobs:
           test -n "$version"
           echo "version=$version" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        timeout-minutes: 5
         with:
           node-version: ${{ steps.node.outputs.version }}
       # Fails naming the missing secret rather than skipping when it is not there.
