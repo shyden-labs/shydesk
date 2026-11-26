@@ -190,13 +190,16 @@ describe('opening the viewer', () => {
 });
 
 describe('a video', () => {
-  it('plays with the browser controls, loading only its details first', async () => {
+  // preload=auto, never metadata: WebKit never loads a WebKit-shrunk video under preload=metadata
+  // (readyState 0, stalled; measured on CI run 45908098947, shyden-labs/shydesk#188). The piece plays a
+  // whole blob: and the desk's file route answers whole, so loading it all costs no extra download.
+  it('plays with the browser controls, loading the whole file', async () => {
     const { media, status } = open([video('/v.mp4')]);
     const shown = media() as HTMLVideoElement;
     expect(shown.tagName).toBe('VIDEO');
     expect(shown.hasAttribute('controls')).toBe(true);
     expect(shown.hasAttribute('playsinline')).toBe(true);
-    expect(shown.getAttribute('preload')).toBe('metadata');
+    expect(shown.getAttribute('preload')).toBe('auto');
     expect(shown.getAttribute('aria-label')).toBe('Video 1 full size');
     expect(shown.getAttribute('draggable')).toBe('false');
     expect(status()).toBe('Video 1 of 1, zoom 100%, rotated 0°');

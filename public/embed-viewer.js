@@ -219,8 +219,9 @@ export function openViewer({ doc, host, items, start, onClose }) {
     const file = items[target.index];
     if (file === undefined) return;
     const name = `${kindOf(target.index)} ${String(target.index + 1)} full size`;
+    // preload=auto: WebKit never loads a WebKit-shrunk video under preload=metadata (shyden-labs/shydesk#188).
     const media = file.mime.startsWith('video/')
-      ? el('video', { controls: '', playsinline: '', preload: 'metadata', 'aria-label': name, draggable: 'false' })
+      ? el('video', { controls: '', playsinline: '', preload: 'auto', 'aria-label': name, draggable: 'false' })
       : el('img', { alt: name, 'aria-label': name, draggable: 'false' });
     shown = media;
     stage.replaceChildren(media);
