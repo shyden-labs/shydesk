@@ -222,12 +222,26 @@ describe('sendSmtp', () => {
     expect(server.sent).toEqual([]);
   });
 
+  // A From: with the product's name, not a bare address, reads as a real sender to spam filters (shyden-labs/shydesk#275).
+  it.each([
+    ['ShyTalk support', 'From: "ShyTalk support" <no-reply@shyden.co.uk>'],
+    ['Say "hi" \\ support', 'From: "Say \\"hi\\" \\\\ support" <no-reply@shyden.co.uk>'],
+    ['Dukungan Ýawelo', `From: =?UTF-8?B?${Buffer.from('Dukungan Ýawelo').toString('base64')}?= <no-reply@shyden.co.uk>`],
+  ])('names the sender %j in the From: header', async (fromName, header) => {
+    const server = new StandIn(HAPPY);
+    await sendSmtp(server, login, { ...mail, fromName }, now);
+    const lines = (server.sent.find((line) => line.includes('\r\n')) ?? '').split('\r\n');
+    expect(lines[0]).toBe(header);
+    expect(server.sent).toContain('MAIL FROM:<no-reply@shyden.co.uk>');
+  });
+
   // Header injection: a CR or LF would start a new header or command.
   it.each([
     ['subject', { subject: 'Hi\r\nBcc: x@example.com' }],
     ['subject', { subject: 'Hi\nBcc: x@example.com' }],
     ['to', { to: 'a@example.com\r\nRCPT TO:<b@example.com>' }],
     ['from', { from: 'a@example.com\n' }],
+    ['fromName', { fromName: 'ShyTalk support\r\nBcc: x@example.com' }],
   ])('refuses a CR or LF in the %s before opening the dialogue', async (field, change) => {
     const server = new StandIn(HAPPY);
     await expect(sendSmtp(server, login, { ...mail, ...change }, now)).rejects.toThrow(

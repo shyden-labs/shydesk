@@ -25,6 +25,8 @@ export interface SmtpLogin {
 
 export interface SmtpMail {
   from: string;
+  /** The sender's name in the From: header, beside `from` (shyden-labs/shydesk#275). */
+  fromName?: string;
   /** The envelope sender (MAIL FROM), where bounces go; `from` when absent. The From: header is always `from`. */
   envelopeFrom?: string;
   to: string;
@@ -49,7 +51,7 @@ const PLAIN_ADDRESS = /^[^\s<>@\p{Cc}]+@[^\s<>@\p{Cc}]+$/u;
 const ASCII = /^[\x20-\x7e]*$/;
 
 function checkInput(mail: SmtpMail): void {
-  for (const field of ['from', 'envelopeFrom', 'to', 'subject'] as const) {
+  for (const field of ['from', 'fromName', 'envelopeFrom', 'to', 'subject'] as const) {
     const value = mail[field];
     if (value !== undefined && /[\r\n]/.test(value)) throw new SmtpError('input', `${field} holds a line break`);
   }
@@ -63,13 +65,19 @@ const base64 = (text: string): string => btoa(String.fromCodePoint(...new TextEn
 
 const encodedSubject = (subject: string): string => (ASCII.test(subject) ? subject : `=?UTF-8?B?${base64(subject)}?=`);
 
+/** RFC 5322 3.4: a quoted display name, or an RFC 2047 encoded word when it is not plain ASCII. */
+const displayName = (name: string): string =>
+  ASCII.test(name) ? `"${name.replaceAll(/["\\]/g, String.raw`\$&`)}"` : `=?UTF-8?B?${base64(name)}?=`;
+
+const fromHeader = (mail: SmtpMail): string => (mail.fromName === undefined ? mail.from : `${displayName(mail.fromName)} <${mail.from}>`);
+
 /** The sender address's domain: the full name EHLO gives (RFC 5321 4.1.1.1) and the Message-ID's right side. */
 const senderDomain = (mail: SmtpMail): string => mail.from.slice(mail.from.indexOf('@') + 1);
 
 function message(mail: SmtpMail, now: Date): string {
   const domain = senderDomain(mail);
   const headers = [
-    `From: ${mail.from}`,
+    `From: ${fromHeader(mail)}`,
     `To: ${mail.to}`,
     `Subject: ${encodedSubject(mail.subject)}`,
     `Date: ${now.toUTCString()}`,

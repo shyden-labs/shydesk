@@ -71,6 +71,7 @@ describe('the notice', () => {
         { user: 'u', pass: 'p' },
         {
           from: 'no-reply@shytalk.app',
+          fromName: 'ShyTalk support',
           to: 'pat@example.com',
           subject: 'Your support request: something new',
           text: `ShyTalk support\r\n\r\nThere is a new update on your support request. Open it here: ${LINK}`,

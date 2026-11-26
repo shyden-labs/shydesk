@@ -106,6 +106,7 @@ export async function sendNoReply(
     const lead = about.lead === undefined ? '' : `${about.lead}\r\n\r\n`;
     const mail: SmtpMail = {
       from: product.senderAddress,
+      fromName: `${product.name} support`,
       to,
       subject: NOTICE_SUBJECT,
       text: `${product.name} support\r\n\r\n${lead}There is a new update on your support request. Open it here: ${link}`,
