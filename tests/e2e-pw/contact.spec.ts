@@ -50,7 +50,20 @@ test.describe('the contact form', () => {
     // DIAGNOSTIC (shyden-labs/shydesk#188), removed before merge: what the browser uploads, and what it says.
     page.on('console', (m) => {
       if (m.type() === 'error' || m.type() === 'warning')
-        console.log(`[188 ${test.info().project.name}] console.${m.type()} ${m.text().slice(0, 300)}`);
+        console.log(`[188 ${test.info().project.name}] console.${m.type()} ${m.text().slice(0, 300)} at ${m.location().url}`);
+    });
+    page.on('response', (r) => {
+      if (r.status() < 400) return;
+      void r.text().then(
+        (t) => {
+          console.log(
+            `[188 ${test.info().project.name}] answer ${String(r.status())} ${r.request().method()} ${r.url()} body=${t.slice(0, 200)}`,
+          );
+        },
+        () => {
+          console.log(`[188 ${test.info().project.name}] answer ${String(r.status())} ${r.request().method()} ${r.url()} body unreadable`);
+        },
+      );
     });
     page.on('pageerror', (e) => {
       console.log(`[188 ${test.info().project.name}] pageerror ${e.message.slice(0, 300)}`);
@@ -121,6 +134,9 @@ test.describe('the contact form', () => {
             const codecs = ['avc1', 'avcC', 'hvc1', 'hev1', 'vp09', 'av01', 'mp4a', 'Opus'].filter((c) => b.includes(c, 0, 'latin1'));
             const at = b.indexOf('avcC', 0, 'latin1');
             const profile = at < 0 ? '-' : b.subarray(at + 5, at + 8).toString('hex');
+            const moov = b.indexOf('moov', 0, 'latin1') - 4;
+            if (moov >= 0)
+              console.log(`[188 ${test.info().project.name}] moov ${b.subarray(moov, moov + b.readUInt32BE(moov)).toString('base64')}`);
             console.log(
               `[188 ${test.info().project.name}] stored ${String(b.length)} bytes boxes=${boxes.join(',')} codecs=${codecs.join(',')} avc-profile-compat-level=${profile}`,
             );
