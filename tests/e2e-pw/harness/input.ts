@@ -8,14 +8,23 @@ import { typedMismatch, type Fixture } from '../../e2e/harness/targets.ts';
 
 const MEDIA = resolve(import.meta.dirname, '../../fixtures/media');
 
+/** A name a select is known by: its label's words, then the chosen option's, as a `<label>` wrapping it gives. */
+function selectNamed(label: string): RegExp {
+  // No space is required after the label's words: a label's text and its select's option may join without one.
+  // A second select whose name starts the same way fails Playwright's strict mode, never matches quietly.
+  return new RegExp(`^${label.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`)}`);
+}
+
 /**
- * The one element named `label`: by its label, or a button or link of that name. One locator,
- * so every action on it waits for the page to draw it; Playwright's strict mode fails the
- * action if the name matches more than one element.
+ * The one element named `label`: by its label, a select whose label starts with it (a `<label>`
+ * wrapping a select adds the chosen option to its name), or a button or link of that name. One
+ * locator, so every action on it waits for the page to draw it; Playwright's strict mode fails
+ * the action if the name matches more than one element.
  */
 export function named(page: Page, label: string): Locator {
   return page
     .getByLabel(label, { exact: true })
+    .or(page.getByRole('combobox', { name: selectNamed(label) }))
     .or(page.getByRole('button', { name: label, exact: true }))
     .or(page.getByRole('link', { name: label, exact: true }));
 }
