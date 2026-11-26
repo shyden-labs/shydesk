@@ -9,6 +9,11 @@ on:
   push:
     branches: [develop]
 
+# Read-only unless a job says otherwise (shyden-labs/shydesk#313): the repository's default token can write
+# and approve pull requests, and every job here runs third-party install scripts.
+permissions:
+  contents: read
+
 jobs:
   build-and-test:
     runs-on: ubuntu-26.04
@@ -177,6 +182,10 @@ jobs:
   # The SonarCloud quality gate, blocking (shyden-labs/repo-template#27, shyden-labs/repo-template#60): the reusable workflow
   # scans, then fails unless this scan's gate is OK (docs/sonarcloud.md).
   sonarcloud:
+    # What sonarcloud.yml asks for; a called workflow can never hold more than its caller gives it.
+    permissions:
+      contents: read
+      pull-requests: read
     uses: ./.github/workflows/sonarcloud.yml
     with:
       organization: shyden-labs
