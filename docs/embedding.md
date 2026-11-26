@@ -64,8 +64,12 @@ it. It reads these custom properties from the page instead:
 | `--shydesk-error`            | Field error messages                                                |
 
 A page with a dark theme sets `--shydesk-text` and `--shydesk-background`;
-the fields follow them, so typed text stays readable. Set the two field
-properties only for fields coloured differently from the form.
+the fields follow them, so typed text stays readable. It also sets
+`--shydesk-border` and `--shydesk-error`, because their defaults (`#82828c` and
+`#b3261e`) are chosen for a light form: on a dark one, field borders need 3:1
+against the form background and error text 4.5:1 (WCAG 2.2 AA). The demo's dark
+page uses `#80808f` (4.26:1) and `#ffb4ab` (9.75:1) on `#1e1e26`. Set the two
+field properties only for fields coloured differently from the form.
 
 ```css
 shydesk-support {

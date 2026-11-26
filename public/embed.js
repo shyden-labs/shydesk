@@ -90,7 +90,7 @@
     ::slotted(input) { font: inherit; min-width: 0; box-sizing: border-box; min-height: 44px; }
     label { display: grid; gap: 4px; font-weight: 600; }
     input, select, textarea, button { box-sizing: border-box; min-height: 44px; }
-    input, select, textarea { font: inherit; font-weight: 400; padding: 10px; min-width: 0; border-radius: 8px; border: 1px solid var(--shydesk-border, #c8c8d0); background: var(--shydesk-field-background, var(--shydesk-background, #ffffff)); color: var(--shydesk-field-text, var(--shydesk-text, #1b1b1f)); }
+    input, select, textarea { font: inherit; font-weight: 400; padding: 10px; min-width: 0; border-radius: 8px; border: 1px solid var(--shydesk-border, #82828c); background: var(--shydesk-field-background, var(--shydesk-background, #ffffff)); color: var(--shydesk-field-text, var(--shydesk-text, #1b1b1f)); }
     select { -webkit-appearance: none; appearance: none; padding-right: 36px; background-image: linear-gradient(45deg, transparent 50%, var(--shydesk-field-text, var(--shydesk-text, #1b1b1f)) 50%), linear-gradient(135deg, var(--shydesk-field-text, var(--shydesk-text, #1b1b1f)) 50%, transparent 50%); background-position: calc(100% - 20px) 50%, calc(100% - 15px) 50%; background-size: 5px 5px; background-repeat: no-repeat; }
     textarea { min-height: 140px; resize: vertical; }
     :focus-visible { outline: 3px solid var(--shydesk-accent, #4b3fd8); outline-offset: 2px; }
