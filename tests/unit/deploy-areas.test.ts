@@ -28,6 +28,7 @@ describe('undeployedPaths', () => {
         'vitest.unit.config.ts',
         'vitest.integration.config.ts',
         'wdio.conf.ts',
+        'playwright.config.ts',
         '.gitignore',
         '.npmrc',
         '.prettierignore',
