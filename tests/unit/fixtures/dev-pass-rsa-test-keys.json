@@ -1,0 +1,39 @@
+{
+  "//": "TEST-ONLY RSA keys for tests/unit/dev-pass-signin.test.ts (shyden-labs/repo-template#212): fixed so no test waits on a random prime search. They sign nothing real and are trusted nowhere.",
+  "accessPrivate": {
+    "key_ops": ["sign"],
+    "ext": true,
+    "alg": "RS256",
+    "kty": "RSA",
+    "n": "pT2VB8OsJYK6Kljkkm3GpQKvxPLbQHvrFiVNrqI7_4_O1gylReIvjfL17S5MxLYUK7iXpbHN8U8JOxZuIYffk93OzWlwFgZU_1mzZ5RpEfueZhCZiOpRDNUn0Xz5zqRnW4D8QHlh2N_0p3-z1fXItSE7LCjogAzH_zSpyVg3Pi-oEEUlxbNwc5skuLCz0BxcIdCavNx1m9rWavLpkQBTEI6r-pUzzbzXpQRzLxIFdB_O_WkpqUaRV6c4FOIZecbNpZ6XSNUJPMg4LWRkGlsKyGZpAz3lFv4nSx0EAugdQsCTt-Dwryd0zCBAScIxJBZcRMfEewkV5sbT4x8aSjMhRw",
+    "e": "AQAB",
+    "d": "K95gjXImZsMBF7MH49QfE7nV3ky3ZrQ_Yl6-8-kAUsXkHLG4wwfcpivlnHVZTjQkwMK-B_Bfg3v_MF-xF1fSRJhzidc_OamusSgoWAxvpKWPlPs9N7s1j1mbu6MZUwIUqpdg4OEY2BIFCt79aIVbJrNO2Vd2-l_qTNe3Z8vyxqBE77V6_omWwUsZTzMuQbYe7yk9iHdeSRp3eDwRnPA0647LUIddP5t0iv4jGWkdCwfgZe4q6oI6tX_JZYt6A7SSRICjcb65qAFK1zjfApm_NTUdLMYDEPmwHUkbzgnRRzodTE47V9RegObxuVWUwyKUYJD4PfUyPN_2pxTRF43kCQ",
+    "p": "2mMUK-uZ4gdQ-jnpTbuA61GfHV23psGIfikXE77TAr-ARA78PUc36nrsf9HIn1tMt5ziV4ndjpvAJBkxwwKOSSnHFpvWuk4m5tZXWakTcD5Dw-J0K83_KDWgQSbqtow2LaHY6u07AhlbWGzczS3UY36bbGHAmDsX53_fr9v7yb0",
+    "q": "wbM3u90fSlDlNTeLLzcp4x5Csb3Ehs8CuLzt3IuCwc4jzR1sD4nv5-8-ivMNXHFbWLy6TjiVNPC_B4ueN5vdC01oTILDX_luPBnVFPwxffs7skxd2MlyzhLddPbGIfiRqNXBSQMQgYLEZXA7gdHdwCtPAw5M6rJQ7QULiI7srVM",
+    "dp": "2Wuw5nUedDCyhxzm0HPvytgtIJBwSf3-BRSlnAvsipzbd2av69YerjyJfkv-f-DmxRrVIS_pu5QGvCm1KCBARkjoo_Ks2jj6c_FLb8Frz-C9mKS44e-pq3-QN60mGm4HdnDexC1BBTr3fVaMkV2iSRgAZuv_Uc_rYZgmvC-4QsU",
+    "dq": "gRaLIiwvWjunRVwK6iB9Tdsw33t0qdL0IWHns39WWQqkWWIuTfzDYXLT344zbVQuaGj-UHrtFScMaF7nxm-dVJb112eeBSwaBvvAQggAg9EW67BxKrS2ShfQds6vJJyflkE-WwYrzeP0NxYg0lemzRcPxR2WrSLBQ_SExzFZEfk",
+    "qi": "nr_4FfdDrLAUcZftNf6uzBXM29Z4cPdC5AsimkpUj-0SAc47jLJqfidf5q3GQ3GOCjshORoqS-hEQWWnlrPHOabBfqsdgXmXzZWyOqfo2tjElQyzmdOKlqm5g4X_V-Upb4ynw-L5wvzRTfppP987bvzk0PrVfHUft7exwDuLqq0"
+  },
+  "accessPublic": {
+    "key_ops": ["verify"],
+    "ext": true,
+    "alg": "RS256",
+    "kty": "RSA",
+    "n": "pT2VB8OsJYK6Kljkkm3GpQKvxPLbQHvrFiVNrqI7_4_O1gylReIvjfL17S5MxLYUK7iXpbHN8U8JOxZuIYffk93OzWlwFgZU_1mzZ5RpEfueZhCZiOpRDNUn0Xz5zqRnW4D8QHlh2N_0p3-z1fXItSE7LCjogAzH_zSpyVg3Pi-oEEUlxbNwc5skuLCz0BxcIdCavNx1m9rWavLpkQBTEI6r-pUzzbzXpQRzLxIFdB_O_WkpqUaRV6c4FOIZecbNpZ6XSNUJPMg4LWRkGlsKyGZpAz3lFv4nSx0EAugdQsCTt-Dwryd0zCBAScIxJBZcRMfEewkV5sbT4x8aSjMhRw",
+    "e": "AQAB"
+  },
+  "strangerPrivate": {
+    "key_ops": ["sign"],
+    "ext": true,
+    "alg": "RS256",
+    "kty": "RSA",
+    "n": "ueOO7-9rz2N5t3dwelObxTtb-g_841Xy_eHmGp27g--2cB-WyPzuLDygxkAlyPSpJaczxz4gTDVuq55FPi3ySL5K1juTuY8yMGqaC0RHNjCEEbk9Jd_2Ffcg_qse9p4OJA7UXW7nCw6zlC6QRbbO4cjArNCw_oo-UC86SMKBnS0EGs9HgRrp2is1VUGTX4t1D-Rk0oBuJ0RVLkvP0qfWTeCz8kW5P3JPDMSNAiV1Lec2CRcTeFsedr3GlhZluZ2hnb99-MOLdfnnwHoJ3P-FEhUkQf-Hp6uWE_JtuynD6rn4D4ODaEdakCWhtTYlNQ8PJIKKDMvnaB3irsNNlLTiiw",
+    "e": "AQAB",
+    "d": "A3pXS3RCeJ6xrCCUc_10zc5hV1Q4P4qf9rxkwT0P6-qEEnn3fhWEC-4rII_FBTWqpSqJL0z2xBDrMVPPPi1pjzncOEDkxSqBiQ1diiDCElNQYpfW0IrDAGs0wf8H9RuaQ8txPA7zTK4pkaKuDq0vwWKvqYFoEQMbd7BChLz65Cq8yE2bAhwXBRhtyb620xjCwIZvyjrJF-P364lBLxmUT94GeybAFb2dhvAtGR1qxVbFrVMsOjPrzeu95CwbF0hDp6rN-GLkl2v3gmqDof6jtEb6rJahPIjAHPO7Y0CsEeuQTAGdZrVDos3isDC-14qb9EMXAiqg7DjBKLlzk8i1xQ",
+    "p": "3oDloptEvJFHfyR-rDR_3XLotPj5NzQXICJzD1n4AcIyLvMjD2i_7MtNgsvvXliDKht8X6l39hOKJ1YGxiU0R-DmzCSt2kGjLcICW-ebdh6yIYN2aOwYqaNouSOF0GxQjJO9B-QDoLb3hFUXTHX6KbSYxBdBckvEgML3FSgS128",
+    "q": "1d-Qf9Q-Zqkl62StfQro91leTgk4BPHpOBKYeJOrQWaxIEroyCYGx5uL1z5H7dMEAQ0gc0k8lYIpQc3S4f7Qx5r_ZQ_KMBPTjpeRhfmmGJJwfLpL6g0JM7IphpgddrpfoaXCOMdRd-3PZkJHV-dRIWJVTvhdlfSS_v-KCyOseKU",
+    "dp": "f-xdmipoz307POcPiRQ5-2ioT_vg1JM3RHtp6YaRZvlufr29B4vy5EJSkwOK4JRE_P2GeT1mweyj_k-gX2VedIDiULY52gTou1MSpiI3qCanxUre1h3_Y_CWMfMxaQ4NFXWPNa0rRMhM8CE33vbpV_cD6aFxODRFir4M7nX2tzM",
+    "dq": "lEXBDQ4dENk1o8MRj74PkuQPQDSd9LetwyUJNZbSxK2oIMYuKgxK6PmKcngIL_X6MaxjEen1KYWqiqdiCzG4lpl7dBoFR12HbrTfu60_HIvxllclqCbPeVqL9Xbh_lzpTcz4IJr2fRmOjstmYKfKlEVy9SO05fBANK7-igh6Ws0",
+    "qi": "YIVWKBfJ1USjxNhDsW1Jsy_kHWEaqbAdedrNEOh0gobAg9JT_3FFWf2Df9libyVLSHZAEommxjYLgbSqV1y6FurM3lbgB9-H8mjVBmzdD3sdGSsHk16NrjK4EEEcksUXp8-oclro4U938ZG0tcVX-Nq_ysLkRzFuPdbVtCtubRE"
+  }
+}

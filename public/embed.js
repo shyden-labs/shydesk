@@ -19,6 +19,55 @@
   const current = /** @type {HTMLScriptElement | null} */ (document.currentScript);
   if (current === null || customElements.get('shydesk-support') !== undefined) return;
   const HOST = new URL(current.src).origin;
+  /**
+   * ShyDesk's DEV answers only a DEV pass (shyden-labs/shydesk#302). Loaded from it, the piece
+   * asks its own page's door for a 5-minute embed pass, as shyden-labs/repo-template#209 says,
+   * and sends it on every ShyDesk call. Loaded from anywhere else it sends none.
+   */
+  const DEV_HOST = 'https://shydesk.shydesk-non-prod.workers.dev';
+  /** @typedef {import('./embed-media.js').ShyDeskInit} ShyDeskInit */
+  /** @type {Promise<string> | undefined} */
+  let devPass;
+
+  /**
+   * A fresh embed pass from this page's own door. A page with no door, or a door that cannot be
+   * reached, gives '': ShyDesk's DEV then refuses the call, and the piece says it cannot load.
+   */
+  async function newDevPass() {
+    /** @type {Response} */
+    let answer;
+    try {
+      answer = await fetch(`${location.origin}/__devpass/embed?for=${new URL(DEV_HOST).host}`, {
+        method: 'POST',
+        credentials: 'same-origin',
+      });
+    } catch {
+      return '';
+    }
+    if (!answer.ok) return '';
+    const raw = /** @type {unknown} */ (await answer.json());
+    const body = /** @type {{ pass?: unknown }} */ (raw);
+    return typeof body.pass === 'string' ? body.pass : '';
+  }
+
+  /**
+   * A call to ShyDesk: on DEV with the embed pass, and once more with a new pass when the door
+   * refuses the one held (its refusal has no body; ShyDesk's own refusals always have one).
+   * @param {string} url
+   * @param {ShyDeskInit} [init]
+   */
+  async function callShyDesk(url, init) {
+    if (HOST !== DEV_HOST) return fetch(url, init);
+    const withPass = async () =>
+      fetch(url, {
+        ...init,
+        headers: { ...init?.headers, 'X-Dev-Pass': await (devPass ??= newDevPass()) },
+      });
+    const answer = await withPass();
+    if (answer.status !== 401 || (await answer.clone().text()) !== '') return answer;
+    devPass = newDevPass();
+    return withPass();
+  }
   const TURNSTILE_URL = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
 
   /** Everything the customer reads. None says we, us, our, I, me, my, the team or solo (tests/unit/customer-copy.test.ts). */
@@ -196,7 +245,7 @@
       /** @type {FormConfig} */
       let config;
       try {
-        const answer = await fetch(this.endpoint('config'));
+        const answer = await callShyDesk(this.endpoint('config'));
         if (!answer.ok) throw new Error(`config answered ${String(answer.status)}`);
         const raw = /** @type {unknown} */ (await answer.json());
         config = /** @type {FormConfig} */ (raw);
@@ -249,6 +298,7 @@
       }
       const sent = await media.uploadAttachment({
         host: HOST,
+        fetcher: callShyDesk,
         product: this.getAttribute('product') ?? '',
         file: chosen,
         kind: shape.kind,
@@ -382,7 +432,7 @@
           /** @type {Response} */
           let answer;
           try {
-            answer = await fetch(this.endpoint('tickets'), {
+            answer = await callShyDesk(this.endpoint('tickets'), {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -498,7 +548,7 @@
       /** @type {{ label: string, can_appeal: boolean, reason?: string } | null} */
       let decision = null;
       try {
-        const answer = await fetch(this.endpoint('appeals'), { headers: { 'ShyDesk-Appeal': this.appealToken } });
+        const answer = await callShyDesk(this.endpoint('appeals'), { headers: { 'ShyDesk-Appeal': this.appealToken } });
         if (answer.status === 404) {
           this.tell(TEXT.linkInvalid);
           return;
@@ -561,7 +611,7 @@
       /** @type {Response} */
       let answer;
       try {
-        answer = await fetch(this.endpoint('appeals'), {
+        answer = await callShyDesk(this.endpoint('appeals'), {
           method: 'POST',
           headers: { 'ShyDesk-Appeal': this.appealToken, 'Content-Type': 'application/json' },
           body: JSON.stringify({ email, message }),
@@ -603,7 +653,7 @@
       /** @type {FormConfig} */
       let config;
       try {
-        const answer = await fetch(this.endpoint('config'));
+        const answer = await callShyDesk(this.endpoint('config'));
         if (!answer.ok) throw new Error(`config answered ${String(answer.status)}`);
         const raw = /** @type {unknown} */ (await answer.json());
         config = /** @type {FormConfig} */ (raw);
@@ -655,7 +705,7 @@
      */
     async sendReply(words, attachmentIds) {
       try {
-        const answer = await fetch(this.endpoint('ticket/reply'), {
+        const answer = await callShyDesk(this.endpoint('ticket/reply'), {
           method: 'POST',
           headers: { ...this.ticketHeaders(), 'Content-Type': 'application/json' },
           body: JSON.stringify({ message: words, attachmentIds }),
@@ -677,7 +727,7 @@
       /** @type {Response} */
       let answer;
       try {
-        answer = await fetch(this.endpoint('ticket'), { headers: this.ticketHeaders() });
+        answer = await callShyDesk(this.endpoint('ticket'), { headers: this.ticketHeaders() });
       } catch {
         this.tell(TEXT.cannotLoad);
         return false;
@@ -724,7 +774,7 @@
         'aria-label': `${TEXT.preview} ${String(number)}`,
       });
       // A plain image request cannot carry the token, so the preview comes through fetch.
-      void fetch(this.endpoint(`files/${encodeURIComponent(file.id)}/thumb`), { headers: this.ticketHeaders() })
+      void callShyDesk(this.endpoint(`files/${encodeURIComponent(file.id)}/thumb`), { headers: this.ticketHeaders() })
         .then((answer) => (answer.ok ? answer.blob() : null))
         .then((blob) => {
           if (blob === null) picture.remove();
@@ -763,10 +813,12 @@
       const load = (/** @type {string} */ id) => {
         const known = copies.get(id);
         if (known !== undefined) return known;
-        const copy = fetch(this.endpoint(`files/${encodeURIComponent(id)}`), { headers: this.ticketHeaders() }).then(async (answer) => {
-          if (!answer.ok) throw new Error(`file ${id}: ${String(answer.status)}`);
-          return URL.createObjectURL(await answer.blob());
-        });
+        const copy = callShyDesk(this.endpoint(`files/${encodeURIComponent(id)}`), { headers: this.ticketHeaders() }).then(
+          async (answer) => {
+            if (!answer.ok) throw new Error(`file ${id}: ${String(answer.status)}`);
+            return URL.createObjectURL(await answer.blob());
+          },
+        );
         copies.set(id, copy);
         return copy;
       };

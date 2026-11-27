@@ -142,4 +142,16 @@ describe('the ticket timer in wrangler.jsonc', () => {
       ACCESS_AUD: 'cecc27a55c169053120557c748cd105f9b4199f3a66d9ef313eaf5700db39973',
     });
   });
+  // shyden-labs/shydesk#302: the DEV door is on in dev alone; live (and so TEST) has no gate.
+  it('dev gates on a DEV pass for its own host, with the sign-in key and the three embed origins', () => {
+    expect(config.env.dev.vars).toMatchObject({
+      DEV_PASS_HOST: 'shydesk.shydesk-non-prod.workers.dev',
+      DEV_PASS_KEYS: '{"2026-11":"OBLprb_S4Kn2C--HFVaeA3_s6gEsApDiRAWPLc6WsK8"}',
+      DEV_PASS_EMBED_ORIGINS: '["https://dev.yaweloidle.com","https://dev.shytalk.app","https://dev.shyden.co.uk"]',
+    });
+  });
+
+  it('live sets no DEV door setting', () => {
+    expect(Object.keys(config.vars as Record<string, string>).filter((name) => name.startsWith('DEV_PASS'))).toEqual([]);
+  });
 });

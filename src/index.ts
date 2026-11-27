@@ -1,4 +1,4 @@
-import { Hono } from 'hono';
+import { Hono, type ExecutionContext } from 'hono';
 import type { JWTVerifyGetKey } from 'jose';
 import { adminRoutes } from './admin/routes.ts';
 import { docsRoutes, type DocsEnv } from './api/docs.ts';
@@ -16,6 +16,7 @@ import { uploadRoutes, type UploadBindings } from './uploads/routes.ts';
 // The Durable Object classes wrangler.jsonc binds must be exported from the entry point.
 export { TicketTimer } from './timers/ticket-timer.ts';
 import { handleBounce, type BounceEnv, type BounceMessage } from './mail/bounces.ts';
+import { gatedFetch, type GateEnv } from './dev-door/gate.ts';
 
 /**
  * ShyDesk's single Worker (shyden-labs/shydesk#14). Staff routes need the
@@ -57,10 +58,12 @@ export function createApp(jwks?: JWTVerifyGetKey): Hono<{ Bindings: AppBindings 
 export const app = createApp();
 
 /**
- * The Worker: requests go to the app; mail Email Routing hands over is a failed delivery report
- * (shyden-labs/shydesk#232). The third argument Workers passes is the context, never the time.
+ * The Worker: requests go to the app, on dev only through the DEV door (shyden-labs/shydesk#302);
+ * mail Email Routing hands over is a failed delivery report (shyden-labs/shydesk#232). The third
+ * argument Workers passes is the context, never the time.
  */
 export default {
-  fetch: app.fetch,
+  fetch: (request: Request, env: GateEnv, ctx?: ExecutionContext) =>
+    gatedFetch(request, env, async (forwarded) => app.fetch(forwarded, env, ctx), Math.floor(Date.now() / 1000)),
   email: (message: BounceMessage, env: BounceEnv) => handleBounce(message, env),
 };
