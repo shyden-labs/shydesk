@@ -46,6 +46,41 @@ export async function type(page: Page, label: string, text: string): Promise<voi
 
 /** One test file chosen through the file input named `label`, by the browser's own file chooser. */
 export async function pickFile(page: Page, label: string, fixture: Fixture): Promise<void> {
-  const [chooser] = await Promise.all([page.waitForEvent('filechooser'), tap(page, label)]);
+  // DIAGNOSTIC (shyden-labs/shydesk#176), removed before merge: what a click that opens no chooser reached.
+  const browser = page.context().browser()?.browserType().name() ?? 'unknown';
+  await page.evaluate(() => {
+    const w = window as unknown as { pick176?: string[]; pick176On?: boolean };
+    w.pick176 = [];
+    if (w.pick176On === true) return;
+    w.pick176On = true;
+    const t0 = performance.now();
+    for (const kind of ['pointerdown', 'mousedown', 'mouseup', 'click', 'cancel', 'input', 'change', 'focus', 'blur']) {
+      window.addEventListener(
+        kind,
+        (e) => {
+          const el = e.composedPath()[0];
+          const name = el instanceof Element ? `${el.tagName}[${el.getAttribute('type') ?? ''}]` : (el?.constructor.name ?? 'none');
+          w.pick176?.push(`${String(Math.round(performance.now() - t0))}ms ${kind} trusted=${String(e.isTrusted)} ${name}`);
+        },
+        true,
+      );
+    }
+  });
+  const started = Date.now();
+  const chooserP = page.waitForEvent('filechooser', { timeout: 20_000 });
+  await tap(page, label);
+  const chooser = await chooserP.catch(async (error: unknown) => {
+    const state = await page.evaluate(() => {
+      const w = window as unknown as { pick176?: string[] };
+      const inputs = Array.from(document.querySelectorAll('input[type=file]')).map((i) => {
+        const input = i as HTMLInputElement;
+        return `connected=${String(input.isConnected)} disabled=${String(input.disabled)} files=${String(input.files?.length ?? -1)}`;
+      });
+      return `events=[${(w.pick176 ?? []).join(' | ')}] inputs=[${inputs.join(' ; ')}] active=${document.activeElement?.tagName ?? 'none'} hasFocus=${String(document.hasFocus())}`;
+    });
+    console.log(`[176 ${browser}] NO CHOOSER for ${fixture} after ${String(Date.now() - started)}ms: ${state}`);
+    throw error;
+  });
+  console.log(`[176 ${browser}] chooser for ${fixture} after ${String(Date.now() - started)}ms`);
   await chooser.setFiles(resolve(MEDIA, fixture));
 }
