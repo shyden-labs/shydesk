@@ -4,6 +4,8 @@
  * Each is a desktop port of its WebdriverIO helper (tests/e2e/harness/, tests/e2e/contact.e2e.ts),
  * reusing that suite's pure functions; every press is a real mouse or key event.
  */
+import { mkdirSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import {
   contrastRatio,
@@ -219,9 +221,29 @@ export async function watchVideo(page: Page, label: string): Promise<void> {
   }, WATCHED);
 }
 
+/** DIAGNOSTIC ONLY (shyden-labs/shydesk#188), never merged: saves the stored video the viewer plays, for ffmpeg. */
+async function saveVideo(page: Page, label: string, outcome: string): Promise<string> {
+  const read = await named(page, label)
+    .evaluate(async (element) => {
+      const v = element as HTMLVideoElement;
+      const bytes = new Uint8Array(await (await fetch(v.src)).arrayBuffer());
+      let text = '';
+      for (let i = 0; i < bytes.length; i += 0x8000) text += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+      return btoa(text);
+    })
+    .catch((problem: unknown) => `ERR ${String(problem)}`);
+  if (read.startsWith('ERR ')) return read;
+  const dir = path.join('.e2e-runs', 'diag188');
+  mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, `repeat${String(test.info().repeatEachIndex)}-${outcome}.mp4`);
+  writeFileSync(file, Buffer.from(read, 'base64'));
+  return `saved ${file}`;
+}
+
 /** Waits until `holds` is true of the video named `label`, failing with `what` and its last state. */
 export async function untilVideo(page: Page, label: string, holds: (s: VideoState) => boolean, what: string): Promise<VideoState> {
   let last: VideoState | undefined;
+  const sizing = what === 'the video never reported its size';
   await expect
     .poll(
       async () => {
@@ -232,30 +254,12 @@ export async function untilVideo(page: Page, label: string, holds: (s: VideoStat
     )
     .toBe(true)
     .catch(async (error: unknown) => {
-      // DIAGNOSTIC ONLY (shyden-labs/shydesk#188), never merged: what the video's source holds when it stalls.
-      const source = await named(page, label)
-        .evaluate(async (element) => {
-          const v = element as HTMLVideoElement;
-          const parts = [`src ${v.src.slice(0, 60)}`, `currentSrc ${v.currentSrc.slice(0, 60)}`, `preload ${v.preload}`];
-          try {
-            const blob = await (await fetch(v.src)).blob();
-            const bytes = new Uint8Array(await blob.arrayBuffer());
-            const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
-            parts.push(
-              `blob ${String(blob.size)} bytes, type "${blob.type}"`,
-              `sha256 ${[...hash].map((b) => b.toString(16).padStart(2, '0')).join('')}`,
-            );
-          } catch (problem) {
-            parts.push(`fetch of src failed: ${String(problem)}`);
-          }
-          parts.push(`video elements in document ${String((v.getRootNode() as ParentNode).querySelectorAll('video').length)}`);
-          return parts.join('; ');
-        })
-        .catch((problem: unknown) => `source not read: ${String(problem)}`);
-      throw new Error(`${what}: ${last === undefined ? `"${label}" was never read` : videoStateNote(label, last)}; DIAG188 ${source}`, {
+      const saved = sizing ? await saveVideo(page, label, 'stall') : '';
+      throw new Error(`${what}: ${last === undefined ? `"${label}" was never read` : videoStateNote(label, last)}; DIAG188 ${saved}`, {
         cause: error,
       });
     });
+  if (sizing) console.log(`DIAG188 ${await saveVideo(page, label, 'ok')}`);
   return last as VideoState;
 }
 
