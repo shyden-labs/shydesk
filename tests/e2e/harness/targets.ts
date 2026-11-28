@@ -1,15 +1,18 @@
 /**
- * The targets the one end-to-end suite runs on, unchanged (shyden-labs/shydesk#42):
- * desktop Chromium, Firefox and Safari, and the real Android phone (Chrome)
- * and real iPhone (Safari) over USB through Appium. Set-up lives here and
- * only here; the tests themselves never name a target.
+ * The phones the WebdriverIO suite runs on (shyden-labs/shydesk#42): the real
+ * Android phone (Chrome) and the real iPhone (Safari), over USB through Appium.
+ * Desktop browsers run the same journeys on Playwright (tests/e2e-pw,
+ * shyden-labs/shydesk#176), which borrows the pure helpers here that were
+ * measured per browser engine. Set-up lives here and only here; the tests
+ * themselves never name a target.
  */
 
-import { basename, join } from 'node:path';
-
-export const TARGETS = ['chromium', 'firefox', 'safari', 'android', 'ios'] as const;
+export const TARGETS = ['android', 'ios'] as const;
 export type Target = (typeof TARGETS)[number];
-export type Phone = 'android' | 'ios';
+export type Phone = Target;
+
+/** A desktop browser engine, as the Playwright suite names the one it drives. */
+export type DesktopEngine = 'chromium' | 'firefox' | 'safari';
 
 /** The suite's test files, picked from each phone's own photo library. */
 export type Fixture = 'photo.jpg' | 'ok-10s.mp4' | 'long-45s.mp4';
@@ -29,10 +32,9 @@ export function suiteOriginFor(target: Target, suiteOrigin: string): string {
   return url.origin;
 }
 
-/** The spec files of the group `target` is not in, which it never runs (shyden-labs/shydesk#175). */
-export function otherGroupSpecs(target: Target): string[] {
-  const other = target === 'android' || target === 'ios' ? 'desktop' : 'phone';
-  return [`./tests/e2e/**/*.${other}.e2e.ts`];
+/** The desktop-only spec files, which the phones never run (shyden-labs/shydesk#175). */
+export function otherGroupSpecs(): string[] {
+  return ['./tests/e2e/**/*.desktop.e2e.ts'];
 }
 
 /** The targets named in `E2E_TARGETS`, comma-separated, in order. */
@@ -53,10 +55,6 @@ export function targetsFrom(list: string): Target[] {
 
 export interface TargetEnv {
   chromedriver?: string;
-  desktopChromedriver?: string;
-  /** A Chrome binary to start in place of the installed one (shyden-labs/shydesk#135). */
-  desktopChrome?: string;
-  geckodriver?: string;
   iosUdid?: string;
   androidSerial?: string;
 }
@@ -74,34 +72,6 @@ function need(value: string | undefined, message: string): string {
  */
 export function capabilitiesFor(target: Target, env: TargetEnv): Capabilities {
   switch (target) {
-    // Each desktop driver is the one already on the machine, never fetched
-    // mid-run, where an outside 504 turned a PR red (shyden-labs/shydesk#77).
-    case 'chromium':
-      return {
-        browserName: 'chrome',
-        // CI starts Chrome from a copy made before the suite: the runner's own Chrome updates
-        // itself mid-job, so later sessions ran a newer Chrome (shyden-labs/shydesk#135).
-        'goog:chromeOptions':
-          env.desktopChrome === undefined || env.desktopChrome === ''
-            ? { args: ['--headless=new'] }
-            : { args: ['--headless=new'], binary: env.desktopChrome },
-        'wdio:chromedriverOptions': {
-          binary: need(
-            env.desktopChromedriver,
-            'chromium needs E2E_DESKTOP_CHROMEDRIVER: the path to a chromedriver matching the installed Chrome',
-          ),
-        },
-      };
-    case 'firefox':
-      return {
-        browserName: 'firefox',
-        'moz:firefoxOptions': { args: ['-headless'] },
-        'wdio:geckodriverOptions': {
-          binary: need(env.geckodriver, 'firefox needs E2E_GECKODRIVER: the path to a geckodriver'),
-        },
-      };
-    case 'safari':
-      return { browserName: 'safari' };
     case 'ios':
       return {
         platformName: 'iOS',
@@ -139,12 +109,9 @@ export function targetOf(capabilities: Capabilities): Target {
     const value = capabilities[key];
     return typeof value === 'string' ? value.toLowerCase() : '';
   };
-  const browser = name('browserName');
   const platform = name('platformName');
   if (platform === 'ios') return 'ios';
   if (platform === 'android') return 'android';
-  if (browser === 'chrome') return 'chromium';
-  if (browser === 'firefox' || browser === 'safari') return browser;
   throw new Error(`no target for capabilities ${JSON.stringify(capabilities)}`);
 }
 
@@ -241,7 +208,7 @@ const SCRUB_AT: Record<'chromium' | 'firefox' | 'safari', { across: number; upFr
 };
 
 /** Where to press the browser's own `control` on a video drawn at `box` on `target`, in viewport CSS px. */
-export function videoControlPoint(box: Box, control: VideoControl, target: Target): { x: number; y: number } {
+export function videoControlPoint(box: Box, control: VideoControl, target: DesktopEngine | Phone): { x: number; y: number } {
   if (target === 'android' || target === 'ios') {
     throw new Error(`${target}: the video's own ${control} control is not yet measured on phones (shyden-labs/shydesk#176)`);
   }
@@ -371,39 +338,6 @@ export function typedMismatch(label: string, typed: string, held: string): strin
   return `"${label}" held "${held}" after typing "${typed}"; the browser lost or changed key presses`;
 }
 
-/** Where a real press reached the page: its point, the element it landed on, and whether that is the control or inside it. */
-export interface Landed {
-  x: number;
-  y: number;
-  on: string;
-  inside: boolean;
-  /** Where the control was drawn at the moment of the press. */
-  control: { x: number; y: number; width: number; height: number };
-  /** How far the page had scrolled when the press was aimed, and when it landed. */
-  aimedScroll: number;
-  pressedScroll: number;
-}
-
-/**
- * Why a press aimed at `at` on the control named `label` did not reach it, or
- * undefined when it did. On Safari a press on "Send" left the form unsent
- * (runs 42440108844 and 42448093505, shyden-labs/shydesk#71), so every press
- * says where it actually landed.
- */
-export function pressMissed(label: string, at: { x: number; y: number }, landed: Landed | null | undefined): string | undefined {
-  // A press that loaded a new page: the note went with the old one.
-  if (landed === undefined) return undefined;
-  const aimed = `the press on "${label}" at ${String(at.x)}, ${String(at.y)}`;
-  if (landed === null) return `${aimed} never reached the page`;
-  if (landed.inside) return undefined;
-  const c = landed.control;
-  return (
-    `${aimed} landed on <${landed.on}> at ${String(landed.x)}, ${String(landed.y)} instead; ` +
-    `"${label}" was then drawn at ${String(Math.round(c.x))}, ${String(Math.round(c.y))} (${String(Math.round(c.width))} x ${String(Math.round(c.height))}), ` +
-    `page scrolled ${String(landed.aimedScroll)} px when aimed and ${String(landed.pressedScroll)} px when pressed`
-  );
-}
-
 /** A W3C key action sequence being built: each step presses or lifts one key. */
 export interface KeySequence {
   down(key: string): KeySequence;
@@ -430,32 +364,6 @@ export function typed<T extends KeySequence>(sequence: T, text: string): T {
  */
 export function nameMatches(label: string, name: string, fileInput: boolean): boolean {
   return name === label || (fileInput && name.startsWith(`${label} `));
-}
-
-/**
- * How far, in CSS pixels, the page must scroll (down is positive) to bring the
- * middle of an element to the middle of the window; 0 when its middle is
- * already in the window. The scroll itself is a real wheel action.
- */
-export function scrollNeeded(box: Box, viewport: { width: number; height: number }): number {
-  const middle = box.y + box.height / 2;
-  if (middle >= 0 && middle < viewport.height) return 0;
-  return Math.round(middle - viewport.height / 2);
-}
-
-/**
- * The real input that scrolls the page on each desktop target. Safari's driver
- * accepts a W3C wheel action but scrolls nothing (measured on PR
- * shyden-labs/shydesk#69, run 42408345149: 0 px after a 401 px wheel), so
- * Safari scrolls the way a keyboard user does, by Page Down and Page Up.
- */
-export function scrollInput(target: 'chromium' | 'firefox' | 'safari'): 'wheel' | 'keys' {
-  return target === 'safari' ? 'keys' : 'wheel';
-}
-
-/** The WebDriver key that scrolls toward a control `delta` px away (down is positive): Page Down or Page Up. */
-export function scrollKey(delta: number): string {
-  return delta > 0 ? '' : '';
 }
 
 /**
@@ -565,22 +473,6 @@ export function steadyLongEnough(steady: Steady, now: number): boolean {
 }
 
 /**
- * Why a control never became pressable: it stood still outside the window, or
- * it was still moving. One message once said "never stopped moving" for both,
- * with no positions (Safari, run 43815980050, shyden-labs/shydesk#163).
- */
-export function unsteadyReason(label: string, steady: Steady, viewport: { width: number; height: number }, now: number): string {
-  const b = steady.box;
-  const window = `${String(viewport.width)} x ${String(viewport.height)} window`;
-  const at = `drawn at ${String(Math.round(b.x))}, ${String(Math.round(b.y))} (${String(Math.round(b.width))} x ${String(Math.round(b.height))})`;
-  const still = now - steady.since;
-  const delta = scrollNeeded(b, viewport);
-  if (delta !== 0)
-    return `"${label}" stood still for ${String(still)} ms outside the ${window}, ${at}: it needed ${String(delta)} px more scroll`;
-  return `"${label}" never stopped moving inside the ${window}: last ${at}, there for ${String(still)} ms of the ${String(STEADY_MS)} needed`;
-}
-
-/**
  * A real finger swipe up the middle of the page area, from 70% to 30% of its
  * height, which scrolls the page down by about 40% of that area. A phone's
  * native tree leaves out controls drawn below the screen, so a control that is
@@ -602,17 +494,6 @@ export function centreInside(box: Box, area: Box): boolean {
   const x = box.x + box.width / 2;
   const y = box.y + box.height / 2;
   return x >= area.x && x < area.x + area.width && y >= area.y && y < area.y + area.height;
-}
-
-/**
- * Where a desktop browser takes a test file from through WebDriver. Safari
- * accepts a file from anywhere but can read its bytes only from a folder of its
- * own: from the repo, /tmp, ~/Downloads or ~/Public the page gets NotReadableError
- * (measured on CI's Safari 27.2, shyden-labs/shydesk#21). Its real open panel is
- * no way round: under WebDriver it is cancelled before it appears.
- */
-export function desktopFilePath(target: 'chromium' | 'firefox' | 'safari', fixture: string, home: string): string {
-  return target === 'safari' ? join(home, 'Library/Caches/com.apple.Safari', basename(fixture)) : fixture;
 }
 
 /**

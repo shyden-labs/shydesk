@@ -120,64 +120,9 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: npm run test:integration
 
-  # The one end-to-end suite on the desktop targets (shyden-labs/shydesk#42): Chrome,
-  # Firefox and Safari in one run on macOS, the only runner with all three, so the
-  # totals compare in the same job. The phones run the same suite over USB.
-  e2e-desktop:
-    runs-on: macos-26
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      # The exact Node, from the one file Dependabot bumps (shyden-labs/repo-template#143).
-      - id: node
-        run: |
-          version=$(sed -nE 's/^FROM node:([0-9]+\.[0-9]+\.[0-9]+)$/\1/p' docker/node/Dockerfile)
-          test -n "$version"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-      # Node's download, kept between runs under its exact version (shyden-labs/shydesk#305):
-      # a Dockerfile bump misses this cache, so the new version downloads.
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        timeout-minutes: 5
-        with:
-          path: ${{ runner.tool_cache }}/node/${{ steps.node.outputs.version }}
-          key: node-${{ steps.node.outputs.version }}-${{ runner.os }}-${{ runner.arch }}
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        timeout-minutes: 5
-        with:
-          node-version: ${{ steps.node.outputs.version }}
-          cache: 'npm'
-      - run: node scripts/npm-ci.ts
-        timeout-minutes: 10
-      # Safari's driver ships with macOS but answers only once enabled.
-      - name: Enable safaridriver
-        run: sudo safaridriver --enable
-      # The runner image's own drivers, matching its Chrome and Firefox, so the run
-      # never downloads one mid-run (shyden-labs/shydesk#77). A missing one fails by name.
-      - name: Find the preinstalled Chrome and Firefox drivers
-        run: |
-          chromedriver="${CHROMEWEBDRIVER:?the runner image sets no CHROMEWEBDRIVER}/chromedriver"
-          geckodriver="${GECKOWEBDRIVER:?the runner image sets no GECKOWEBDRIVER}/geckodriver"
-          test -x "$chromedriver" || { echo "no chromedriver at $chromedriver"; exit 1; }
-          test -x "$geckodriver" || { echo "no geckodriver at $geckodriver"; exit 1; }
-          echo "E2E_DESKTOP_CHROMEDRIVER=$chromedriver" >> "$GITHUB_ENV"
-          echo "E2E_GECKODRIVER=$geckodriver" >> "$GITHUB_ENV"
-      # The runner's Chrome updates itself mid-job (run 43468019143: 156.0.8078.80 before the
-      # suite, 157.0.8103.51 after), so every session starts a copy made now, which matches the
-      # image's chromedriver and which the updater never touches (shyden-labs/shydesk#135).
-      - name: Copy Chrome before the suite
-        run: |
-          copy="$RUNNER_TEMP/chrome/Google Chrome.app"
-          mkdir -p "$RUNNER_TEMP/chrome"
-          ditto "/Applications/Google Chrome.app" "$copy"
-          binary="$copy/Contents/MacOS/Google Chrome"
-          "$binary" --version
-          echo "E2E_DESKTOP_CHROME=$binary" >> "$GITHUB_ENV"
-      - name: End-to-end suite on every desktop target
-        env:
-          E2E_TARGETS: chromium,firefox,safari
-        run: npm run test:e2e
-
-  # The e2e suite on Playwright through the shared device layer, on every desktop browser it gives
-  # (shyden-labs/shydesk#176). It runs beside e2e-desktop until every test is ported, then replaces it.
+  # The end-to-end suite on every desktop browser the shared device layer gives (Chromium, Chrome,
+  # Firefox, WebKit, Edge), on Playwright (shyden-labs/shydesk#176). The phones run the same
+  # journeys over USB.
   e2e-playwright:
     runs-on: ubuntu-26.04
     steps:

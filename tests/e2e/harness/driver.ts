@@ -82,6 +82,6 @@ export interface Driver {
 /** The test worker's WebDriver session. */
 export function driver(): Driver {
   const session = (globalThis as { browser?: Driver }).browser;
-  if (session === undefined) throw new Error('no WebDriver session: run this through `npm run test:e2e`');
+  if (session === undefined) throw new Error('no WebDriver session: run this through `npm run test:e2e:device`');
   return session;
 }

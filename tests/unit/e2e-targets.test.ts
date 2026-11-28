@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import {
-  desktopFilePath,
   capabilitiesFor,
   otherGroupSpecs,
   nativeFinder,
@@ -16,12 +15,8 @@ import {
   suiteOriginFor,
   typedMismatch,
   nameMatches,
-  scrollNeeded,
-  scrollInput,
   typed,
-  pressMissed,
   type KeySequence,
-  scrollKey,
   sameBox,
   iosNamed,
   iosPage,
@@ -31,7 +26,6 @@ import {
   coverOver,
   steadyFrom,
   steadyLongEnough,
-  unsteadyReason,
   STEADY_MS,
   swipeUp,
   centreInside,
@@ -53,7 +47,16 @@ import {
 
 describe('targetsFrom', () => {
   it('reads a comma-separated list of known targets, in order', () => {
-    expect(targetsFrom('safari,chromium')).toEqual(['safari', 'chromium']);
+    expect(targetsFrom('ios,android')).toEqual(['ios', 'android']);
+  });
+
+  // WebdriverIO drives the phones alone; desktop browsers run on Playwright (shyden-labs/shydesk#176).
+  it('knows the two phones and nothing else', () => {
+    expect(TARGETS).toEqual(['android', 'ios']);
+  });
+
+  it.each([['chromium'], ['firefox'], ['safari']])('refuses %s, a desktop browser that runs on Playwright', (name) => {
+    expect(() => targetsFrom(name)).toThrow(`E2E_TARGETS names an unknown target: ${name}`);
   });
 
   it('refuses an empty list, naming the known targets', () => {
@@ -61,7 +64,7 @@ describe('targetsFrom', () => {
   });
 
   it('refuses an unknown target by name', () => {
-    expect(() => targetsFrom('chromium,edge')).toThrow('E2E_TARGETS names an unknown target: edge');
+    expect(() => targetsFrom('ios,edge')).toThrow('E2E_TARGETS names an unknown target: edge');
   });
 
   it('refuses a target named twice', () => {
@@ -71,8 +74,6 @@ describe('targetsFrom', () => {
 
 const PHONES = {
   chromedriver: '/cd',
-  desktopChromedriver: '/desktop-cd',
-  geckodriver: '/gd',
   iosUdid: '0000-IPHONE',
   androidSerial: 'SERIAL1',
 };
@@ -84,44 +85,6 @@ describe('capabilitiesFor and targetOf agree', () => {
 });
 
 describe('capabilitiesFor', () => {
-  // A driver fetched mid-run turned a PR red on an outside 504 (shyden-labs/shydesk#77):
-  // desktop Chrome and Firefox use the driver already on the machine.
-  it('runs desktop Chrome headless with the given chromedriver', () => {
-    expect(capabilitiesFor('chromium', PHONES)).toEqual({
-      browserName: 'chrome',
-      'goog:chromeOptions': { args: ['--headless=new'] },
-      'wdio:chromedriverOptions': { binary: '/desktop-cd' },
-    });
-  });
-
-  // The runner's Chrome updates itself mid-job (run 43468019143: 156.0.8078.80 before the suite,
-  // 157.0.8103.51 after), so CI starts Chrome from a copy made first (shyden-labs/shydesk#135).
-  it('starts desktop Chrome from the given binary when E2E_DESKTOP_CHROME is set', () => {
-    expect(capabilitiesFor('chromium', { ...PHONES, desktopChrome: '/copy/Google Chrome' })).toEqual({
-      browserName: 'chrome',
-      'goog:chromeOptions': { args: ['--headless=new'], binary: '/copy/Google Chrome' },
-      'wdio:chromedriverOptions': { binary: '/desktop-cd' },
-    });
-  });
-
-  it('runs desktop Firefox headless with the given geckodriver', () => {
-    expect(capabilitiesFor('firefox', PHONES)).toEqual({
-      browserName: 'firefox',
-      'moz:firefoxOptions': { args: ['-headless'] },
-      'wdio:geckodriverOptions': { binary: '/gd' },
-    });
-  });
-
-  it('refuses desktop Chrome without a chromedriver, naming the variable', () => {
-    expect(() => capabilitiesFor('chromium', {})).toThrow(
-      'chromium needs E2E_DESKTOP_CHROMEDRIVER: the path to a chromedriver matching the installed Chrome',
-    );
-  });
-
-  it('refuses desktop Firefox without a geckodriver, naming the variable', () => {
-    expect(() => capabilitiesFor('firefox', {})).toThrow('firefox needs E2E_GECKODRIVER: the path to a geckodriver');
-  });
-
   it('drives the real iPhone through Appium with real touches in the page', () => {
     expect(capabilitiesFor('ios', PHONES)).toMatchObject({
       'appium:udid': '0000-IPHONE',
@@ -183,6 +146,10 @@ describe('capabilitiesFor refuses a phone it cannot name, so Appium never picks 
 describe('targetOf', () => {
   it('refuses a session it cannot place, naming its capabilities', () => {
     expect(() => targetOf({ browserName: 'edge' })).toThrow('no target for capabilities {"browserName":"edge"}');
+  });
+
+  it.each([['chrome'], ['firefox'], ['safari']])('refuses a desktop %s session, which belongs to Playwright', (browserName) => {
+    expect(() => targetOf({ browserName })).toThrow(`no target for capabilities {"browserName":"${browserName}"}`);
   });
 });
 
@@ -320,52 +287,6 @@ describe('nameMatches', () => {
   });
 });
 
-describe('scrollNeeded', () => {
-  it('is nothing for an element whose middle is in the window', () => {
-    expect(scrollNeeded({ x: 0, y: 100, width: 10, height: 40 }, { width: 800, height: 600 })).toBe(0);
-  });
-
-  it('brings an element below the window to the middle of the window', () => {
-    expect(scrollNeeded({ x: 0, y: 760, width: 10, height: 44 }, { width: 1366, height: 683 })).toBe(441);
-  });
-
-  it('brings an element above the window to the middle of the window, scrolling up', () => {
-    expect(scrollNeeded({ x: 0, y: -400, width: 10, height: 40 }, { width: 800, height: 600 })).toBe(-680);
-  });
-
-  it('counts an element whose middle sits on the bottom edge as outside', () => {
-    expect(scrollNeeded({ x: 0, y: 580, width: 10, height: 40 }, { width: 800, height: 600 })).toBe(300);
-  });
-});
-
-describe('pressMissed', () => {
-  /** A press that met a paragraph because the page scrolled 60 px between aiming and pressing. */
-  const landed = {
-    x: 400,
-    y: 300,
-    on: 'p',
-    inside: false,
-    control: { x: 350, y: 250, width: 100, height: 44 },
-    aimedScroll: 1200,
-    pressedScroll: 1260,
-  };
-
-  it('is quiet when the press landed on the control', () => {
-    expect(pressMissed('Send', { x: 400, y: 300 }, { ...landed, x: 400, y: 300, on: 'button', inside: true })).toBeUndefined();
-  });
-
-  it('names where the press landed, where the control was then drawn and how far the page had scrolled', () => {
-    expect(pressMissed('Send', { x: 400, y: 300 }, landed)).toBe(
-      'the press on "Send" at 400, 300 landed on <p> at 400, 300 instead; "Send" was then drawn at 350, 250 (100 x 44), ' +
-        'page scrolled 1200 px when aimed and 1260 px when pressed',
-    );
-  });
-
-  it('says so when no press reached the page at all', () => {
-    expect(pressMissed('Send', { x: 400, y: 300 }, null)).toBe('the press on "Send" at 400, 300 never reached the page');
-  });
-});
-
 describe('typed', () => {
   /** Records each key action in the order it was added. */
   function recorder(): KeySequence & { steps: string[] } {
@@ -402,30 +323,6 @@ describe('typed', () => {
   });
 });
 
-describe('scrollInput', () => {
-  it('scrolls Chrome by the mouse wheel', () => {
-    expect(scrollInput('chromium')).toBe('wheel');
-  });
-
-  it('scrolls Firefox by the mouse wheel', () => {
-    expect(scrollInput('firefox')).toBe('wheel');
-  });
-
-  it("scrolls Safari by the keyboard, since Safari's driver performs no wheel scroll", () => {
-    expect(scrollInput('safari')).toBe('keys');
-  });
-});
-
-describe('scrollKey', () => {
-  it('is Page Down to bring a control below the window up into it', () => {
-    expect(scrollKey(441)).toBe('');
-  });
-
-  it('is Page Up to bring a control above the window down into it', () => {
-    expect(scrollKey(-680)).toBe('');
-  });
-});
-
 describe('steadyFrom', () => {
   const box = { x: 1, y: 300, width: 3, height: 4 };
 
@@ -447,24 +344,6 @@ describe('steadyFrom', () => {
   it('counts a control steady once it has stayed put for STEADY_MS, and not a millisecond sooner', () => {
     expect(steadyLongEnough({ box, since: 1000 }, 1000 + STEADY_MS - 1)).toBe(false);
     expect(steadyLongEnough({ box, since: 1000 }, 1000 + STEADY_MS)).toBe(true);
-  });
-});
-
-describe('unsteadyReason (shyden-labs/shydesk#163 AC2)', () => {
-  const viewport = { width: 1280, height: 800 };
-
-  it('says a control stood still outside the window, where, and how far a scroll still had to go', () => {
-    const steady = { box: { x: 20, y: 900, width: 600, height: 80 }, since: 1000 };
-    expect(unsteadyReason('Reply', steady, viewport, 3500)).toBe(
-      '"Reply" stood still for 2500 ms outside the 1280 x 800 window, drawn at 20, 900 (600 x 80): it needed 540 px more scroll',
-    );
-  });
-
-  it('says a control inside the window was still moving, where it was last drawn, and for how short a time', () => {
-    const steady = { box: { x: 20, y: 400.4, width: 600, height: 80 }, since: 3400 };
-    expect(unsteadyReason('Reply', steady, viewport, 3500)).toBe(
-      `"Reply" never stopped moving inside the 1280 x 800 window: last drawn at 20, 400 (600 x 80), there for 100 ms of the ${String(STEADY_MS)} needed`,
-    );
   });
 });
 
@@ -643,28 +522,6 @@ describe('drawnAt', () => {
   });
 });
 
-describe('desktopFilePath', () => {
-  const fixture = '/repo/tests/fixtures/media/photo.jpg';
-
-  it.each(['chromium', 'firefox'] as const)('gives %s the fixture where it is', (target) => {
-    expect(desktopFilePath(target, fixture, '/Users/runner')).toBe(fixture);
-  });
-
-  it('gives Safari a copy in its own cache folder, the only kind of place it can read a WebDriver file from (measured, shyden-labs/shydesk#21)', () => {
-    expect(desktopFilePath('safari', fixture, '/Users/runner')).toBe('/Users/runner/Library/Caches/com.apple.Safari/photo.jpg');
-  });
-});
-
-describe('pressMissed on a press that loads a new page', () => {
-  it('counts as reached: only a new page has no note of the press at all', () => {
-    expect(pressMissed('Demo', { x: 1, y: 2 }, undefined)).toBeUndefined();
-  });
-
-  it('still names a press that never reached a page that stayed', () => {
-    expect(pressMissed('Demo', { x: 1, y: 2 }, null)).toContain('never reached the page');
-  });
-});
-
 describe('phone gestures (shyden-labs/shydesk#99)', () => {
   it("sends Android's own key codes for the viewer's keys: Escape, the left and right arrows, and R", () => {
     expect(ANDROID_KEYS).toEqual({ Escape: 111, ArrowLeft: 21, ArrowRight: 22, r: 46 });
@@ -748,7 +605,7 @@ describe('suiteOriginFor', () => {
     expect(suiteOriginFor('android', 'http://192.168.1.7:8765')).toBe('http://localhost:8765');
   });
 
-  it.each(['chromium', 'firefox', 'safari', 'ios'] as const)('keeps the suite origin for %s', (target) => {
+  it.each(['ios'] as const)('keeps the suite origin for %s', (target) => {
     expect(suiteOriginFor(target, 'http://192.168.1.7:8765')).toBe('http://192.168.1.7:8765');
   });
 });
@@ -778,7 +635,7 @@ describe('pageLoadStalled', () => {
   });
 
   it('leaves the other targets to their own drivers, which fail a page load themselves', () => {
-    for (const target of ['chromium', 'firefox', 'safari', 'android'] as const) {
+    for (const target of ['android'] as const) {
       expect(pageLoadStalled(target, '/x', 60_000)).toBeUndefined();
     }
   });
@@ -823,12 +680,8 @@ describe('coverOver', () => {
 });
 
 describe('otherGroupSpecs (shyden-labs/shydesk#175)', () => {
-  it.each(['chromium', 'firefox', 'safari'] as const)('keeps phone-only spec files from %s', (target) => {
-    expect(otherGroupSpecs(target)).toEqual(['./tests/e2e/**/*.phone.e2e.ts']);
-  });
-
-  it.each(['android', 'ios'] as const)('keeps desktop-only spec files from %s', (target) => {
-    expect(otherGroupSpecs(target)).toEqual(['./tests/e2e/**/*.desktop.e2e.ts']);
+  it('keeps desktop-only spec files from the phones', () => {
+    expect(otherGroupSpecs()).toEqual(['./tests/e2e/**/*.desktop.e2e.ts']);
   });
 });
 
