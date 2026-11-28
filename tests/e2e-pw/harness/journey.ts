@@ -255,9 +255,42 @@ export async function untilVideo(page: Page, label: string, holds: (s: VideoStat
     .toBe(true)
     .catch(async (error: unknown) => {
       const saved = sizing ? await saveVideo(page, label, 'stall') : '';
-      throw new Error(`${what}: ${last === undefined ? `"${label}" was never read` : videoStateNote(label, last)}; DIAG188 ${saved}`, {
-        cause: error,
-      });
+      console.log(`DIAG188 STALL MARK ${String(Date.now())}`);
+      const again = sizing
+        ? await named(page, label)
+            .evaluate(async (element) => {
+              const v = element as HTMLVideoElement;
+              const watch = (media: HTMLVideoElement, ms: number) =>
+                new Promise<string>((resolve) => {
+                  const seen: string[] = [];
+                  for (const type of ['loadstart', 'loadedmetadata', 'canplay', 'error', 'stalled'])
+                    media.addEventListener(type, () => seen.push(type));
+                  setTimeout(() => {
+                    resolve(
+                      `readyState ${String(media.readyState)}, error ${String(media.error?.code ?? 'none')}, size ${String(media.videoWidth)}x${String(media.videoHeight)}, events ${seen.join(' ')}`,
+                    );
+                  }, ms);
+                });
+              const sameWait = watch(v, 8000);
+              v.load();
+              const same = await sameWait;
+              const fresh = document.createElement('video');
+              fresh.muted = true;
+              fresh.preload = 'auto';
+              const freshWait = watch(fresh, 8000);
+              fresh.src = v.src;
+              (v.getRootNode() as ShadowRoot | Document).querySelector('div')?.append(fresh);
+              const other = await freshWait;
+              return `same element load(): ${same}; fresh element: ${other}`;
+            })
+            .catch((problem: unknown) => `second load not tried: ${String(problem)}`)
+        : '';
+      throw new Error(
+        `${what}: ${last === undefined ? `"${label}" was never read` : videoStateNote(label, last)}; DIAG188 ${saved}; ${again}`,
+        {
+          cause: error,
+        },
+      );
     });
   if (sizing) console.log(`DIAG188 ${await saveVideo(page, label, 'ok')}`);
   return last as VideoState;

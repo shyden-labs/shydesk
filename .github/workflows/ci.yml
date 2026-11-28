@@ -167,7 +167,7 @@ jobs:
       - name: List the tests each desktop browser runs
         run: ./node_modules/.bin/playwright test --config playwright.config.ts --list --reporter=json > "$RUNNER_TEMP/playwright-list.json"
       - name: End-to-end suite on every desktop browser
-        # DIAGNOSTIC ONLY (shyden-labs/shydesk#188), never merged: WebKit's contact journey twelve times, with
+        # DIAGNOSTIC ONLY (shyden-labs/shydesk#188), never merged: WebKit's contact journey nine times, with
         # GStreamer's warnings and errors and the browser's stderr kept.
         env:
           GST_DEBUG: '2'
@@ -175,8 +175,8 @@ jobs:
           DEBUG: pw:browser
         run: |
           set +e
-          ./node_modules/.bin/playwright test --config playwright.config.ts --project webkit --repeat-each 12 tests/e2e-pw/contact.spec.ts:45 2> "$RUNNER_TEMP/browser.log"
-          code=$?
+          ./node_modules/.bin/playwright test --config playwright.config.ts --project webkit --repeat-each 9 tests/e2e-pw/contact.spec.ts:45 > "$RUNNER_TEMP/browser.log" 2>&1; code=$?; grep -E "✓|✘|passed|failed|Error: " "$RUNNER_TEMP/browser.log" | cut -c1-600 | head -60
+          grep -n "STALL MARK" "$RUNNER_TEMP/browser.log" | while IFS=: read n rest; do echo "--- browser log around line $n"; sed -n "$(( n>120 ? n-120 : 1 )),$((n+5))p" "$RUNNER_TEMP/browser.log" | grep -E "ERROR|WARN|STALL|error" | grep -vE "jack|oss|openal|alsa|pulse" | cut -c1-260 | tail -40; done
           sudo apt-get install -y -qq ffmpeg > /dev/null 2>&1 || echo "ffmpeg install failed"
           for f in .e2e-runs/diag188/*.mp4; do
             echo "=== $f $(wc -c < "$f") bytes sha256 $(sha256sum "$f" | cut -c1-64)"
