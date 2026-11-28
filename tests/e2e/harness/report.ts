@@ -42,7 +42,6 @@ export async function supportPieceState(): Promise<string> {
  */
 export async function savePhoneScreen(dir: string, title: string): Promise<void> {
   const target = targetOf(driver().capabilities);
-  if (target !== 'android' && target !== 'ios') return;
   const name = join(dir, `${target}-${title.replace(/\W+/g, '-').slice(0, 60)}`);
   const page = await driver().getContext();
   try {

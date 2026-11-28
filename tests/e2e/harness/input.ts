@@ -1,42 +1,32 @@
 /**
- * Real input on every target (shyden-labs/shydesk#42 AC4). Tests call these
- * and never a driver directly, so one test runs unchanged everywhere:
+ * Real input on each phone (shyden-labs/shydesk#42 AC4). Tests call these and
+ * never a driver directly, so one test runs unchanged on every phone. Desktop
+ * browsers run the same journeys on Playwright, through tests/e2e-pw/harness/
+ * (shyden-labs/shydesk#176).
  *
- * - desktop: WebDriver clicks and key presses, which the browser receives as
- *   trusted input; a file goes in through the file input, WebDriver's way to
- *   the file chooser.
- * - phones: Appium's native layer, measured 2026-11-05/06 on the real phones:
- *   a real touch on the control, real key presses (on the iPhone, the viewer's
- *   keys are its own controls: shyden-labs/shydesk#99), and the phone's own photo
- *   picker opening the "ShyDesk tests" album (iPhone) or the ShyDeskTests
- *   folder (Android) that holds only the test files.
+ * Appium's native layer, measured 2026-11-05/06 on the real phones, gives a
+ * real touch on the control, real key presses (on the iPhone, the viewer's
+ * keys are its own controls: shyden-labs/shydesk#99), and the phone's own photo
+ * picker opening the "ShyDesk tests" album (iPhone) or the ShyDeskTests
+ * folder (Android) that holds only the test files.
  *
- * Controls are found by their accessible name, the same on every target. A
+ * Controls are found by their accessible name, the same on every phone. A
  * step that cannot happen fails naming what was missing.
  */
 import { driver } from './driver.ts';
 import { named } from './find.ts';
-import { copyFile, mkdir } from 'node:fs/promises';
-import { homedir } from 'node:os';
-import { dirname, resolve } from 'node:path';
 import {
   ANDROID_COORDINATOR,
   androidPageArea,
   nativeFinder,
-  desktopFilePath,
   pickerItem,
   screenPoint,
   targetOf,
   steadyFrom,
   steadyLongEnough,
-  unsteadyReason,
   type Steady,
-  scrollInput,
-  scrollKey,
-  scrollNeeded,
   swipeUp,
   centreInside,
-  viewportPoint,
   videoControlPoint,
   type VideoControl,
   type Box,
@@ -49,20 +39,15 @@ import {
   type Phone,
   typedMismatch,
   typed,
-  pressMissed,
-  type Landed,
   coverOver,
   type Cover,
 } from './targets.ts';
 
 const WAIT = 15_000;
 
-/** Page Down presses allowed to bring a control into view: more than any test page is long. */
-const PAGE_KEYS = 20;
-
-function phone(): Phone | undefined {
-  const target = targetOf(driver().capabilities);
-  return target === 'android' || target === 'ios' ? target : undefined;
+/** The phone this session drives. */
+function phone(): Phone {
+  return targetOf(driver().capabilities);
 }
 
 /** Runs `step` in the phone's native layer, then returns to the page. */
@@ -83,107 +68,13 @@ async function nativeTap(on: Phone, selector: string, what: string): Promise<voi
 }
 
 /**
- * A real mouse press where the page draws the element named `label`. Safari's
- * Element Click cannot reach inside a shadow root (WebKit bug 202589; "click
- * intercepted" on PR shyden-labs/shydesk#69), so every desktop target presses
- * the mouse at the element's middle instead, as a person would, after a real
- * wheel scroll when the element is outside the window.
- */
-async function clickDrawn(label: string, leaving = false): Promise<void> {
-  const element = await named(label);
-  // Reads where the element is drawn; the input itself is the real wheel and mouse actions below.
-  const drawn = (): Promise<{ box: Box; viewport: { width: number; height: number } }> =>
-    driver().execute(
-      'const r = arguments[0].getBoundingClientRect(); return { box: { x: r.x, y: r.y, width: r.width, height: r.height }, viewport: { width: window.innerWidth, height: window.innerHeight } };',
-      element,
-    );
-  let { box, viewport } = await drawn();
-  const delta = scrollNeeded(box, viewport);
-  if (delta !== 0) {
-    const at = { x: Math.round(viewport.width / 2), y: Math.round(viewport.height / 2) };
-    // Read only, for the failure message: how far the page had scrolled, and what sits under the wheel.
-    const where = (): Promise<string> =>
-      driver().execute(
-        'const e = document.elementFromPoint(arguments[0], arguments[1]); return `page scrolled ${String(Math.round(window.scrollY))} px, under the scroll point <${e === null ? "nothing" : e.localName}>, focus on <${document.activeElement === null ? "nothing" : document.activeElement.localName}>`;',
-        at.x,
-        at.y,
-      );
-    const before = await where();
-    const target = targetOf(driver().capabilities);
-    if (target !== 'chromium' && target !== 'firefox' && target !== 'safari') throw new Error(`no desktop scroll input for ${target}`);
-    const inView = async (): Promise<boolean> => {
-      ({ box, viewport } = await drawn());
-      return scrollNeeded(box, viewport) === 0;
-    };
-    try {
-      if (scrollInput(target) === 'wheel') {
-        // A real mouse-wheel scroll from the middle of the window, as a person brings a control into view.
-        await driver().action('wheel').scroll({ x: at.x, y: at.y, deltaX: 0, deltaY: delta, duration: 200 }).perform();
-        await driver().waitUntil(inView, { timeout: WAIT, timeoutMsg: `"${label}" stayed outside the window` });
-      } else {
-        // Real Page Down or Page Up presses, one at a time, until the control is in the window.
-        let presses = 0;
-        while (!(await inView())) {
-          if (presses === PAGE_KEYS) throw new Error(`"${label}" stayed outside the window after ${String(PAGE_KEYS)} key presses`);
-          await driver().keys([scrollKey(delta)]);
-          presses += 1;
-        }
-      }
-    } catch (error) {
-      throw new Error(
-        `"${label}" was still outside the window after scrolling ${String(delta)} px by ${scrollInput(target)} (before: ${before}; after: ${await where()})`,
-        { cause: error },
-      );
-    }
-  }
-  // A scroll animates: press only once the control has stopped moving, inside the window.
-  let steady: Steady | undefined;
-  try {
-    await driver().waitUntil(
-      async () => {
-        ({ box, viewport } = await drawn());
-        steady = steadyFrom(steady, box, Date.now());
-        return steadyLongEnough(steady, Date.now()) && scrollNeeded(box, viewport) === 0;
-      },
-      { timeout: WAIT, timeoutMsg: `"${label}" never stood still inside the window` },
-    );
-  } catch (error) {
-    if (steady === undefined) throw error;
-    throw new Error(unsteadyReason(label, steady, viewport, Date.now()), { cause: error });
-  }
-  const at = viewportPoint(box, viewport, label);
-  // Read only: notes where the next real press lands, so a press that misses the control fails naming where it went.
-  await driver().execute(
-    'const control = arguments[0]; const aimedScroll = Math.round(window.scrollY); window.__e2ePress = null; document.addEventListener("pointerdown", (e) => { const path = e.composedPath(); const hit = path[0]; const r = control.getBoundingClientRect(); window.__e2ePress = { x: Math.round(e.clientX), y: Math.round(e.clientY), on: hit instanceof Element ? hit.localName : String(hit), inside: path.includes(control), control: { x: r.x, y: r.y, width: r.width, height: r.height }, aimedScroll, pressedScroll: Math.round(window.scrollY) }; }, { capture: true, once: true });',
-    element,
-  );
-  await driver()
-    .action('pointer', { parameters: { pointerType: 'mouse' } })
-    .move(at)
-    .down()
-    .pause(50)
-    .up()
-    .perform();
-  // A press that loads a new page asks nothing more of the page it leaves: Chrome answered a script sent while
-  // its page was replaced with "Cannot find context" (run 43806120089, shyden-labs/shydesk#163). The caller
-  // waits for the new page, which fails naming the press if it missed.
-  if (leaving) return;
-  // A new page has no note at all, which browsers answer differently: asked outright, so each says the same.
-  const note = await driver().execute<{ stayed: boolean; landed: Landed | null }>(
-    "return { stayed: '__e2ePress' in window, landed: window.__e2ePress ?? null };",
-  );
-  const missed = pressMissed(label, at, note.stayed ? note.landed : undefined);
-  if (missed !== undefined) throw new Error(missed);
-}
-
-/**
  * A real press on a link or a button that loads a new page, waiting until that
  * page is ready: asking Firefox about an element while its page is being replaced
  * hangs for good (run 42543992055).
  */
 export async function tapToNewPage(label: string): Promise<void> {
   await driver().execute('window.__e2eLeaving = true;');
-  await tap(label, true);
+  await tap(label);
   await driver().waitUntil(
     async () => driver().execute<boolean>("return window.__e2eLeaving === undefined && document.readyState === 'complete';"),
     { timeout: WAIT, timeoutMsg: `the press on "${label}" never loaded a new page` },
@@ -242,13 +133,9 @@ async function iosTapClear(selector: string, what: string): Promise<void> {
   await element.click();
 }
 
-/** A real click or touch on the control named `label`; `leaving` when the press loads a new page. */
-export async function tap(label: string, leaving = false): Promise<void> {
+/** A real touch on the control named `label`. */
+export async function tap(label: string): Promise<void> {
   const on = phone();
-  if (on === undefined) {
-    await clickDrawn(label, leaving);
-    return;
-  }
   if (on === 'android') {
     await touchDrawn(label);
     return;
@@ -362,33 +249,18 @@ export async function type(label: string, text: string): Promise<void> {
       await driver().$(nativeFinder(on, label)).addValue(text);
     });
   } else {
-    if (on === 'android') await touchDrawn(label);
-    else await tap(label);
-    // W3C key actions, each key pressed and lifted in turn: trusted keydown and input per key, on desktop and Android alike.
+    await touchDrawn(label);
+    // W3C key actions, each key pressed and lifted in turn: trusted keydown and input per key.
     await typed(driver().action('key'), text).perform();
   }
-  // Every target: the field holds exactly what it held plus the text typed, or the test fails naming what it held.
+  // Every phone: the field holds exactly what it held plus the text typed, or the test fails naming what it held.
   const mismatch = typedMismatch(label, before + text, String(await (await named(label)).getProperty('value')));
   if (mismatch !== undefined) throw new Error(mismatch);
 }
 
-const MEDIA = resolve(import.meta.dirname, '../../fixtures/media');
-
-/** One test file chosen through the file input named `label`. */
+/** One test file chosen through the file input named `label`, from the phone's own picker. */
 export async function pickFile(label: string, fixture: Fixture): Promise<void> {
   const on = phone();
-  if (on === undefined) {
-    const target = targetOf(driver().capabilities);
-    if (target !== 'chromium' && target !== 'firefox' && target !== 'safari') throw new Error(`no desktop file route for ${target}`);
-    const from = resolve(MEDIA, fixture);
-    const path = desktopFilePath(target, from, homedir());
-    if (path !== from) {
-      await mkdir(dirname(path), { recursive: true });
-      await copyFile(from, path);
-    }
-    await (await named(label)).addValue(path);
-    return;
-  }
   // On Android the input is touched where the page draws it: Chrome's WebView node, and the input's
   // native name with it, comes and goes from the native tree (shyden-labs/shydesk#99).
   if (on === 'android') await touchDrawn(label);
@@ -416,19 +288,8 @@ export async function pickFile(label: string, fixture: Fixture): Promise<void> {
   });
 }
 
-/** WebDriver's codes for the keys the viewer answers to (shyden-labs/shydesk#25). */
-const KEY_CODES = { Escape: '', ArrowLeft: '', ArrowRight: '', r: 'r' } as const;
-export type ViewerKey = keyof typeof KEY_CODES;
-
-/** Where the element named `label` is drawn in the window, once it is in view. */
-async function drawnCentre(label: string): Promise<{ x: number; y: number }> {
-  const element = await named(label);
-  const { box, viewport } = await driver().execute<{ box: Box; viewport: { width: number; height: number } }>(
-    'const r = arguments[0].getBoundingClientRect(); return { box: { x: r.x, y: r.y, width: r.width, height: r.height }, viewport: { width: window.innerWidth, height: window.innerHeight } };',
-    element,
-  );
-  return viewportPoint(box, viewport, label);
-}
+/** The keys the viewer answers to (shyden-labs/shydesk#25). */
+export type ViewerKey = keyof typeof ANDROID_KEYS;
 
 const PAGE_RECT = 'const r = arguments[0].getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height };';
 
@@ -471,57 +332,32 @@ function finger(id: string, from: { x: number; y: number }, to: { x: number; y: 
     .up();
 }
 
-/** A real zoom in over the element named `label`: one wheel notch on a desktop, a two-finger pinch out on a phone. */
-export async function zoomIn(label: string): Promise<void> {
-  const on = phone();
-  if (on !== undefined) {
-    const { at, ratio } = on === 'android' ? await onAndroidScreen(label) : { at: await onIosScreen(label), ratio: 1 };
-    const [one, two] = pinchOut(at, ratio);
-    await native(() => driver().actions([finger('one', one.from, one.to, 400), finger('two', two.from, two.to, 400)]));
-    return;
-  }
-  const at = await drawnCentre(label);
-  await driver().action('wheel').scroll({ x: at.x, y: at.y, deltaX: 0, deltaY: -120, duration: 100 }).perform();
+/** Where on screen the middle of the element named `label` is drawn on this phone, and the screen px per CSS px. */
+async function onScreen(label: string): Promise<{ at: { x: number; y: number }; ratio: number }> {
+  return phone() === 'android' ? onAndroidScreen(label) : { at: await onIosScreen(label), ratio: 1 };
 }
 
-/** A real sideways move across the element named `label`, right to left: a mouse drag on a desktop, a finger swipe on a phone. */
+/** A real two-finger pinch out over the element named `label`. */
+export async function zoomIn(label: string): Promise<void> {
+  const { at, ratio } = await onScreen(label);
+  const [one, two] = pinchOut(at, ratio);
+  await native(() => driver().actions([finger('one', one.from, one.to, 400), finger('two', two.from, two.to, 400)]));
+}
+
+/** A real finger swipe across the element named `label`, right to left. */
 export async function swipeLeft(label: string): Promise<void> {
-  const on = phone();
-  if (on !== undefined) {
-    const { at, ratio } = on === 'android' ? await onAndroidScreen(label) : { at: await onIosScreen(label), ratio: 1 };
-    const path = fingerSwipeLeft(at, ratio);
-    await native(() => finger('one', path.from, path.to, 300).perform());
-    return;
-  }
-  const at = await drawnCentre(label);
-  await driver()
-    .action('pointer', { parameters: { pointerType: 'mouse' } })
-    .move({ x: at.x + 80, y: at.y })
-    .down()
-    .move({ x: at.x - 80, y: at.y, duration: 300 })
-    .up()
-    .perform();
+  const { at, ratio } = await onScreen(label);
+  const path = fingerSwipeLeft(at, ratio);
+  await native(() => finger('one', path.from, path.to, 300).perform());
 }
 
 /**
- * A real press at the middle of where the element named `label` is drawn: a mouse click on a desktop, a
- * finger tap on a phone. Whatever a person's press there would reach gets it, as a layer drawn over the
- * element does (shyden-labs/shydesk#108).
+ * A real finger tap at the middle of where the element named `label` is drawn. Whatever a person's
+ * press there would reach gets it, as a layer drawn over the element does (shyden-labs/shydesk#108).
  */
 export async function clickMiddleOf(label: string): Promise<void> {
-  const on = phone();
-  if (on !== undefined) {
-    const at = on === 'android' ? (await onAndroidScreen(label)).at : await onIosScreen(label);
-    await native(() => finger('one', at, at, 0).perform());
-    return;
-  }
-  const at = await drawnCentre(label);
-  await driver()
-    .action('pointer', { parameters: { pointerType: 'mouse' } })
-    .move({ x: at.x, y: at.y })
-    .down()
-    .up()
-    .perform();
+  const { at } = await onScreen(label);
+  await native(() => finger('one', at, at, 0).perform());
 }
 
 /**
@@ -553,9 +389,5 @@ export async function press(key: ViewerKey): Promise<void> {
     await tap(IOS_KEY_CONTROLS[key]);
     return;
   }
-  if (on === 'android') {
-    await native(() => driver().pressKeyCode(ANDROID_KEYS[key]));
-    return;
-  }
-  await driver().keys([KEY_CODES[key]]);
+  await native(() => driver().pressKeyCode(ANDROID_KEYS[key]));
 }

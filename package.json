@@ -14,7 +14,6 @@
     "format:check": "prettier --check .",
     "prepare": "git config core.hooksPath .githooks",
     "test:integration": "vitest run --config vitest.integration.config.ts",
-    "test:e2e": "wdio run wdio.conf.ts; status=$?; node scripts/e2e-totals.ts .e2e-runs tests/e2e && exit $status",
     "test:e2e:pw": "playwright test --config playwright.config.ts",
     "test:e2e:device": "wdio run wdio.conf.ts; status=$?; node scripts/e2e-totals.ts .e2e-runs tests/e2e && exit $status"
   },

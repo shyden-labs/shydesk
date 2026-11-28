@@ -54,7 +54,6 @@ const jobHoldsPower = (file: string, id: string) => holdsPower(jobOf(file, id)) 
 const CACHING_JOBS = [
   ['ci.yml', 'build-and-test'],
   ['ci.yml', 'coverage'],
-  ['ci.yml', 'e2e-desktop'],
   ['ci.yml', 'e2e-playwright'],
 ] as const;
 
