@@ -4,13 +4,16 @@ import type { SmtpLogin, SmtpMail } from './smtp.ts';
 
 /**
  * The no-reply notice sent when a ticket changes (shyden-labs/shydesk#18).
- * Its copy is fixed: the product name, that there is something new, and the
- * private link, never any reply text. A send is counted against the
+ * Its copy is fixed and the same for a new ticket and every later notice
+ * (shyden-labs/shydesk#272): the product name and the private link, never any reply text. A send is counted against the
  * product's monthly share before anything is delivered, and a failure is
  * returned as `failed` for the caller to show; nothing is sent twice.
  */
 
-export const NOTICE_SUBJECT = 'Your support request: something new';
+/** The one subject every notice carries, naming the product (shyden-labs/shydesk#272). */
+export function noticeSubject(productName: string): string {
+  return `Your ${productName} support request`;
+}
 
 /** Hands one mail to the SMTP server under the sender's login. In the Worker: `sendSmtp` over a socket. */
 /** `host` is the Worker's SMTP_HOST setting, which may be unset; a Deliver refuses to send without it. */
@@ -85,7 +88,6 @@ function senderLogin(logins: string | undefined, sender: string): { login: SmtpL
   return { login: { user, pass }, host };
 }
 
-/** Tells the customer at `to` that their ticket has something new, linking to its private page. */
 /**
  * `text` with each copy of the customer's address, in any letter case, replaced. A mail server's refusal
  * often quotes the address, and the logs keep no personal data (shyden-labs/shydesk#306).
@@ -95,6 +97,7 @@ function withoutAddress(text: string, address: string): string {
   return text.replaceAll(new RegExp(literal, 'gi'), '[recipient]');
 }
 
+/** Tells the customer at `to` where their ticket's private page is. */
 export async function sendNoReply(
   env: MailEnv,
   product: Product,
@@ -117,8 +120,8 @@ export async function sendNoReply(
       from: product.senderAddress,
       fromName: `${product.name} support`,
       to,
-      subject: NOTICE_SUBJECT,
-      text: `${product.name} support\r\n\r\n${lead}There is a new update on your support request. Open it here: ${link}`,
+      subject: noticeSubject(product.name),
+      text: `${product.name} support\r\n\r\n${lead}Your support request can be viewed here: ${link}`,
     };
     // Written down before it leaves, so a bounce that comes back fast finds its row (shyden-labs/shydesk#232).
     if (env.BOUNCE_DOMAIN !== undefined) {
