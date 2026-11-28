@@ -3,6 +3,7 @@
  * accessible name a person would read, and the touch size of controls.
  */
 import { expect, type Locator, type Page } from '@playwright/test';
+import { named as anyNamed } from './input.ts';
 
 /** How long a journey waits for a page to show what it should, as the WebdriverIO suite does. */
 export const JOURNEY_WAIT = 20_000;
@@ -16,7 +17,7 @@ function named(page: Page, label: string): Locator {
  * The text of the element named `label` once it holds `expected`, or a failure naming the
  * text it last held (keeps shyden-labs/shydesk#294's behaviour).
  */
-export async function textHolding(page: Page, label: string, expected: string): Promise<string> {
+export async function textHolding(page: Page, label: string, expected: string, timeout = JOURNEY_WAIT): Promise<string> {
   const element = named(page, label);
   let text = '';
   await expect
@@ -25,7 +26,7 @@ export async function textHolding(page: Page, label: string, expected: string): 
         text = (await element.innerText()).trim();
         return text.includes(expected);
       },
-      { timeout: JOURNEY_WAIT, message: `"${label}" never held "${expected}"` },
+      { timeout, message: `"${label}" never held "${expected}"` },
     )
     .toBe(true)
     .catch((error: unknown) => {
@@ -41,9 +42,11 @@ export async function textHolding(page: Page, label: string, expected: string): 
 export async function touchSized(page: Page, labels: readonly string[]): Promise<void> {
   const small: string[] = [];
   for (const label of labels) {
-    const field = page.getByLabel(label, { exact: true });
-    const control = (await field.count()) > 0 ? field : page.getByRole('button', { name: label, exact: true });
-    const box = await control.boundingBox();
+    const box = await anyNamed(page, label)
+      .boundingBox({ timeout: JOURNEY_WAIT })
+      .catch((error: unknown) => {
+        throw new Error(`"${label}" never appeared`, { cause: error });
+      });
     if (box === null) small.push(`"${label}" not drawn`);
     else if (box.width < 44 || box.height < 44) small.push(`"${label}" ${String(box.width)}×${String(box.height)}`);
   }

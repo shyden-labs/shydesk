@@ -10,9 +10,9 @@ import { named } from './find.ts';
 type Rgb = [number, number, number];
 
 /** WCAG 2's least contrast for normal text. */
-const TEXT_CONTRAST = 4.5;
+export const TEXT_CONTRAST = 4.5;
 /** WCAG 2's least contrast for a graphic a control needs, such as the select's arrow. */
-const GRAPHIC_CONTRAST = 3;
+export const GRAPHIC_CONTRAST = 3;
 
 /** The red, green and blue of a computed, fully opaque colour; refuses anything else by name. */
 export function colourOf(computed: string): Rgb {
@@ -96,7 +96,7 @@ export function partShortfalls(parts: readonly Part[]): string[] {
  * enabled button with its text colour, and every field's border, each against the first opaque
  * background behind it (white if the page sets none, as a browser draws it).
  */
-const LIST_PARTS = `
+export const LIST_PARTS = `
   const host = document.querySelector('shydesk-support');
   if (host === null || host.shadowRoot === null) return [];
   const root = host.shadowRoot;

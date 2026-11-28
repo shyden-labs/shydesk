@@ -24,7 +24,7 @@ export interface VideoState {
 }
 
 /** The media events that show what happened to a play: a pause, a load starting over, an abort. */
-const WATCHED = [
+export const WATCHED = [
   'loadstart',
   'emptied',
   'abort',
