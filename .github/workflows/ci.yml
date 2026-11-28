@@ -172,9 +172,17 @@ jobs:
           "$binary" --version
           echo "E2E_DESKTOP_CHROME=$binary" >> "$GITHUB_ENV"
       - name: End-to-end suite on every desktop target
+        # DIAGNOSTIC ONLY (shyden-labs/shydesk#188), never merged: the contact journey on real Safari, 8 times.
         env:
-          E2E_TARGETS: chromium,firefox,safari
-        run: npm run test:e2e
+          E2E_TARGETS: safari
+        run: |
+          pass=0; fail=0
+          for i in 1 2 3 4 5 6 7 8; do
+            DIAG_REPEAT=$i ./node_modules/.bin/wdio run wdio.conf.ts --spec tests/e2e/contact.e2e.ts > "$RUNNER_TEMP/run$i.log" 2>&1
+            if [ $? -eq 0 ]; then pass=$((pass+1)); echo "repeat $i: passed"; else fail=$((fail+1)); echo "repeat $i: FAILED"; grep -E "Error|never|video|Video" "$RUNNER_TEMP/run$i.log" | cut -c1-500 | head -12; fi
+          done
+          echo "real Safari: $pass passed, $fail failed"
+          [ $fail -eq 0 ]
 
   # The e2e suite on Playwright through the shared device layer, on every desktop browser it gives
   # (shyden-labs/shydesk#176). It runs beside e2e-desktop until every test is ported, then replaces it.

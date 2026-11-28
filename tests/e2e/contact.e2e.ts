@@ -114,7 +114,8 @@ describe('the contact form', () => {
     await openPage('/contact.html?product=demo');
     // Every control on the form takes a fingertip (shyden-labs/shydesk#256).
     await touchSized(['Email', 'Subject', 'Category', 'Message', 'Device', 'Photos and videos', 'Send']);
-    await type('Email', 'e2e');
+    const who = `e2e${process.env['DIAG_REPEAT'] ?? ''}`; // DIAGNOSTIC ONLY (shyden-labs/shydesk#188)
+    await type('Email', who);
     await type('Subject', subject);
     await type('Message', 'It closes as soon as it starts.');
     await type('Device', 'Test phone');
@@ -257,7 +258,7 @@ describe('the contact form', () => {
     await type('Your reply', ' We are on it.');
     await tapToNewPage('Send reply');
     await textHolding('Reply status', 'Reply saved');
-    const answer = `Hello e2e@example.com, about ${subject}. We are on it.`;
+    const answer = `Hello ${who}@example.com, about ${subject}. We are on it.`;
     await textHolding('Conversation', answer);
 
     // The customer's page shows that reply.
