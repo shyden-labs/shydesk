@@ -221,9 +221,6 @@ jobs:
       # It lives outside .e2e-runs, which the suite's global setup empties when the run starts.
       - name: List the tests each desktop browser runs
         run: ./node_modules/.bin/playwright test --config playwright.config.ts --list --reporter=json > "$RUNNER_TEMP/playwright-list.json"
-      # DIAGNOSTIC (shyden-labs/shydesk#176), removed before merge: how often Firefox opens no chooser, and why.
-      - name: DIAGNOSTIC Firefox contact journey repeated
-        run: ./node_modules/.bin/playwright test --config playwright.config.ts --project=firefox -g 'sends a request typed and tapped' --repeat-each=12 --reporter=line || echo "DIAGNOSTIC exit $?"
       - name: End-to-end suite on every desktop browser
         run: npm run test:e2e:pw
       # Checked even after a red run; this step's own exit fails the job on any difference between browsers.
