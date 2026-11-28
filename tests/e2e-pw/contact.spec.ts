@@ -50,7 +50,8 @@ test.describe('the contact form', () => {
     await page.goto('/contact.html?product=demo');
     // Every control on the form takes a fingertip (shyden-labs/shydesk#256).
     await touchSized(page, ['Email', 'Subject', 'Category', 'Message', 'Device', 'Photos and videos', 'Send']);
-    await type(page, 'Email', 'e2e');
+    const who = `e2e${String(test.info().repeatEachIndex)}`; // DIAGNOSTIC ONLY (shyden-labs/shydesk#188): own address per repeat
+    await type(page, 'Email', who);
     await type(page, 'Subject', subject);
     await type(page, 'Message', 'It closes as soon as it starts.');
     await type(page, 'Device', 'Test phone');
@@ -166,7 +167,7 @@ test.describe('the contact form', () => {
     await type(page, 'Your reply', ' We are on it.');
     await tapToNewPage(page, 'Send reply');
     await textHolding(page, 'Reply status', 'Reply saved');
-    const answer = `Hello e2e@example.com, about ${subject}. We are on it.`;
+    const answer = `Hello ${who}@example.com, about ${subject}. We are on it.`;
     await textHolding(page, 'Conversation', answer);
 
     await page.goto(link);

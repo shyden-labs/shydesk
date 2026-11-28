@@ -167,7 +167,7 @@ jobs:
       - name: List the tests each desktop browser runs
         run: ./node_modules/.bin/playwright test --config playwright.config.ts --list --reporter=json > "$RUNNER_TEMP/playwright-list.json"
       - name: End-to-end suite on every desktop browser
-        # DIAGNOSTIC ONLY (shyden-labs/shydesk#188), never merged: WebKit's contact journey eight times, with
+        # DIAGNOSTIC ONLY (shyden-labs/shydesk#188), never merged: WebKit's contact journey twelve times, with
         # GStreamer's warnings and errors and the browser's stderr kept.
         env:
           GST_DEBUG: '2'
@@ -175,7 +175,7 @@ jobs:
           DEBUG: pw:browser
         run: |
           set +e
-          ./node_modules/.bin/playwright test --config playwright.config.ts --project webkit --repeat-each 8 tests/e2e-pw/contact.spec.ts:45 2> "$RUNNER_TEMP/browser.log"
+          ./node_modules/.bin/playwright test --config playwright.config.ts --project webkit --repeat-each 12 tests/e2e-pw/contact.spec.ts:45 2> "$RUNNER_TEMP/browser.log"
           code=$?
           sudo apt-get install -y -qq ffmpeg > /dev/null 2>&1 || echo "ffmpeg install failed"
           for f in .e2e-runs/diag188/*.mp4; do
