@@ -109,8 +109,8 @@ const login = { user: 'no-reply@shyden.co.uk', pass: 'secret-pass' };
 const mail: SmtpMail = {
   from: 'no-reply@shyden.co.uk',
   to: 'customer@example.com',
-  subject: 'Your support request: something new',
-  text: 'There is a new update on your support request.\nOpen it here: https://shyden.co.uk/support/t/abc',
+  subject: 'Your ShyTalk support request',
+  text: 'Your support request can be viewed here:\nhttps://shyden.co.uk/support/t/abc',
 };
 const now = new Date('2026-11-05T01:02:03Z');
 
@@ -153,7 +153,7 @@ describe('sendSmtp', () => {
     expect(lines.slice(0, 4)).toEqual([
       'From: no-reply@shyden.co.uk',
       'To: customer@example.com',
-      'Subject: Your support request: something new',
+      'Subject: Your ShyTalk support request',
       'Date: Thu, 05 Nov 2026 01:02:03 GMT',
     ]);
     expect(lines[4]).toMatch(/^Message-ID: <[0-9a-f-]{36}@shyden\.co\.uk>$/);
@@ -163,11 +163,7 @@ describe('sendSmtp', () => {
       'Content-Transfer-Encoding: 8bit',
       '',
     ]);
-    expect(lines.slice(9)).toEqual([
-      'There is a new update on your support request.',
-      'Open it here: https://shyden.co.uk/support/t/abc',
-      '.',
-    ]);
+    expect(lines.slice(9)).toEqual(['Your support request can be viewed here:', 'https://shyden.co.uk/support/t/abc', '.']);
   });
 
   // A body line starting with a dot would otherwise end the message early (RFC 5321 4.5.2).

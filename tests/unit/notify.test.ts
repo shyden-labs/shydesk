@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { NOTICE_SUBJECT, sendNoReply, type Deliver, type MailEnv } from '../../src/mail/notify.ts';
+import { noticeSubject, sendNoReply, type Deliver, type MailEnv } from '../../src/mail/notify.ts';
 import { SmtpError } from '../../src/mail/smtp.ts';
 import type { Product } from '../../src/products.ts';
 import { standInDb } from './d1-stand-in.ts';
@@ -63,7 +63,7 @@ afterEach(() => {
 });
 
 describe('the notice', () => {
-  it('goes from the product sender, with its login, saying only that there is something new', async () => {
+  it("goes from the product sender, with its login, with one wording for every notice: the product's support request and its link (shyden-labs/shydesk#272)", async () => {
     const { env, deliver } = world({ shareLeft: true });
     await expect(sendNoReply(env, shytalk(), 'pat@example.com', LINK, deliver, NOW, ABOUT)).resolves.toBe('sent');
     expect(deliver.mock.calls).toEqual([
@@ -73,14 +73,14 @@ describe('the notice', () => {
           from: 'no-reply@shytalk.app',
           fromName: 'ShyTalk support',
           to: 'pat@example.com',
-          subject: 'Your support request: something new',
-          text: `ShyTalk support\r\n\r\nThere is a new update on your support request. Open it here: ${LINK}`,
+          subject: 'Your ShyTalk support request',
+          text: `ShyTalk support\r\n\r\nYour support request can be viewed here: ${LINK}`,
         },
         // The Worker's mail host (shyden-labs/shydesk#68).
         'mail.example',
       ],
     ]);
-    expect(NOTICE_SUBJECT).toBe('Your support request: something new');
+    expect(noticeSubject('Yawelo Idle')).toBe('Your Yawelo Idle support request');
   });
 
   // shyden-labs/shydesk#228: a sender whose mailbox lives on another server names it.
