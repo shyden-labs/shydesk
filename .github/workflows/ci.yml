@@ -167,7 +167,22 @@ jobs:
       - name: List the tests each desktop browser runs
         run: ./node_modules/.bin/playwright test --config playwright.config.ts --list --reporter=json > "$RUNNER_TEMP/playwright-list.json"
       - name: End-to-end suite on every desktop browser
-        run: npm run test:e2e:pw
+        # DIAGNOSTIC ONLY (shyden-labs/shydesk#188), never merged: WebKit's contact journey ten times, with
+        # GStreamer's warnings and errors and the browser's stderr kept.
+        env:
+          GST_DEBUG: '2'
+          GST_DEBUG_NO_COLOR: '1'
+          DEBUG: pw:browser
+        run: |
+          set +e
+          ./node_modules/.bin/playwright test --config playwright.config.ts --project webkit --repeat-each 10 tests/e2e-pw/contact.spec.ts 2> "$RUNNER_TEMP/browser.log"
+          code=$?
+          echo "browser log lines: $(wc -l < "$RUNNER_TEMP/browser.log")"
+          echo "--- GStreamer WARN/ERROR lines, by message (count, then text):"
+          grep -E ' (WARN|ERROR) ' "$RUNNER_TEMP/browser.log" | sed -E 's/^.*(WARN|ERROR) +/\1 /; s/0x[0-9a-f]+/0x?/g' | sort | uniq -c | sort -rn | head -60
+          echo "--- every line naming error/fail/not-supported, first 80:"
+          grep -inE 'error|fail|not.supported|unsupported' "$RUNNER_TEMP/browser.log" | cut -c1-300 | head -80
+          exit $code
       # Checked even after a red run; this step's own exit fails the job on any difference between browsers.
       - name: Every desktop browser ran the same tests and assertions
         if: always()

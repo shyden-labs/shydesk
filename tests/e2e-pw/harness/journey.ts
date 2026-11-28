@@ -231,8 +231,30 @@ export async function untilVideo(page: Page, label: string, holds: (s: VideoStat
       { timeout: JOURNEY_WAIT, message: what },
     )
     .toBe(true)
-    .catch((error: unknown) => {
-      throw new Error(`${what}: ${last === undefined ? `"${label}" was never read` : videoStateNote(label, last)}`, { cause: error });
+    .catch(async (error: unknown) => {
+      // DIAGNOSTIC ONLY (shyden-labs/shydesk#188), never merged: what the video's source holds when it stalls.
+      const source = await named(page, label)
+        .evaluate(async (element) => {
+          const v = element as HTMLVideoElement;
+          const parts = [`src ${v.src.slice(0, 60)}`, `currentSrc ${v.currentSrc.slice(0, 60)}`, `preload ${v.preload}`];
+          try {
+            const blob = await (await fetch(v.src)).blob();
+            const bytes = new Uint8Array(await blob.arrayBuffer());
+            const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
+            parts.push(
+              `blob ${String(blob.size)} bytes, type "${blob.type}"`,
+              `sha256 ${[...hash].map((b) => b.toString(16).padStart(2, '0')).join('')}`,
+            );
+          } catch (problem) {
+            parts.push(`fetch of src failed: ${String(problem)}`);
+          }
+          parts.push(`video elements in document ${String((v.getRootNode() as ParentNode).querySelectorAll('video').length)}`);
+          return parts.join('; ');
+        })
+        .catch((problem: unknown) => `source not read: ${String(problem)}`);
+      throw new Error(`${what}: ${last === undefined ? `"${label}" was never read` : videoStateNote(label, last)}; DIAG188 ${source}`, {
+        cause: error,
+      });
     });
   return last as VideoState;
 }
